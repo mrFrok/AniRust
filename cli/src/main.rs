@@ -12,6 +12,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use anirust_api::{Client, EpisodeSort, ProfileList, SearchBy};
+use anirust_extract::{Registry, ResolvedStream, StreamKind, StreamVariant};
 
 #[derive(Parser)]
 #[command(
@@ -105,6 +106,42 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         page: i32,
     },
+    /// List the hosts an extractor is implemented for.
+    Hosts,
+    /// Resolve an embed URL to a directly playable stream.
+    Resolve {
+        url: String,
+        #[command(flatten)]
+        output: StreamOutput,
+    },
+    /// Walk the API chain to one episode and resolve it in one step.
+    ///
+    /// Without --dubber/--source the first of each is used, which is the
+    /// most-viewed voice-over.
+    Stream {
+        release_id: i64,
+        /// Episode number, 1-based.
+        #[arg(default_value_t = 1)]
+        position: i32,
+        #[arg(long)]
+        dubber: Option<i64>,
+        #[arg(long)]
+        source: Option<i64>,
+        #[command(flatten)]
+        output: StreamOutput,
+    },
+}
+
+/// How to print a resolved stream. Shared by `resolve` and `stream`.
+#[derive(clap::Args)]
+#[group(multiple = false)]
+struct StreamOutput {
+    /// Print only the best rendition's URL, for piping.
+    #[arg(long)]
+    best: bool,
+    /// Print a ready-to-run mpv command, headers included.
+    #[arg(long)]
+    mpv: bool,
 }
 
 #[derive(Copy, Clone, ValueEnum)]
@@ -339,9 +376,174 @@ async fn run(client: &Client, cli: &Cli) -> Result<()> {
             let p = client.discover_watching(*page).await?;
             print_release_page(&p, cli.json)?;
         }
+
+        Command::Hosts => {
+            for host in Registry::new(reqwest::Client::new()).supported_hosts() {
+                println!("{host}");
+            }
+        }
+
+        Command::Resolve { url, output } => {
+            let registry = Registry::new(reqwest::Client::new());
+            let stream = registry.resolve(url).await?;
+            print_stream(&stream, output, cli.json)?;
+        }
+
+        Command::Stream {
+            release_id,
+            position,
+            dubber,
+            source,
+            output,
+        } => {
+            let episode = pick_episode(client, *release_id, *dubber, *source, *position).await?;
+            eprintln!(
+                "серия {} — {} ({})",
+                episode.position,
+                episode.url,
+                if episode.iframe {
+                    "эмбед"
+                } else {
+                    "прямая"
+                }
+            );
+
+            // The API's `iframe` flag is not trustworthy: Sibnet and
+            // AniLibria episodes arrive with `iframe = false` even though
+            // their URLs are player pages answering text/html. Routing by
+            // host instead means the flag can be wrong without breaking
+            // playback.
+            let registry = Registry::new(reqwest::Client::new());
+            let stream = if registry.supports(&episode.url) {
+                if !episode.iframe {
+                    eprintln!(
+                        "примечание: API пометил серию как прямую ссылку, но хост требует \
+                         экстрактора — разрешаю через него"
+                    );
+                }
+                registry.resolve(&episode.url).await?
+            } else {
+                if episode.iframe {
+                    eprintln!(
+                        "внимание: это эмбед, но экстрактора для хоста нет — \
+                         ссылка отдана как есть и, скорее всего, не проиграется"
+                    );
+                }
+                ResolvedStream {
+                    variants: vec![StreamVariant {
+                        height: episode.quality.max(0) as u32,
+                        url: episode.url.clone(),
+                        kind: StreamKind::classify(None, &episode.url),
+                    }],
+                    ..Default::default()
+                }
+            };
+            print_stream(&stream, output, cli.json)?;
+        }
     }
 
     Ok(())
+}
+
+/// Walks dubbers → sources → episodes and returns the requested episode.
+async fn pick_episode(
+    client: &Client,
+    release_id: i64,
+    dubber: Option<i64>,
+    source: Option<i64>,
+    position: i32,
+) -> Result<anirust_api::Episode> {
+    let dubber_id = match dubber {
+        Some(id) => id,
+        None => {
+            let dubbers = client.dubbers(release_id).await?;
+            let first = dubbers.first().context("у релиза нет ни одной озвучки")?;
+            eprintln!("озвучка: {} ({})", first.name, first.id);
+            first.id
+        }
+    };
+
+    let source_id = match source {
+        Some(id) => id,
+        None => {
+            let sources = client.sources(release_id, dubber_id).await?;
+            let first = sources
+                .first()
+                .context("у озвучки нет ни одного источника")?;
+            eprintln!("источник: {} ({})", first.name, first.id);
+            first.id
+        }
+    };
+
+    let episodes = client
+        .episodes(release_id, dubber_id, source_id, EpisodeSort::Ascending)
+        .await?;
+
+    episodes
+        .into_iter()
+        .find(|e| e.position == position)
+        .with_context(|| format!("серии {position} нет у этого источника"))
+}
+
+fn print_stream(stream: &ResolvedStream, output: &StreamOutput, json: bool) -> Result<()> {
+    let best = stream
+        .best()
+        .context("не удалось получить ни одного потока")?;
+
+    if output.best {
+        println!("{}", best.url);
+        return Ok(());
+    }
+
+    if output.mpv {
+        let mut parts = vec!["mpv".to_owned()];
+        parts.extend(stream.mpv_args().iter().map(|a| shell_quote(a)));
+        parts.push(shell_quote(&best.url));
+        println!("{}", parts.join(" "));
+        return Ok(());
+    }
+
+    if json {
+        return print_json(&serde_json::json!({
+            "variants": stream.variants.iter().map(|v| serde_json::json!({
+                "height": v.height,
+                "url": v.url,
+                "kind": format!("{:?}", v.kind),
+            })).collect::<Vec<_>>(),
+            "headers": stream.headers,
+        }));
+    }
+
+    for v in &stream.variants {
+        // A height of zero means the host did not advertise a resolution.
+        let quality = if v.height == anirust_extract::UNKNOWN_HEIGHT {
+            "?".to_owned()
+        } else {
+            format!("{}p", v.height)
+        };
+        println!("{:>6}  {:<12} {}", quality, format!("{:?}", v.kind), v.url);
+    }
+    if let Some(op) = stream.opening {
+        eprintln!(
+            "опенинг: {}–{} с ({} с)",
+            op.start,
+            op.end,
+            op.duration_secs()
+        );
+    }
+    if !stream.headers.is_empty() {
+        eprintln!("заголовки (обязательны для плеера):");
+        for (name, value) in &stream.headers {
+            eprintln!("  {name}: {value}");
+        }
+    }
+    Ok(())
+}
+
+/// Single-quotes a value for a POSIX shell, so the printed mpv command can be
+/// pasted as-is.
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
 }
 
 /// Walks dubbers → sources → episodes and tallies how many episodes are direct
