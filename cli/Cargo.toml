@@ -14,11 +14,13 @@ path = "src/main.rs"
 
 [dependencies]
 anirust-api.workspace = true
+anirust-extract.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, features = ["derive"] }
 rpassword = "7.5"
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+reqwest.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
