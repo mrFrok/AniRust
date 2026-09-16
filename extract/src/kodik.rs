@@ -116,33 +116,33 @@ impl Extractor for KodikExtractor {
             url: embed_url.clone(),
         })?;
 
-        let page = self
-            .http
-            .get(&embed_url)
-            .header(reqwest::header::USER_AGENT, DEFAULT_USER_AGENT)
-            .header(reqwest::header::REFERER, &origin)
-            .send()
-            .await?
-            .error_for_status()?
-            .text()
-            .await?;
+        // Through the retrying helper: embed hosts answer 500 under load and
+        // recover a moment later. See `crate::http`.
+        let page = crate::http::send_with_retry(
+            self.http
+                .get(&embed_url)
+                .header(reqwest::header::USER_AGENT, DEFAULT_USER_AGENT)
+                .header(reqwest::header::REFERER, &origin),
+        )
+        .await?
+        .text()
+        .await?;
 
         let params = parse_embed_params(&page, &parsed)?;
         tracing::debug!(id = %params.id, media_type = %params.media_type, "kodik params parsed");
 
         let ftor_url = parsed.join(FTOR_PATH)?;
-        let response: FtorResponse = self
-            .http
-            .post(ftor_url)
-            .header(reqwest::header::USER_AGENT, DEFAULT_USER_AGENT)
-            .header(reqwest::header::REFERER, &embed_url)
-            .header("X-Requested-With", "XMLHttpRequest")
-            .form(&params.into_form())
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
+        let response: FtorResponse = crate::http::send_with_retry(
+            self.http
+                .post(ftor_url)
+                .header(reqwest::header::USER_AGENT, DEFAULT_USER_AGENT)
+                .header(reqwest::header::REFERER, &embed_url)
+                .header("X-Requested-With", "XMLHttpRequest")
+                .form(&params.into_form()),
+        )
+        .await?
+        .json()
+        .await?;
 
         let variants = decode_links(&response);
         if variants.is_empty() {

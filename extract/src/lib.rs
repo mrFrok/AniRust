@@ -30,6 +30,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 pub mod anilibria;
+pub mod http;
 pub mod kodik;
 pub mod rotate;
 pub mod sibnet;

@@ -93,16 +93,17 @@ impl Extractor for AniLibriaExtractor {
             url: embed_url.clone(),
         })?;
 
-        let page = self
-            .http
-            .get(&embed_url)
-            .header(reqwest::header::USER_AGENT, DEFAULT_USER_AGENT)
-            .header(reqwest::header::REFERER, &origin)
-            .send()
-            .await?
-            .error_for_status()?
-            .text()
-            .await?;
+        // Through the retrying helper: embed hosts answer 500 under load and
+        // recover a moment later. See `crate::http`.
+        let page = crate::http::send_with_retry(
+            self.http
+                .get(&embed_url)
+                .header(reqwest::header::USER_AGENT, DEFAULT_USER_AGENT)
+                .header(reqwest::header::REFERER, &origin),
+        )
+        .await?
+        .text()
+        .await?;
 
         let entries = parse_playlist(&page)?;
         let episode = episode_of(&parsed);

@@ -42,6 +42,35 @@ pub use shaders::UpscalePreset;
 /// and reads like a broken extractor.
 pub const DEFAULT_NETWORK_TIMEOUT_SECS: u32 = 60;
 
+/// Hardware decoders to try, in order.
+///
+/// Deliberately not `auto-safe`. On NVIDIA that reaches VAAPI through the
+/// `nvidia-vaapi-driver` shim, whose interop with the render API produced torn
+/// bands across the picture on an RTX 4070 Ti SUPER; `nvdec` is NVIDIA's own
+/// path and renders cleanly. mpv skips entries the machine does not have, so
+/// listing `nvdec` first costs nothing on AMD or Intel, where `vaapi` is the
+/// right answer and comes next.
+pub const DEFAULT_HWDEC: &str = "nvdec,vaapi,vulkan";
+
+/// Pixel format for mpv's intermediate framebuffers.
+///
+/// mpv would choose `rgba16f`, and left to itself it renders a band of
+/// corrupted scanlines across every frame when it is drawing into a caller's
+/// framebuffer through the render API. It was reproduced on an RTX 4070 Ti
+/// SUPER against an OpenGL **ES** 3.2 context, and confirmed by capturing the
+/// texture straight after mpv wrote it: the band is in mpv's output, not in
+/// the stream (ffmpeg decodes the same stream cleanly) and not in how the
+/// picture is later sampled.
+///
+/// The cause is the float path: GLES only allows rendering into
+/// floating-point framebuffers when `EXT_color_buffer_float` is present, and
+/// that condition is evidently not met in a context mpv did not create itself.
+///
+/// `rgba16` is the fix rather than `rgba8` because both render correctly and
+/// 16 bits per channel keeps the headroom mpv's multi-pass processing wants,
+/// so no banding is traded away for the repair.
+pub const DEFAULT_FBO_FORMAT: &str = "rgba16";
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("mpv: {0}")]
@@ -79,9 +108,11 @@ impl VideoOutput {
 #[derive(Debug, Clone)]
 pub struct PlayerConfig {
     pub video_output: VideoOutput,
-    /// Hardware decoding. `auto-safe` keeps mpv from picking a backend known
-    /// to misbehave.
-    pub hardware_decoding: bool,
+    /// mpv's `hwdec` value, or `"no"` to decode in software.
+    ///
+    /// See [`DEFAULT_HWDEC`] for why this is a priority list rather than
+    /// `auto-safe`.
+    pub hwdec: std::borrow::Cow<'static, str>,
     /// Smooths judder when the content's frame rate does not divide into the
     /// display's. This is temporal resampling, not motion interpolation: it
     /// does not invent frames.
@@ -93,18 +124,51 @@ pub struct PlayerConfig {
     /// Directory holding the Anime4K shaders. Required by every preset other
     /// than [`UpscalePreset::Off`].
     pub shader_dir: Option<std::path::PathBuf>,
+    /// Let the decoder write frames straight into GPU-mapped buffers.
+    ///
+    /// mpv calls this direct rendering. It saves a copy, but it relies on the
+    /// GL context behaving as mpv expects, and inside a foreign context —
+    /// one owned by a UI toolkit — the synchronisation can break, leaving
+    /// bands of stale pixels in otherwise correct frames.
+    pub direct_rendering: bool,
+    /// Bit depth mpv should dither its output to, or `None` to let it decide.
+    ///
+    /// mpv renders internally at 16-bit float and dithers down to the target.
+    /// Through the render API it cannot see the real target depth, so its
+    /// automatic choice is a guess.
+    pub dither_depth: Option<u8>,
+    /// Pixel format for mpv's own intermediate framebuffers.
+    ///
+    /// See [`DEFAULT_FBO_FORMAT`] for why this is set rather than left alone.
+    pub fbo_format: Option<std::borrow::Cow<'static, str>>,
+    /// Bypass almost all of mpv's processing chain.
+    ///
+    /// A diagnostic, not a feature: it disables scaling, dithering and colour
+    /// management, so a defect that survives it is not coming from those.
+    pub dumb_mode: bool,
+    /// Let mpv write its own diagnostics to stderr.
+    ///
+    /// Off by default: mpv's log belongs in the host application's log, not
+    /// scribbled over its stdout. Worth turning on when playback misbehaves,
+    /// because mpv explains stalls far better than any property poll can.
+    pub verbose_log: bool,
 }
 
 impl Default for PlayerConfig {
     fn default() -> Self {
         Self {
             video_output: VideoOutput::default(),
-            hardware_decoding: true,
+            hwdec: std::borrow::Cow::Borrowed(DEFAULT_HWDEC),
             interpolation: false,
             upscale: UpscalePreset::Off,
             network_timeout_secs: DEFAULT_NETWORK_TIMEOUT_SECS,
             cache_secs: 30,
             shader_dir: None,
+            fbo_format: Some(std::borrow::Cow::Borrowed(DEFAULT_FBO_FORMAT)),
+            dumb_mode: false,
+            direct_rendering: true,
+            dither_depth: None,
+            verbose_log: false,
         }
     }
 }
@@ -176,19 +240,24 @@ impl Player {
         // initializer; the rest are properties and can change later.
         let mpv = Mpv::with_initializer(|init| {
             init.set_property("vo", config.video_output.mpv_value())?;
-            init.set_property(
-                "hwdec",
-                if config.hardware_decoding {
-                    "auto-safe"
-                } else {
-                    "no"
-                },
-            )?;
+            init.set_property("hwdec", config.hwdec.as_ref())?;
             // Terminal output belongs to the host application's log, not to
             // mpv's own stdout scribbling.
-            init.set_property("terminal", false)?;
+            init.set_property("terminal", config.verbose_log)?;
+            if config.verbose_log {
+                init.set_property("msg-level", "all=v")?;
+            }
             init.set_property("osc", false)?;
             init.set_property("input-default-bindings", false)?;
+            // Every URL reaching mpv has already been resolved by the
+            // extractors, so mpv's youtube-dl hook has nothing to add. Leaving
+            // it on spawns a subprocess and waits on its timeouts before
+            // playback can even start.
+            init.set_property("ytdl", false)?;
+            // Likewise the config-file driven profile hooks: this is a library
+            // embedded in an application, not a user's mpv install.
+            init.set_property("config", false)?;
+            init.set_property("load-scripts", false)?;
             Ok(())
         })?;
 
@@ -206,6 +275,22 @@ impl Player {
         // happens next rather than mpv shutting itself down.
         player.mpv.set_property("keep-open", "yes")?;
         player.mpv.set_property("idle", "yes")?;
+
+        if let Some(format) = &config.fbo_format {
+            player.mpv.set_property("fbo-format", format.as_ref())?;
+        }
+        if config.dumb_mode {
+            player.mpv.set_property("gpu-dumb-mode", true)?;
+        }
+        if !config.direct_rendering {
+            player.mpv.set_property("vd-lavc-dr", false)?;
+        }
+        // Only when asked. mpv's own default is not to dither, and its "auto"
+        // guesses the target's bit depth - which it cannot actually see when
+        // rendering through the render API into a caller's framebuffer.
+        if let Some(depth) = config.dither_depth {
+            player.mpv.set_property("dither-depth", i64::from(depth))?;
+        }
 
         player.set_interpolation(config.interpolation)?;
         player.set_upscale(config.upscale)?;
@@ -425,6 +510,18 @@ impl Player {
         (width > 0 && height > 0).then_some((width as u32, height as u32))
     }
 
+    /// The hardware decoder mpv actually engaged, if any.
+    ///
+    /// `hwdec` is a request; this is the answer. Worth logging, because a
+    /// request that silently fell back to software looks identical from the
+    /// outside until the picture misbehaves.
+    pub fn active_hwdec(&self) -> Option<String> {
+        self.mpv
+            .get_property::<String>("hwdec-current")
+            .ok()
+            .filter(|value| !value.is_empty() && value != "no")
+    }
+
     /// Whether a file is loaded and decoding.
     pub fn is_playing(&self) -> bool {
         self.mpv
@@ -463,7 +560,7 @@ mod tests {
     #[test]
     fn defaults_are_conservative() {
         let config = PlayerConfig::default();
-        assert!(config.hardware_decoding);
+        assert_eq!(config.hwdec, DEFAULT_HWDEC);
         // Interpolation costs GPU time and is a matter of taste, so it is
         // opt-in rather than on by default.
         assert!(!config.interpolation);

@@ -1,7 +1,7 @@
 [workspace]
 # Crates are added as their phase lands, so the workspace never carries an
 # empty package: extract (phase 2), player (phase 3), core + gui (phase 4).
-members = ["api", "extract", "player", "cli"]
+members = ["api", "extract", "player", "cli", "gui"]
 resolver = "3"
 
 [workspace.package]

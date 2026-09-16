@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Minimal surface for proving the video path. The design system and the real
+// screens land on top of this once the picture is confirmed to arrive.
+
+export component MainWindow inherits Window {
+    title: "AniRust";
+    preferred-width: 1280px;
+    preferred-height: 720px;
+    min-width: 640px;
+    min-height: 360px;
+    background: #101014;
+
+    // Written from Rust on every frame mpv reports as new.
+    in property <image> video-frame;
+    in property <string> status: "";
+    in property <bool> has-video: false;
+
+    callback toggle-pause();
+    callback seek(float);
+
+    VerticalLayout {
+        Rectangle {
+            vertical-stretch: 1;
+            background: #000000;
+
+            Image {
+                source: root.video-frame;
+                // Letterbox rather than crop: cutting off frames of a video is
+                // never the friendly default.
+                image-fit: contain;
+                width: 100%;
+                height: 100%;
+                visible: root.has-video;
+            }
+
+            Text {
+                text: root.status;
+                color: #9aa0a6;
+                font-size: 14px;
+                visible: !root.has-video;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            TouchArea {
+                clicked => { root.toggle-pause(); }
+            }
+        }
+
+        Rectangle {
+            height: 28px;
+            background: #17171d;
+
+            Text {
+                text: root.status;
+                color: #9aa0a6;
+                font-size: 12px;
+                x: 12px;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    forward-focus: key-handler;
+    key-handler := FocusScope {
+        key-pressed(event) => {
+            if (event.text == " ") { root.toggle-pause(); return accept; }
+            if (event.text == Key.LeftArrow) { root.seek(-5); return accept; }
+            if (event.text == Key.RightArrow) { root.seek(5); return accept; }
+            reject
+        }
+    }
+}

@@ -97,9 +97,11 @@ impl<'player> Renderer<'player> {
                 get_proc_address,
                 ctx: gl_context,
             }),
-            // Lets mpv time frames against the display instead of drawing
-            // whenever asked, which is what makes interpolation meaningful.
-            RenderParam::AdvancedControl(true),
+            // Lets mpv time frames against the display rather than drawing
+            // whenever asked, which is what keeps playback smooth. It requires
+            // the client to keep asking for frames: a UI that only repaints
+            // when told will stall, so the caller must drive a repaint loop of
+            // its own. See the timer in the GUI's video bridge.
         ])?;
 
         Ok(Self { context })
@@ -115,10 +117,8 @@ impl<'player> Renderer<'player> {
             return Ok(());
         }
 
-        // FlipY is a render parameter rather than an argument, so it is set
-        // per frame alongside the framebuffer it applies to.
-        self.context
-            .set_parameter::<()>(RenderParam::FlipY(target.flip_y))?;
+        // The flip is an argument to render, not a context parameter:
+        // set_parameter rejects it, which surfaces as every frame failing.
         self.context.render::<()>(
             target.fbo,
             i32::try_from(target.width).unwrap_or(i32::MAX),

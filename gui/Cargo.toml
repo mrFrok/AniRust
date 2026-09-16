@@ -1,0 +1,41 @@
+[package]
+name = "anirust-gui"
+description = "AniRust desktop application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "anirust"
+path = "src/main.rs"
+
+[dependencies]
+anirust-api.workspace = true
+anirust-extract.workspace = true
+anirust-player.workspace = true
+anyhow.workspace = true
+reqwest.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# renderer-femtovg is OpenGL-backed, which is what makes mpv's render API
+# usable: frames land in a GL texture Slint can borrow without a CPU copy.
+# renderer-software is compiled in as a runtime fallback for machines with no
+# usable GL, matching the approach in the author's other Slint project.
+glow = "0.18"
+libloading = "0.9"
+slint = { version = "1.17", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "backend-winit",
+    "renderer-femtovg",
+    "renderer-software",
+    "accessibility",
+] }
+
+[build-dependencies]
+slint-build = "1.17"

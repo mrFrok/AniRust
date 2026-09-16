@@ -1,0 +1,701 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Getting mpv's output onto a Slint surface without copying frames.
+//!
+//! The two halves meet at an OpenGL texture. We allocate a texture and a
+//! framebuffer, mpv renders into that framebuffer, and Slint borrows the same
+//! texture as an [`slint::Image`]. No pixels travel through the CPU, which is
+//! what keeps 1080p affordable.
+//!
+//! Slint's own ffmpeg example takes the other route — decode, convert to RGB,
+//! copy into a `SharedPixelBuffer`. That is simpler and portable, but it pays
+//! a colour conversion and a full-frame copy per frame, and it gives up
+//! hardware decoding. Since mpv already renders on the GPU, borrowing its
+//! output is both faster and less code.
+//!
+//! # Ordering
+//!
+//! Everything here runs on the UI thread inside Slint's rendering notifier,
+//! where the GL context is current:
+//!
+//! * `RenderingSetup` — load GL, build the surface, create mpv's renderer;
+//! * `BeforeRendering` — if mpv has a new frame, draw it into our framebuffer
+//!   and hand the texture to the UI;
+//! * `RenderingTeardown` — drop everything while the context is still alive.
+//!
+//! mpv's "new frame" callback fires on an mpv thread and may only wake the UI
+//! thread; it must never touch GL or call back into mpv.
+
+use std::cell::RefCell;
+use std::num::NonZeroU32;
+use std::rc::Rc;
+
+use anyhow::{Context, Result, anyhow};
+use glow::HasContext;
+use slint::{ComponentHandle, GraphicsAPI, Image, RenderingState};
+
+use anirust_player::{MediaSource, Player, Renderer, render::Target};
+
+/// Frame at which `ANIRUST_DUMP` captures the texture.
+///
+/// Late enough that decoding has settled, early enough not to wait around.
+const DUMP_AT_FRAME: u64 = 60;
+
+/// A second capture, to tell a defect fixed to the texture from one that
+/// drifts with the picture.
+const DUMP_AT_FRAME_LATE: u64 = 300;
+
+/// How often the UI is asked to repaint while something is playing.
+///
+/// mpv's update callback alone is not enough to get started: the window
+/// repaints only when asked, the callback fires only once mpv has a frame, and
+/// mpv produces frames only once it is being rendered. That is a standstill, so
+/// a timer drives the loop and the callback merely makes it more responsive.
+/// Roughly 60Hz, which is what a video player is for.
+const REPAINT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
+
+/// A texture plus the framebuffer that draws into it.
+///
+/// Recreated whenever the video size changes; mpv is told to render at exactly
+/// this size, so the texture is always the frame's own resolution rather than
+/// the widget's.
+struct Surface {
+    gl: Rc<glow::Context>,
+    texture: glow::Texture,
+    framebuffer: glow::Framebuffer,
+    width: u32,
+    height: u32,
+}
+
+impl Surface {
+    fn new(gl: Rc<glow::Context>, width: u32, height: u32) -> Result<Self> {
+        // SAFETY: called from the rendering notifier, so the GL context this
+        // `glow::Context` was loaded from is current on this thread.
+        unsafe {
+            let texture = gl
+                .create_texture()
+                .map_err(|e| anyhow!("creating the video texture: {e}"))?;
+            gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+            // The internal format must be *sized* (RGBA8, not RGBA). Slint
+            // gives us an OpenGL ES context, and ES only guarantees sized
+            // formats are colour-renderable; an unsized RGBA still passes the
+            // completeness check but leaves the driver free to do as it likes
+            // when rendering into it, which showed up as torn bands.
+            // The upload format stays GL_RGBA/UNSIGNED_BYTE, which is what
+            // Slint expects to sample.
+            gl.tex_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                glow::RGBA8 as i32,
+                width as i32,
+                height as i32,
+                0,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelUnpackData::Slice(None),
+            );
+            // Linear filtering, and clamping so the edges never sample across
+            // the texture when the image is scaled.
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MIN_FILTER,
+                glow::LINEAR as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MAG_FILTER,
+                glow::LINEAR as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_WRAP_S,
+                glow::CLAMP_TO_EDGE as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_WRAP_T,
+                glow::CLAMP_TO_EDGE as i32,
+            );
+
+            let framebuffer = gl
+                .create_framebuffer()
+                .map_err(|e| anyhow!("creating the video framebuffer: {e}"))?;
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(framebuffer));
+            gl.framebuffer_texture_2d(
+                glow::FRAMEBUFFER,
+                glow::COLOR_ATTACHMENT0,
+                glow::TEXTURE_2D,
+                Some(texture),
+                0,
+            );
+
+            let status = gl.check_framebuffer_status(glow::FRAMEBUFFER);
+            if status != glow::FRAMEBUFFER_COMPLETE {
+                return Err(anyhow!(
+                    "video framebuffer is incomplete (status {status:#x})"
+                ));
+            }
+
+            // Leave the driver where we found it: Slint draws into the default
+            // framebuffer right after this.
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            gl.bind_texture(glow::TEXTURE_2D, None);
+
+            Ok(Self {
+                gl,
+                texture,
+                framebuffer,
+                width,
+                height,
+            })
+        }
+    }
+
+    /// Framebuffer id in the form mpv's render API expects.
+    fn fbo_id(&self) -> i32 {
+        // glow's newtype wraps the raw name GL itself uses.
+        self.framebuffer.0.get() as i32
+    }
+
+    /// Borrows the texture as a Slint image.
+    ///
+    /// Exactly one vertical flip may happen between mpv and the screen. mpv is
+    /// asked not to flip (`flip_y(false)`), and what lands in the texture is
+    /// already row-zero-at-top, so Slint is told `TopLeft` and does not flip
+    /// either. Declaring `BottomLeft` here was the second flip, and the
+    /// picture came out upside down.
+    fn as_image(&self) -> Option<Image> {
+        let id = NonZeroU32::new(self.texture.0.get())?;
+
+        // SAFETY: the texture was created by the GL context that is current
+        // during the rendering notifier, which is the context Slint renders
+        // with, and it outlives the image because `Surface` is dropped only in
+        // `RenderingTeardown`.
+        let builder = unsafe {
+            slint::BorrowedOpenGLTextureBuilder::new_gl_2d_rgba_texture(
+                id,
+                (self.width, self.height).into(),
+            )
+        };
+        Some(
+            builder
+                .origin(slint::BorrowedOpenGLTextureOrigin::TopLeft)
+                .build(),
+        )
+    }
+}
+
+impl Drop for Surface {
+    fn drop(&mut self) {
+        // SAFETY: teardown runs with the context still current.
+        unsafe {
+            self.gl.delete_framebuffer(self.framebuffer);
+            self.gl.delete_texture(self.texture);
+        }
+    }
+}
+
+/// How many textures to rotate through.
+///
+/// Overwriting a texture the renderer may still be reading is a real hazard:
+/// drawing is batched and the GPU trails the CPU, so a texture handed over can
+/// still be in flight a frame or two later. Three gives the pipeline room, at
+/// the cost of one extra 1280x720 texture - a few megabytes.
+///
+/// This is insurance, not a fix for anything observed: the banding that
+/// prompted the investigation came from mpv's own float framebuffers, and no
+/// amount of buffering or synchronisation on this side changed it.
+const SURFACE_COUNT: usize = 3;
+
+/// Textures rendered into in rotation, so nothing is overwritten while the
+/// renderer may still be reading it.
+struct Surfaces {
+    surfaces: Vec<Surface>,
+    /// Index of the surface the next frame renders into.
+    next: usize,
+}
+
+impl Surfaces {
+    fn new(gl: &Rc<glow::Context>, width: u32, height: u32) -> Result<Self> {
+        let surfaces = (0..SURFACE_COUNT)
+            .map(|_| Surface::new(Rc::clone(gl), width, height))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self { surfaces, next: 0 })
+    }
+
+    fn matches(&self, width: u32, height: u32) -> bool {
+        let surface = &self.surfaces[0];
+        surface.width == width && surface.height == height
+    }
+
+    /// The surface the next frame should be rendered into.
+    fn target(&self) -> &Surface {
+        &self.surfaces[self.next]
+    }
+
+    /// Marks the current target as presented and moves to the next one.
+    fn advance(&mut self) {
+        self.next = (self.next + 1) % self.surfaces.len();
+    }
+}
+
+/// Everything that only exists while there is a live GL context.
+struct Live {
+    gl: Rc<glow::Context>,
+    renderer: Renderer<'static>,
+    surfaces: Option<Surfaces>,
+    /// Counts frames that actually reached the UI, so the texture path can be
+    /// confirmed from a log rather than by squinting at a window.
+    frames_drawn: u64,
+    /// Counts how often the UI asked for a frame, which distinguishes "nothing
+    /// is repainting" from "repainting but mpv has nothing".
+    draw_calls: u64,
+}
+
+/// Bridges a [`Player`] to a Slint window.
+///
+/// The player is borrowed for `'static` because mpv's render context must not
+/// outlive it, and the renderer lives as long as the window does. One player
+/// per process is the shape of this application, so leaking one allocation at
+/// startup is a fair trade for not threading a lifetime through the whole UI.
+pub struct VideoBridge {
+    player: &'static Player,
+    live: Rc<RefCell<Option<Live>>>,
+    /// A source asked for before the render context existed.
+    pending: Rc<RefCell<Option<MediaSource>>>,
+}
+
+impl VideoBridge {
+    /// Takes ownership of the player and pins it for the process lifetime.
+    pub fn new(player: Player) -> Self {
+        Self {
+            player: Box::leak(Box::new(player)),
+            live: Rc::new(RefCell::new(None)),
+            pending: Rc::new(RefCell::new(None)),
+        }
+    }
+
+    /// Starts playing a source.
+    ///
+    /// Loading is deferred until a render context exists. With `vo=libmpv`
+    /// mpv cannot bring up its video output before then, and a file loaded too
+    /// early is abandoned rather than retried — which looks exactly like a
+    /// stream that never buffers.
+    pub fn play(&self, source: MediaSource) -> Result<()> {
+        if self.live.borrow().is_some() {
+            self.player.open(&source).context("opening the stream")?;
+        } else {
+            tracing::debug!("deferring playback until the render context exists");
+            *self.pending.borrow_mut() = Some(source);
+        }
+        Ok(())
+    }
+
+    pub fn player(&self) -> &'static Player {
+        self.player
+    }
+
+    /// Hooks the bridge into a window's render loop.
+    ///
+    /// `on_frame` receives the borrowed texture whenever a new frame was
+    /// drawn; the caller assigns it to whatever property the UI binds to.
+    pub fn attach<C>(&self, component: &C, on_frame: impl Fn(&C, Image) + 'static) -> Result<()>
+    where
+        C: ComponentHandle + 'static,
+    {
+        let player = self.player;
+        let live = Rc::clone(&self.live);
+        let pending = Rc::clone(&self.pending);
+        let weak = component.as_weak();
+        // Handed to mpv so it can wake the UI when a frame is ready. Cloned
+        // because the notifier closure needs its own.
+        let wake = component.as_weak();
+
+        component
+            .window()
+            .set_rendering_notifier(move |state, graphics_api| {
+                match state {
+                    RenderingState::RenderingSetup => {
+                        match setup(player, graphics_api) {
+                            Ok(mut new_live) => {
+                                tracing::info!("render context created");
+                                // Fires on an mpv thread: the only safe action
+                                // is to ask the UI thread to repaint. Touching
+                                // GL or mpv from here is forbidden.
+                                let wake = wake.clone();
+                                new_live.renderer.set_update_callback(move || {
+                                    let wake = wake.clone();
+                                    let _ = slint::invoke_from_event_loop(move || {
+                                        if let Some(component) = wake.upgrade() {
+                                            component.window().request_redraw();
+                                        }
+                                    });
+                                });
+                                *live.borrow_mut() = Some(new_live);
+
+                                // Now that mpv has somewhere to render, it can
+                                // be told what to play.
+                                if let Some(source) = pending.borrow_mut().take() {
+                                    match player.open(&source) {
+                                        Ok(()) => {
+                                            tracing::info!(url = %source.url, "playback started")
+                                        }
+                                        Err(error) => {
+                                            tracing::error!(%error, "could not open the stream");
+                                        }
+                                    }
+                                }
+                            }
+                            Err(error) => {
+                                // A failure here means no video, not a crash:
+                                // the rest of the UI stays usable and the log
+                                // says why.
+                                tracing::error!(%error, "could not set up video rendering");
+                            }
+                        }
+                    }
+
+                    RenderingState::BeforeRendering => {
+                        let Some(component) = weak.upgrade() else {
+                            return;
+                        };
+                        let mut guard = live.borrow_mut();
+                        let Some(live) = guard.as_mut() else {
+                            tracing::debug!("before-rendering with no render context yet");
+                            return;
+                        };
+
+                        match draw(player, live) {
+                            Ok(Some(image)) => {
+                                live.frames_drawn += 1;
+                                // Evidence that the texture path is alive, at
+                                // a cadence that does not flood a log.
+                                if live.frames_drawn % 120 == 1 {
+                                    tracing::info!(
+                                        frames = live.frames_drawn,
+                                        hwdec = ?player.active_hwdec(),
+                                        "video frames are reaching the UI"
+                                    );
+                                }
+                                on_frame(&component, image);
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                tracing::warn!(error = ?error, "video frame was not drawn")
+                            }
+                        }
+                    }
+
+                    RenderingState::AfterRendering => {
+                        if let Some(live) = live.borrow().as_ref() {
+                            // Frame pacing and interpolation depend on mpv
+                            // being told when a frame actually reached the
+                            // screen.
+                            live.renderer.report_swap();
+                        }
+                    }
+
+                    // Dropping here, rather than letting it happen whenever,
+                    // guarantees the GL objects are deleted while their
+                    // context is still current.
+                    RenderingState::RenderingTeardown => *live.borrow_mut() = None,
+
+                    _ => {}
+                }
+            })
+            .context(
+                "Slint rejected the rendering notifier; the renderer is probably not OpenGL",
+            )?;
+
+        self.drive_repaints(component);
+        Ok(())
+    }
+
+    /// Keeps the window repainting while something is playing.
+    ///
+    /// See [`REPAINT_INTERVAL`] for why a timer is needed at all. The timer is
+    /// kept alive for the window's lifetime; stopping it early would freeze
+    /// the picture rather than merely save a little work.
+    fn drive_repaints<C: ComponentHandle + 'static>(&self, component: &C) {
+        let player = self.player;
+        let weak = component.as_weak();
+
+        let timer = slint::Timer::default();
+        timer.start(slint::TimerMode::Repeated, REPAINT_INTERVAL, move || {
+            let Some(component) = weak.upgrade() else {
+                return;
+            };
+            // Idle means nothing is loaded; repainting then would burn the GPU
+            // for a static picture.
+            if player.is_playing() {
+                component.window().request_redraw();
+            }
+        });
+        std::mem::forget(timer);
+    }
+}
+
+fn setup(player: &'static Player, graphics_api: &GraphicsAPI<'_>) -> Result<Live> {
+    let GraphicsAPI::NativeOpenGL { get_proc_address } = graphics_api else {
+        return Err(anyhow!(
+            "video needs the OpenGL renderer; Slint is using a different one"
+        ));
+    };
+
+    // SAFETY: Slint calls this with its GL context current, and the loader it
+    // hands us resolves symbols from that context.
+    let gl =
+        Rc::new(unsafe { glow::Context::from_loader_function_cstr(|name| get_proc_address(name)) });
+
+    // mpv resolves GL entry points through the same loader. The pointer is
+    // stored in the render context, so it must not borrow anything local.
+    let renderer = player
+        .renderer(GlLoader::open()?, |loader, name| loader.resolve(name))
+        .context("creating mpv's render context")?;
+
+    Ok(Live {
+        gl,
+        renderer,
+        surfaces: None,
+        frames_drawn: 0,
+        draw_calls: 0,
+    })
+}
+
+/// Draws the current frame, returning the image to show when one was produced.
+fn draw(player: &Player, live: &mut Live) -> Result<Option<Image>> {
+    live.draw_calls += 1;
+
+    // Size is checked first on purpose: `needs_redraw` consumes mpv's frame
+    // flag, so bailing out after asking would throw the frame away and mpv
+    // would never offer it again. That shows up as stutter, not as an error.
+    let Some((width, height)) = player.video_size() else {
+        return Ok(None);
+    };
+    let size = Some((width, height));
+    let redraw = live.renderer.needs_redraw();
+
+    // One line a second is enough to tell a stalled pipeline from a working
+    // one without drowning the log.
+    if live.draw_calls % 60 == 1 {
+        tracing::info!(
+            draw_calls = live.draw_calls,
+            redraw,
+            ?size,
+            playing = player.is_playing(),
+            "draw tick"
+        );
+    }
+
+    if !redraw {
+        return Ok(None);
+    }
+
+    // Render at the frame's own resolution: scaling is the UI's job, and
+    // rendering at widget size would resample twice.
+    if live
+        .surfaces
+        .as_ref()
+        .is_none_or(|s| !s.matches(width, height))
+    {
+        tracing::debug!(width, height, "(re)creating the video surfaces");
+        live.surfaces = Some(Surfaces::new(&live.gl, width, height)?);
+    }
+
+    let surfaces = live.surfaces.as_ref().expect("just created");
+    let surface = surfaces.target();
+
+    // mpv documents that it restores OpenGL state to defaults *except* for the
+    // viewport and the scissor box. Slint draws the rest of the UI straight
+    // after this with whatever state it left behind, which shows up as torn or
+    // misplaced drawing. Saving and restoring around the call is the fix, and
+    // it is what Slint's own OpenGL example does too.
+    let saved = GlState::save(&live.gl);
+    let result = live
+        .renderer
+        .render(Target::new(surface.fbo_id(), width, height).flip_y(false))
+        .context("mpv failed to render a frame");
+    // Diagnostic: capture what mpv actually put in the texture, so a defect
+    // can be attributed to mpv's rendering or to how the UI samples it,
+    // instead of being guessed at from the window.
+    if matches!(live.frames_drawn, DUMP_AT_FRAME | DUMP_AT_FRAME_LATE)
+        && let Ok(path) = std::env::var("ANIRUST_DUMP")
+    {
+        dump_framebuffer(&live.gl, surface, &format!("{path}.{}", live.frames_drawn));
+    }
+
+    saved.restore(&live.gl);
+    result?;
+
+    let image = surface.as_image();
+    // The surface just drawn is now the one on screen; the next frame goes to
+    // the other one.
+    live.surfaces.as_mut().expect("just created").advance();
+    Ok(image)
+}
+
+/// The OpenGL state mpv is documented not to restore, plus the framebuffer
+/// binding it takes over.
+struct GlState {
+    viewport: [i32; 4],
+    scissor_box: [i32; 4],
+    scissor_enabled: bool,
+    draw_framebuffer: Option<glow::NativeFramebuffer>,
+}
+
+impl GlState {
+    fn save(gl: &glow::Context) -> Self {
+        let mut viewport = [0i32; 4];
+        let mut scissor_box = [0i32; 4];
+
+        // SAFETY: runs inside the rendering notifier, where the context these
+        // queries address is current.
+        unsafe {
+            gl.get_parameter_i32_slice(glow::VIEWPORT, &mut viewport);
+            gl.get_parameter_i32_slice(glow::SCISSOR_BOX, &mut scissor_box);
+            let scissor_enabled = gl.is_enabled(glow::SCISSOR_TEST);
+            let raw = gl.get_parameter_i32(glow::DRAW_FRAMEBUFFER_BINDING);
+            let draw_framebuffer = NonZeroU32::new(raw as u32).map(glow::NativeFramebuffer);
+
+            Self {
+                viewport,
+                scissor_box,
+                scissor_enabled,
+                draw_framebuffer,
+            }
+        }
+    }
+
+    fn restore(&self, gl: &glow::Context) {
+        // SAFETY: same context, same thread, immediately after `save`.
+        unsafe {
+            gl.bind_framebuffer(glow::FRAMEBUFFER, self.draw_framebuffer);
+            gl.viewport(
+                self.viewport[0],
+                self.viewport[1],
+                self.viewport[2],
+                self.viewport[3],
+            );
+            gl.scissor(
+                self.scissor_box[0],
+                self.scissor_box[1],
+                self.scissor_box[2],
+                self.scissor_box[3],
+            );
+            if self.scissor_enabled {
+                gl.enable(glow::SCISSOR_TEST);
+            } else {
+                gl.disable(glow::SCISSOR_TEST);
+            }
+        }
+    }
+}
+
+/// Writes the framebuffer's pixels to a file as raw RGBA.
+///
+/// Raw rather than an image format on purpose: this is a diagnostic, and
+/// pulling in an encoder to debug a texture would be a poor trade. `ffmpeg`
+/// turns it into something viewable.
+fn dump_framebuffer(gl: &glow::Context, surface: &Surface, path: &str) {
+    let (width, height) = (surface.width, surface.height);
+    let mut pixels = vec![0u8; (width as usize) * (height as usize) * 4];
+
+    // SAFETY: the context is current, and the buffer is sized for the format
+    // and dimensions being requested.
+    unsafe {
+        gl.bind_framebuffer(glow::FRAMEBUFFER, Some(surface.framebuffer));
+        gl.read_pixels(
+            0,
+            0,
+            width as i32,
+            height as i32,
+            glow::RGBA,
+            glow::UNSIGNED_BYTE,
+            glow::PixelPackData::Slice(Some(&mut pixels)),
+        );
+        gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+    }
+
+    match std::fs::write(path, &pixels) {
+        Ok(()) => tracing::info!(path, width, height, "framebuffer captured"),
+        Err(error) => tracing::warn!(%error, path, "could not write the capture"),
+    }
+}
+
+/// Resolves GL entry points for mpv.
+///
+/// mpv wants a plain `fn` pointer plus a context value that outlives the
+/// render context, while Slint's loader is a borrowed closure valid only
+/// inside the notifier callback. So rather than smuggling Slint's loader out,
+/// this opens the platform's own GL loader once and calls that.
+///
+/// It has to be the platform loader — `dlsym` against the process image finds
+/// only exported symbols, and GL *extension* entry points are not exported.
+/// Those are exactly what mpv resolves, so a naive lookup returns null on some
+/// drivers. mpv's own header recommends this approach: "you can simply call
+/// the GL context APIs from this callback (e.g. glXGetProcAddressARB or
+/// wglGetProcAddress)".
+pub struct GlLoader {
+    _library: libloading::Library,
+    get_proc_address: unsafe extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_void,
+}
+
+impl GlLoader {
+    /// Libraries to try, in order, with the symbol each exposes.
+    ///
+    /// EGL comes first because Slint's winit backend prefers it on Linux, and
+    /// it is the only option under Wayland. GLX is the X11 fallback.
+    const CANDIDATES: &'static [(&'static str, &'static [u8])] = &[
+        ("libEGL.so.1", b"eglGetProcAddress\0"),
+        ("libGLX.so.0", b"glXGetProcAddressARB\0"),
+        ("libGL.so.1", b"glXGetProcAddressARB\0"),
+    ];
+
+    fn open() -> Result<Self> {
+        let mut attempts = Vec::new();
+
+        for &(library, symbol) in Self::CANDIDATES {
+            // SAFETY: loading a system GL library by its canonical soname.
+            // Opening a library runs its initialisers, which is expected here
+            // — the process has already loaded GL by the time Slint renders.
+            match unsafe { libloading::Library::new(library) } {
+                Ok(lib) => {
+                    // SAFETY: the symbol's signature is fixed by the EGL and
+                    // GLX specifications, and both spell it identically.
+                    let found = unsafe {
+                        lib.get::<unsafe extern "C" fn(
+                            *const std::ffi::c_char,
+                        ) -> *mut std::ffi::c_void>(symbol)
+                    };
+                    match found {
+                        Ok(symbol) => {
+                            // SAFETY: the pointer stays valid as long as the
+                            // library, which is kept alive in the same struct.
+                            let get_proc_address = unsafe { *symbol.into_raw() };
+                            return Ok(Self {
+                                _library: lib,
+                                get_proc_address,
+                            });
+                        }
+                        Err(error) => attempts.push(format!("{library}: {error}")),
+                    }
+                }
+                Err(error) => attempts.push(format!("{library}: {error}")),
+            }
+        }
+
+        Err(anyhow!(
+            "no OpenGL loader available; tried {}",
+            attempts.join(", ")
+        ))
+    }
+
+    fn resolve(&self, name: &str) -> *mut std::ffi::c_void {
+        let Ok(symbol) = std::ffi::CString::new(name) else {
+            return std::ptr::null_mut();
+        };
+        // SAFETY: `symbol` is a valid NUL-terminated string, and the function
+        // pointer came from a library this struct keeps loaded.
+        unsafe { (self.get_proc_address)(symbol.as_ptr()) }
+    }
+}
