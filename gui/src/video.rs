@@ -29,6 +29,7 @@
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, anyhow};
 use glow::HasContext;
@@ -36,14 +37,15 @@ use slint::{ComponentHandle, GraphicsAPI, Image, RenderingState};
 
 use anirust_player::{MediaSource, Player, Renderer, render::Target};
 
-/// Frame at which `ANIRUST_DUMP` captures the texture.
+/// Frames at which `ANIRUST_DUMP` captures the texture.
 ///
-/// Late enough that decoding has settled, early enough not to wait around.
-const DUMP_AT_FRAME: u64 = 60;
-
-/// A second capture, to tell a defect fixed to the texture from one that
-/// drifts with the picture.
-const DUMP_AT_FRAME_LATE: u64 = 300;
+/// The first is late enough that decoding has settled; the second tells a
+/// defect fixed to the texture from one that drifts with the picture.
+///
+/// Debug builds only. This writes several megabytes to a path taken from the
+/// environment, which has no business being reachable in a release binary.
+#[cfg(debug_assertions)]
+const DUMP_AT_FRAMES: [u64; 2] = [60, 300];
 
 /// How often the repaint loop is nudged back into motion.
 ///
@@ -59,9 +61,8 @@ const REPAINT_KICK_INTERVAL: std::time::Duration = std::time::Duration::from_mil
 
 /// A texture plus the framebuffer that draws into it.
 ///
-/// Recreated whenever the video size changes; mpv is told to render at exactly
-/// this size, so the texture is always the frame's own resolution rather than
-/// the widget's.
+/// Sized to the *render* resolution, which is the window's size rather than
+/// the source's — see [`target_size`]. Recreated whenever that changes.
 struct Surface {
     gl: Rc<glow::Context>,
     texture: glow::Texture,
@@ -210,23 +211,36 @@ impl Drop for Surface {
 /// amount of buffering or synchronisation on this side changed it.
 const SURFACE_COUNT: usize = 3;
 
+// `Surfaces::new` writes out this many constructor calls by hand; a mismatch
+// is caught here rather than at the far end of a confusing type error.
+const _: () = assert!(SURFACE_COUNT == 3, "Surfaces::new builds three surfaces");
+
 /// Textures rendered into in rotation, so nothing is overwritten while the
 /// renderer may still be reading it.
 struct Surfaces {
-    surfaces: Vec<Surface>,
+    /// An array rather than a `Vec`: the count is fixed, and a type that
+    /// cannot be empty removes the unchecked index below.
+    surfaces: [Surface; SURFACE_COUNT],
     /// Index of the surface the next frame renders into.
     next: usize,
 }
 
 impl Surfaces {
     fn new(gl: &Rc<glow::Context>, width: u32, height: u32) -> Result<Self> {
-        let surfaces = (0..SURFACE_COUNT)
-            .map(|_| Surface::new(Rc::clone(gl), width, height))
-            .collect::<Result<Vec<_>>>()?;
+        // `array::try_map` is still unstable, so the array is built
+        // explicitly. Written out rather than collected from an iterator
+        // because that would hand back a `Vec` and lose the very invariant
+        // this type exists to state.
+        let surfaces = [
+            Surface::new(Rc::clone(gl), width, height)?,
+            Surface::new(Rc::clone(gl), width, height)?,
+            Surface::new(Rc::clone(gl), width, height)?,
+        ];
         Ok(Self { surfaces, next: 0 })
     }
 
     fn matches(&self, width: u32, height: u32) -> bool {
+        // Every surface in the set is created at the same size.
         let surface = &self.surfaces[0];
         surface.width == width && surface.height == height
     }
@@ -258,9 +272,13 @@ struct Live {
 /// Bridges a [`Player`] to a Slint window.
 ///
 /// The player is borrowed for `'static` because mpv's render context must not
-/// outlive it, and the renderer lives as long as the window does. One player
-/// per process is the shape of this application, so leaking one allocation at
-/// startup is a fair trade for not threading a lifetime through the whole UI.
+/// outlive it, and the renderer lives as long as the window does. Leaking one
+/// allocation at startup buys that without threading a lifetime through the
+/// whole UI — but only because there is exactly one player per process.
+///
+/// That constraint is enforced rather than assumed: a second bridge would leak
+/// a second mpv instance, with its own threads and GPU context, and nothing in
+/// the types would have stopped it once more screens exist.
 pub struct VideoBridge {
     player: &'static Player,
     live: Rc<RefCell<Option<Live>>>,
@@ -272,17 +290,42 @@ pub struct VideoBridge {
     /// window's size, and the interface should be able to say so rather than
     /// quietly reporting the input resolution.
     rendered: Rc<Cell<(u32, u32)>>,
+    /// Whether the picture is advancing, sampled off the render loop.
+    ///
+    /// Asking mpv on every frame costs a property query — and a lock inside
+    /// mpv — at display rate. Since this only decides whether to schedule the
+    /// next repaint, a reading a few hundred milliseconds old is fine.
+    advancing: Rc<Cell<bool>>,
+    /// Restarts the repaint loop when it stalls.
+    ///
+    /// Owned rather than leaked: a Slint timer stops when dropped, so tying it
+    /// to the bridge makes its lifetime the thing it actually depends on.
+    repaint_kick: RefCell<Option<slint::Timer>>,
 }
+
+/// Guards the single-player invariant. See [`VideoBridge`].
+static BRIDGE_EXISTS: AtomicBool = AtomicBool::new(false);
 
 impl VideoBridge {
     /// Takes ownership of the player and pins it for the process lifetime.
-    pub fn new(player: Player) -> Self {
-        Self {
+    ///
+    /// Fails if a bridge already exists, because the pinning is a deliberate
+    /// leak and a second one would multiply it.
+    pub fn new(player: Player) -> Result<Self> {
+        if BRIDGE_EXISTS.swap(true, Ordering::SeqCst) {
+            return Err(anyhow!(
+                "a video bridge already exists; there is one player per process"
+            ));
+        }
+
+        Ok(Self {
             player: Box::leak(Box::new(player)),
             live: Rc::new(RefCell::new(None)),
             pending: Rc::new(RefCell::new(None)),
             rendered: Rc::new(Cell::new((0, 0))),
-        }
+            advancing: Rc::new(Cell::new(false)),
+            repaint_kick: RefCell::new(None),
+        })
     }
 
     /// Starts playing a source.
@@ -303,6 +346,15 @@ impl VideoBridge {
 
     pub fn player(&self) -> &'static Player {
         self.player
+    }
+
+    /// Tells the render loop whether the picture is advancing.
+    ///
+    /// Called from the status poll rather than from the render loop itself,
+    /// so the hot path never asks mpv. Passing `false` lets the loop wind
+    /// down; the kick timer restarts it when playback resumes.
+    pub fn set_advancing(&self, advancing: bool) {
+        self.advancing.set(advancing);
     }
 
     /// Resolution the last frame was rendered at, or `None` before the first.
@@ -329,6 +381,7 @@ impl VideoBridge {
         let live = Rc::clone(&self.live);
         let pending = Rc::clone(&self.pending);
         let rendered = Rc::clone(&self.rendered);
+        let advancing = Rc::clone(&self.advancing);
         let weak = component.as_weak();
         // Handed to mpv so it can wake the UI when a frame is ready. Cloned
         // because the notifier closure needs its own.
@@ -425,7 +478,13 @@ impl VideoBridge {
                         // so repaints follow the display rather than a timer
                         // of our own. This is what gives mpv a usable refresh
                         // estimate.
-                        if player.is_playing()
+                        //
+                        // Only while the picture is actually advancing. A
+                        // paused file is still "loaded", so keying this off
+                        // that would repaint at display rate forever with
+                        // nothing changing — a flat battery for a video
+                        // nobody is watching.
+                        if advancing.get()
                             && let Some(component) = weak.upgrade()
                         {
                             component.window().request_redraw();
@@ -468,14 +527,15 @@ impl VideoBridge {
                 let Some(component) = weak.upgrade() else {
                     return;
                 };
-                // Idle means nothing is loaded; repainting then would burn the GPU
-                // for a static picture.
-                if player.is_playing() {
+                // Restart the loop whenever the picture should be moving and
+                // is not. Asking mpv here is fine: a quarter-second cadence is
+                // nowhere near the hot path.
+                if player.state().is_active() {
                     component.window().request_redraw();
                 }
             },
         );
-        std::mem::forget(timer);
+        *self.repaint_kick.borrow_mut() = Some(timer);
     }
 }
 
@@ -556,26 +616,11 @@ fn draw(
     let (width, height) = target_size(source, surface_size);
     rendered.set((width, height));
     let size = Some((width, height));
-    let redraw = live.renderer.needs_redraw();
 
-    // One line a second is enough to tell a stalled pipeline from a working
-    // one without drowning the log.
-    if live.draw_calls % 60 == 1 {
-        tracing::info!(
-            draw_calls = live.draw_calls,
-            redraw,
-            ?size,
-            playing = player.is_playing(),
-            "draw tick"
-        );
-    }
-
-    if !redraw {
-        return Ok(None);
-    }
-
-    // Render at the frame's own resolution: scaling is the UI's job, and
-    // rendering at widget size would resample twice.
+    // Everything that can fail happens before the frame flag is touched.
+    // `needs_redraw` *consumes* it, and mpv will not offer the same frame
+    // twice — so an early return after asking loses that frame for good,
+    // which presents as a stall rather than as the error it really is.
     if live
         .surfaces
         .as_ref()
@@ -585,7 +630,20 @@ fn draw(
         live.surfaces = Some(Surfaces::new(&live.gl, width, height)?);
     }
 
-    let surfaces = live.surfaces.as_ref().expect("just created");
+    let redraw = live.renderer.needs_redraw();
+
+    // One line a second tells a stalled pipeline from a working one. Debug
+    // level: in a release build this is noise, and the interface already
+    // shows whether the picture is moving.
+    if live.draw_calls % 60 == 1 {
+        tracing::debug!(draw_calls = live.draw_calls, redraw, ?size, "draw tick");
+    }
+
+    if !redraw {
+        return Ok(None);
+    }
+
+    let surfaces = live.surfaces.as_ref().expect("created above");
     let surface = surfaces.target();
 
     // mpv documents that it restores OpenGL state to defaults *except* for the
@@ -600,8 +658,10 @@ fn draw(
         .context("mpv failed to render a frame");
     // Diagnostic: capture what mpv actually put in the texture, so a defect
     // can be attributed to mpv's rendering or to how the UI samples it,
-    // instead of being guessed at from the window.
-    if matches!(live.frames_drawn, DUMP_AT_FRAME | DUMP_AT_FRAME_LATE)
+    // instead of being guessed at from the window. This is how the banding
+    // was traced to mpv's own framebuffers.
+    #[cfg(debug_assertions)]
+    if DUMP_AT_FRAMES.contains(&live.frames_drawn)
         && let Ok(path) = std::env::var("ANIRUST_DUMP")
     {
         dump_framebuffer(&live.gl, surface, &format!("{path}.{}", live.frames_drawn));
@@ -612,8 +672,8 @@ fn draw(
 
     let image = surface.as_image();
     // The surface just drawn is now the one on screen; the next frame goes to
-    // the other one.
-    live.surfaces.as_mut().expect("just created").advance();
+    // the next in rotation.
+    live.surfaces.as_mut().expect("created above").advance();
     Ok(image)
 }
 
@@ -676,9 +736,12 @@ impl GlState {
 
 /// Writes the framebuffer's pixels to a file as raw RGBA.
 ///
+/// Debug builds only; see [`DUMP_AT_FRAMES`].
+///
 /// Raw rather than an image format on purpose: this is a diagnostic, and
 /// pulling in an encoder to debug a texture would be a poor trade. `ffmpeg`
 /// turns it into something viewable.
+#[cfg(debug_assertions)]
 fn dump_framebuffer(gl: &glow::Context, surface: &Surface, path: &str) {
     let (width, height) = (surface.width, surface.height);
     let mut pixels = vec![0u8; (width as usize) * (height as usize) * 4];
@@ -718,6 +781,11 @@ fn dump_framebuffer(gl: &glow::Context, surface: &Surface, path: &str) {
 /// drivers. mpv's own header recommends this approach: "you can simply call
 /// the GL context APIs from this callback (e.g. glXGetProcAddressARB or
 /// wglGetProcAddress)".
+///
+/// The libraries are opened by soname, so the dynamic linker's search path —
+/// `LD_LIBRARY_PATH` included — decides which file is loaded. That is not a
+/// trust boundary worth defending: anyone who can set that variable for this
+/// process can already do anything the process can.
 pub struct GlLoader {
     _library: libloading::Library,
     get_proc_address: unsafe extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_void,

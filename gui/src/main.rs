@@ -100,7 +100,7 @@ fn main() -> Result<()> {
     tracing::info!(hwdec = %config.hwdec, "player config");
 
     let player = Player::new(&config).context("creating the player")?;
-    let bridge = VideoBridge::new(player);
+    let bridge = VideoBridge::new(player).context("creating the video bridge")?;
 
     bridge
         .attach(&window, |window, frame| {
@@ -353,6 +353,9 @@ fn drive_status(
             let state = player.state();
             window.set_state(state_name(state).into());
             window.set_paused(state == PlaybackState::Paused);
+            // The render loop reads this instead of querying mpv on every
+            // frame; a quarter-second of staleness costs nothing here.
+            bridge.set_advancing(state.is_active());
 
             window.set_speed_label(format_speed(settings.speed.get()).into());
             window.set_upscale(settings.upscale.get() as i32);

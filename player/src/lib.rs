@@ -88,9 +88,6 @@ pub const DEFAULT_OPENING_SECS: u64 = 85;
 pub enum Error {
     #[error("mpv: {0}")]
     Mpv(#[from] libmpv2::Error),
-
-    #[error("the shader directory is not configured, so {preset} cannot be applied")]
-    ShadersUnavailable { preset: &'static str },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -580,12 +577,16 @@ impl Player {
             return Ok(());
         };
 
-        let dir = self
-            .shader_dir
-            .as_deref()
-            .ok_or(Error::ShadersUnavailable {
-                preset: preset.name(),
-            })?;
+        // Always present: the shaders are embedded and written out when the
+        // player is created, so a preset cannot fail for want of files.
+        let Some(dir) = self.shader_dir.as_deref() else {
+            tracing::warn!(
+                preset = preset.name(),
+                "no shader directory; upscaling stays off"
+            );
+            self.mpv.set_property("glsl-shaders", "")?;
+            return Ok(());
+        };
 
         // mpv separates list entries with ':' on Unix. A shader path
         // containing one would be ambiguous, which is why the directory is
