@@ -652,6 +652,35 @@ fn play(
         println!("{}", lang.play_position(position.as_secs_f64()));
     }
 
+    println!("state: {:?}", player.state());
+    if let Some(ahead) = player.buffered_ahead() {
+        println!("buffered ahead: {:.1}s", ahead.as_secs_f64());
+    }
+
+    let tracks = player.tracks();
+    println!("tracks: {}", tracks.len());
+    for track in &tracks {
+        println!(
+            "  {:?}{} id={} {}",
+            track.kind,
+            if track.selected { " *" } else { "  " },
+            track.id,
+            track.label()
+        );
+    }
+
+    // No published boundaries for this source, so this exercises the fallback.
+    let before = player.position().unwrap_or_default();
+    player.skip_opening(None)?;
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    if let Some(after) = player.position() {
+        println!(
+            "skip opening: {:.1}s -> {:.1}s",
+            before.as_secs_f64(),
+            after.as_secs_f64()
+        );
+    }
+
     player.stop()?;
     Ok(())
 }

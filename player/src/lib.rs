@@ -30,9 +30,11 @@ use libmpv2::Mpv;
 
 pub mod render;
 pub mod shaders;
+pub mod tracks;
 
 pub use render::Renderer;
 pub use shaders::UpscalePreset;
+pub use tracks::{Track, TrackKind};
 
 /// How long to wait on a CDN node before giving up.
 ///
@@ -70,6 +72,17 @@ pub const DEFAULT_HWDEC: &str = "nvdec,vaapi,vulkan";
 /// 16 bits per channel keeps the headroom mpv's multi-pass processing wants,
 /// so no banding is traded away for the repair.
 pub const DEFAULT_FBO_FORMAT: &str = "rgba16";
+
+/// How far "skip opening" jumps when the source publishes no boundaries.
+///
+/// Television anime openings are a fixed 90 seconds almost without exception,
+/// so a blind jump is genuinely useful rather than a guess. It is set a little
+/// short deliberately: landing a few seconds early is a shrug, landing after
+/// the first line of dialogue is not.
+///
+/// Only AniLibria publishes real boundaries today; everything else relies on
+/// this.
+pub const DEFAULT_OPENING_SECS: u64 = 85;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -184,6 +197,37 @@ impl PlayerConfig {
             video_output: VideoOutput::Headless,
             ..Self::default()
         }
+    }
+}
+
+/// What the player is doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaybackState {
+    /// Nothing loaded.
+    Idle,
+    /// Loading, with no picture yet.
+    Loading,
+    /// Stalled waiting for data. Distinct from [`Self::Paused`]: the viewer
+    /// did not ask for this, and the UI should say so.
+    Buffering,
+    Playing,
+    Paused,
+    /// Reached the end of the file.
+    Ended,
+}
+
+impl PlaybackState {
+    /// Whether the picture is advancing.
+    #[must_use]
+    pub fn is_active(self) -> bool {
+        matches!(self, Self::Playing)
+    }
+
+    /// Whether the viewer is waiting on something rather than on their own
+    /// decision — worth a spinner, where [`Self::Paused`] is not.
+    #[must_use]
+    pub fn is_waiting(self) -> bool {
+        matches!(self, Self::Loading | Self::Buffering)
     }
 }
 
@@ -397,6 +441,25 @@ impl Player {
         Ok(())
     }
 
+    /// Skips the opening.
+    ///
+    /// `ends_at` is where the opening finishes, when the source says so — then
+    /// the jump is exact. Without it the seek is forward by
+    /// [`DEFAULT_OPENING_SECS`].
+    ///
+    /// Never seeks backwards: a viewer who is already past the opening and
+    /// presses the button by reflex should not be thrown back into it.
+    pub fn skip_opening(&self, ends_at: Option<Duration>) -> Result<()> {
+        let position = self.position().unwrap_or_default();
+
+        match ends_at {
+            Some(end) if end > position => self.seek_to(end),
+            // Already past a known opening: nothing to skip.
+            Some(_) => Ok(()),
+            None => self.seek_by(DEFAULT_OPENING_SECS as f64),
+        }
+    }
+
     /// Playback position, or `None` before anything has loaded.
     pub fn position(&self) -> Option<Duration> {
         self.duration_property("time-pos")
@@ -437,21 +500,49 @@ impl Player {
 
     // ---- tracks -----------------------------------------------------------
 
-    /// Selects a subtitle track by id, or disables subtitles with `None`.
-    pub fn set_subtitle_track(&self, id: Option<i64>) -> Result<()> {
+    /// Every stream in the current file.
+    ///
+    /// Empty until a file is loaded. Anime releases routinely carry several
+    /// subtitle tracks, so a menu needs the whole list rather than just the
+    /// selected id — see [`Track::label`] for turning one into menu text.
+    #[must_use]
+    pub fn tracks(&self) -> Vec<Track> {
+        tracks::list(&self.mpv)
+    }
+
+    /// Tracks of one kind, in the order the file lists them.
+    #[must_use]
+    pub fn tracks_of(&self, kind: TrackKind) -> Vec<Track> {
+        self.tracks()
+            .into_iter()
+            .filter(|track| track.kind == kind)
+            .collect()
+    }
+
+    /// The selected track of a kind, if any.
+    #[must_use]
+    pub fn selected_track(&self, kind: TrackKind) -> Option<Track> {
+        self.tracks_of(kind)
+            .into_iter()
+            .find(|track| track.selected)
+    }
+
+    /// Selects a track, or turns that kind off with `None`.
+    pub fn select_track(&self, kind: TrackKind, id: Option<i64>) -> Result<()> {
         match id {
-            Some(id) => self.mpv.set_property("sid", id)?,
-            None => self.mpv.set_property("sid", "no")?,
+            Some(id) => self.mpv.set_property(kind.selector(), id)?,
+            None => self.mpv.set_property(kind.selector(), "no")?,
         }
         Ok(())
     }
 
+    /// Selects a subtitle track by id, or disables subtitles with `None`.
+    pub fn set_subtitle_track(&self, id: Option<i64>) -> Result<()> {
+        self.select_track(TrackKind::Subtitle, id)
+    }
+
     pub fn set_audio_track(&self, id: Option<i64>) -> Result<()> {
-        match id {
-            Some(id) => self.mpv.set_property("aid", id)?,
-            None => self.mpv.set_property("aid", "no")?,
-        }
-        Ok(())
+        self.select_track(TrackKind::Audio, id)
     }
 
     /// Adds an external subtitle file or URL.
@@ -535,6 +626,57 @@ impl Player {
             .filter(|value| !value.is_empty() && value != "no")
     }
 
+    /// What the player is doing, as a UI needs to describe it.
+    ///
+    /// Assembled from properties rather than delivered as events, because a
+    /// UI paints on its own schedule and wants the current truth when it does,
+    /// not a backlog of transitions it has to fold together itself.
+    #[must_use]
+    pub fn state(&self) -> PlaybackState {
+        if !self.is_playing() {
+            return PlaybackState::Idle;
+        }
+        if self.flag("eof-reached") {
+            return PlaybackState::Ended;
+        }
+        // `paused-for-cache` is mpv stalling on data, as distinct from the
+        // viewer having pressed pause. Conflating them would show "paused"
+        // while the network is the problem.
+        if self.flag("paused-for-cache") {
+            return PlaybackState::Buffering;
+        }
+        if self.is_paused().unwrap_or(false) {
+            return PlaybackState::Paused;
+        }
+        if self.video_size().is_none() {
+            return PlaybackState::Loading;
+        }
+        PlaybackState::Playing
+    }
+
+    /// How much is buffered ahead of the current position.
+    ///
+    /// What a progress bar shades in ahead of the playhead, and the honest
+    /// answer to "why did it stop".
+    #[must_use]
+    pub fn buffered_ahead(&self) -> Option<Duration> {
+        self.mpv
+            .get_property::<f64>("demuxer-cache-duration")
+            .ok()
+            .filter(|secs| secs.is_finite() && *secs >= 0.0)
+            .map(Duration::from_secs_f64)
+    }
+
+    /// Position the buffer currently reaches.
+    #[must_use]
+    pub fn buffered_until(&self) -> Option<Duration> {
+        Some(self.position()? + self.buffered_ahead()?)
+    }
+
+    fn flag(&self, name: &str) -> bool {
+        self.mpv.get_property::<bool>(name).unwrap_or(false)
+    }
+
     /// Whether a file is loaded and decoding.
     pub fn is_playing(&self) -> bool {
         self.mpv
@@ -568,6 +710,29 @@ mod tests {
     #[test]
     fn headless_config_does_not_ask_for_a_window() {
         assert_eq!(PlayerConfig::headless().video_output, VideoOutput::Headless);
+    }
+
+    #[test]
+    fn waiting_is_distinct_from_paused() {
+        // A spinner belongs on one of these and not the other.
+        assert!(PlaybackState::Buffering.is_waiting());
+        assert!(PlaybackState::Loading.is_waiting());
+        assert!(!PlaybackState::Paused.is_waiting());
+        assert!(!PlaybackState::Playing.is_waiting());
+    }
+
+    #[test]
+    fn only_playing_counts_as_active() {
+        for state in [
+            PlaybackState::Idle,
+            PlaybackState::Loading,
+            PlaybackState::Buffering,
+            PlaybackState::Paused,
+            PlaybackState::Ended,
+        ] {
+            assert!(!state.is_active(), "{state:?} should not be active");
+        }
+        assert!(PlaybackState::Playing.is_active());
     }
 
     #[test]
