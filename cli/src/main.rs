@@ -6,6 +6,8 @@
 //! rebuilding the GUI (Slint + Skia make that cycle slow). Diagnostics go to
 //! stderr and data to stdout, so output can be piped into `jq`.
 
+mod i18n;
+
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
@@ -13,6 +15,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use anirust_api::{Client, EpisodeSort, ProfileList, SearchBy};
 use anirust_extract::{Registry, ResolvedStream, StreamKind, StreamVariant};
+
+use crate::i18n::Lang;
 
 #[derive(Parser)]
 #[command(
@@ -37,6 +41,10 @@ struct Cli {
     /// Emit raw JSON instead of a human-readable summary.
     #[arg(long, global = true)]
     json: bool,
+
+    /// Output language. Detected from the locale when not given.
+    #[arg(long, global = true, value_enum)]
+    lang: Option<Lang>,
 
     #[command(subcommand)]
     command: Command,
@@ -210,17 +218,18 @@ async fn main() -> Result<()> {
     }
     let client = builder.build().context("building the API client")?;
 
-    run(&client, &cli).await
+    let lang = cli.lang.unwrap_or_else(Lang::from_env);
+    run(&client, &cli, lang).await
 }
 
-async fn run(client: &Client, cli: &Cli) -> Result<()> {
+async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
     match &cli.command {
         Command::Search { query, by, page } => {
             let hits = client.search_releases(query, (*by).into(), *page).await?;
             if cli.json {
                 print_json(&hits)?;
             } else if hits.is_empty() {
-                eprintln!("ничего не найдено");
+                eprintln!("{}", lang.nothing_found());
             } else {
                 for r in &hits {
                     println!(
@@ -241,19 +250,26 @@ async fn run(client: &Client, cli: &Cli) -> Result<()> {
             if cli.json {
                 print_json(&r)?;
             } else {
-                println!("{} — {}", r.id, r.title());
-                println!("  оригинал   {}", r.title_original);
-                println!("  год        {}", r.year);
-                println!("  статус     {}", r.status_name());
-                println!("  жанры      {}", r.genres);
-                println!("  студия     {}", r.studio);
-                println!("  серии      {}/{}", r.episodes_released, r.episodes_total);
-                println!("  оценка     {:.1} ({} голосов)", r.score(), r.vote_count);
-                println!("  играбелен  {}", yes_no(r.is_playable()));
+                println!("{}", lang.release_header(r.id, r.title()));
+                println!("{}", lang.release_original(&r.title_original));
+                println!("{}", lang.release_year(&r.year));
+                println!("{}", lang.release_status(r.status_name()));
+                println!("{}", lang.release_genres(&r.genres));
+                println!("{}", lang.release_studio(&r.studio));
+                println!(
+                    "{}",
+                    lang.release_episodes(r.episodes_released, r.episodes_total)
+                );
+                println!("{}", lang.release_score(r.score(), r.vote_count));
+                println!("{}", lang.release_playable(&lang.yes_no(r.is_playable())));
                 if !r.is_playable() {
                     println!(
-                        "    play_disabled={} view_blocked={} deleted={}",
-                        r.is_play_disabled, r.is_view_blocked, r.is_deleted
+                        "{}",
+                        lang.release_block_reasons(
+                            r.is_play_disabled,
+                            r.is_view_blocked,
+                            r.is_deleted
+                        )
                     );
                 }
             }
@@ -265,13 +281,20 @@ async fn run(client: &Client, cli: &Cli) -> Result<()> {
                 print_json(&ds)?;
             } else {
                 for d in &ds {
+                    let kind = if d.is_sub {
+                        lang.subtitles()
+                    } else {
+                        lang.dubbed()
+                    };
                     println!(
-                        "{:>8}  {:<38} серий {:>4}  {}  просмотров {}",
-                        d.id,
-                        truncate(&d.name, 38),
-                        d.episodes_count,
-                        if d.is_sub { "сабы" } else { "озв. " },
-                        d.view_count,
+                        "{}",
+                        lang.dubber_row(
+                            d.id,
+                            truncate(&d.name, 38),
+                            d.episodes_count,
+                            &kind,
+                            d.view_count
+                        )
                     );
                 }
             }
@@ -287,11 +310,8 @@ async fn run(client: &Client, cli: &Cli) -> Result<()> {
             } else {
                 for s in &ss {
                     println!(
-                        "{:>8}  {:<28} серий {:>4}  качество {}",
-                        s.id,
-                        truncate(&s.name, 28),
-                        s.episodes_count,
-                        s.quality
+                        "{}",
+                        lang.source_row(s.id, truncate(&s.name, 28), s.episodes_count, s.quality)
                     );
                 }
             }
@@ -318,8 +338,12 @@ async fn run(client: &Client, cli: &Cli) -> Result<()> {
                     println!(
                         "{:>4}  {:<7} {:<22} {}",
                         e.position,
-                        if e.iframe { "embed" } else { "direct" },
-                        truncate(host_of(&e.url).unwrap_or("—"), 22),
+                        if e.iframe {
+                            lang.embed()
+                        } else {
+                            lang.direct()
+                        },
+                        truncate(host_of(&e.url).unwrap_or("-"), 22),
                         e.url
                     );
                 }
@@ -329,22 +353,22 @@ async fn run(client: &Client, cli: &Cli) -> Result<()> {
         Command::Chain {
             release_id,
             all_dubbers,
-        } => chain(client, *release_id, *all_dubbers, cli.json).await?,
+        } => chain(client, *release_id, *all_dubbers, cli.json, lang).await?,
 
         Command::Login { login, password } => {
             let password = match password {
                 Some(p) => p.clone(),
-                None => rpassword::prompt_password(format!("пароль для {login}: "))
+                None => rpassword::prompt_password(lang.password_prompt(login))
                     .context("reading the password")?,
             };
             match client.sign_in(login, &password).await {
                 Ok((profile, token)) => {
-                    eprintln!("вошли как {} (id {})", profile.login, profile.id);
+                    eprintln!("{}", lang.signed_in(&profile.login, profile.id));
                     // The token alone on stdout, so it can be captured:
                     //   export ANIRUST_TOKEN=$(anirust-cli login me)
                     println!("{}", token.token);
                 }
-                Err(e) => bail!("вход не удался: {e}"),
+                Err(e) => bail!("{}", lang.sign_in_failed(&e)),
             }
         }
 
@@ -353,28 +377,28 @@ async fn run(client: &Client, cli: &Cli) -> Result<()> {
             if cli.json {
                 print_json(&p)?;
             } else {
-                println!("{} — {}", p.id, p.login);
-                println!("  смотрю     {}", p.watching_count);
-                println!("  в планах   {}", p.plan_count);
-                println!("  просмотрено {}", p.completed_count);
-                println!("  отложено   {}", p.hold_on_count);
-                println!("  брошено    {}", p.dropped_count);
+                println!("{}", lang.release_header(p.id, &p.login));
+                println!("{}", lang.profile_watching(p.watching_count));
+                println!("{}", lang.profile_planned(p.plan_count));
+                println!("{}", lang.profile_watched(p.completed_count));
+                println!("{}", lang.profile_on_hold(p.hold_on_count));
+                println!("{}", lang.profile_dropped(p.dropped_count));
             }
         }
 
         Command::List { which, page } => {
             let p = client.profile_list((*which).into(), *page, None).await?;
-            print_release_page(&p, cli.json)?;
+            print_release_page(&p, cli.json, lang)?;
         }
 
         Command::History { page } => {
             let p = client.history(*page).await?;
-            print_release_page(&p, cli.json)?;
+            print_release_page(&p, cli.json, lang)?;
         }
 
         Command::Watching { page } => {
             let p = client.discover_watching(*page).await?;
-            print_release_page(&p, cli.json)?;
+            print_release_page(&p, cli.json, lang)?;
         }
 
         Command::Hosts => {
@@ -386,7 +410,7 @@ async fn run(client: &Client, cli: &Cli) -> Result<()> {
         Command::Resolve { url, output } => {
             let registry = Registry::new(reqwest::Client::new());
             let stream = registry.resolve(url).await?;
-            print_stream(&stream, output, cli.json)?;
+            print_stream(&stream, output, cli.json, lang)?;
         }
 
         Command::Stream {
@@ -396,16 +420,16 @@ async fn run(client: &Client, cli: &Cli) -> Result<()> {
             source,
             output,
         } => {
-            let episode = pick_episode(client, *release_id, *dubber, *source, *position).await?;
+            let episode =
+                pick_episode(client, *release_id, *dubber, *source, *position, lang).await?;
+            let kind = if episode.iframe {
+                lang.embed()
+            } else {
+                lang.direct()
+            };
             eprintln!(
-                "серия {} — {} ({})",
-                episode.position,
-                episode.url,
-                if episode.iframe {
-                    "эмбед"
-                } else {
-                    "прямая"
-                }
+                "{}",
+                lang.episode_line(episode.position, &episode.url, &kind)
             );
 
             // The API's `iframe` flag is not trustworthy: Sibnet and
@@ -416,18 +440,12 @@ async fn run(client: &Client, cli: &Cli) -> Result<()> {
             let registry = Registry::new(reqwest::Client::new());
             let stream = if registry.supports(&episode.url) {
                 if !episode.iframe {
-                    eprintln!(
-                        "примечание: API пометил серию как прямую ссылку, но хост требует \
-                         экстрактора — разрешаю через него"
-                    );
+                    eprintln!("{}", lang.note_flag_says_direct());
                 }
                 registry.resolve(&episode.url).await?
             } else {
                 if episode.iframe {
-                    eprintln!(
-                        "внимание: это эмбед, но экстрактора для хоста нет — \
-                         ссылка отдана как есть и, скорее всего, не проиграется"
-                    );
+                    eprintln!("{}", lang.warn_no_extractor());
                 }
                 ResolvedStream {
                     variants: vec![StreamVariant {
@@ -438,7 +456,7 @@ async fn run(client: &Client, cli: &Cli) -> Result<()> {
                     ..Default::default()
                 }
             };
-            print_stream(&stream, output, cli.json)?;
+            print_stream(&stream, output, cli.json, lang)?;
         }
     }
 
@@ -452,13 +470,14 @@ async fn pick_episode(
     dubber: Option<i64>,
     source: Option<i64>,
     position: i32,
+    lang: Lang,
 ) -> Result<anirust_api::Episode> {
     let dubber_id = match dubber {
         Some(id) => id,
         None => {
             let dubbers = client.dubbers(release_id).await?;
-            let first = dubbers.first().context("у релиза нет ни одной озвучки")?;
-            eprintln!("озвучка: {} ({})", first.name, first.id);
+            let first = dubbers.first().with_context(|| lang.err_no_dubbers())?;
+            eprintln!("{}", lang.dubber_chosen(&first.name, first.id));
             first.id
         }
     };
@@ -467,10 +486,8 @@ async fn pick_episode(
         Some(id) => id,
         None => {
             let sources = client.sources(release_id, dubber_id).await?;
-            let first = sources
-                .first()
-                .context("у озвучки нет ни одного источника")?;
-            eprintln!("источник: {} ({})", first.name, first.id);
+            let first = sources.first().with_context(|| lang.err_no_sources())?;
+            eprintln!("{}", lang.source_chosen(&first.name, first.id));
             first.id
         }
     };
@@ -482,13 +499,16 @@ async fn pick_episode(
     episodes
         .into_iter()
         .find(|e| e.position == position)
-        .with_context(|| format!("серии {position} нет у этого источника"))
+        .with_context(|| lang.err_no_episode(position))
 }
 
-fn print_stream(stream: &ResolvedStream, output: &StreamOutput, json: bool) -> Result<()> {
-    let best = stream
-        .best()
-        .context("не удалось получить ни одного потока")?;
+fn print_stream(
+    stream: &ResolvedStream,
+    output: &StreamOutput,
+    json: bool,
+    lang: Lang,
+) -> Result<()> {
+    let best = stream.best().with_context(|| lang.err_nothing_resolved())?;
 
     if output.best {
         println!("{}", best.url);
@@ -525,14 +545,12 @@ fn print_stream(stream: &ResolvedStream, output: &StreamOutput, json: bool) -> R
     }
     if let Some(op) = stream.opening {
         eprintln!(
-            "опенинг: {}–{} с ({} с)",
-            op.start,
-            op.end,
-            op.duration_secs()
+            "{}",
+            lang.opening_range(op.start, op.end, op.duration_secs())
         );
     }
     if !stream.headers.is_empty() {
-        eprintln!("заголовки (обязательны для плеера):");
+        eprintln!("{}", lang.headers_required());
         for (name, value) in &stream.headers {
             eprintln!("  {name}: {value}");
         }
@@ -548,15 +566,21 @@ fn shell_quote(s: &str) -> String {
 
 /// Walks dubbers → sources → episodes and tallies how many episodes are direct
 /// versus embeds, grouped by host.
-async fn chain(client: &Client, release_id: i64, all_dubbers: bool, json: bool) -> Result<()> {
+async fn chain(
+    client: &Client,
+    release_id: i64,
+    all_dubbers: bool,
+    json: bool,
+    lang: Lang,
+) -> Result<()> {
     let release = client.release(release_id, false).await?;
-    eprintln!("релиз {} — {}", release.id, release.title());
+    eprintln!("{}", lang.chain_release(release.id, release.title()));
     if !release.is_playable() {
-        eprintln!("  внимание: сервер помечает релиз как недоступный для воспроизведения");
+        eprintln!("{}", lang.chain_not_playable());
     }
 
     let dubbers = client.dubbers(release_id).await?;
-    eprintln!("озвучек: {}", dubbers.len());
+    eprintln!("{}", lang.chain_dubber_count(dubbers.len()));
 
     let chosen = if all_dubbers {
         &dubbers[..]
@@ -571,18 +595,13 @@ async fn chain(client: &Client, release_id: i64, all_dubbers: bool, json: bool) 
 
     for d in chosen {
         let sources = client.sources(release_id, d.id).await?;
-        eprintln!(
-            "  озвучка {} ({}): источников {}",
-            d.id,
-            d.name,
-            sources.len()
-        );
+        eprintln!("{}", lang.chain_dubber(d.id, &d.name, sources.len()));
 
         for s in &sources {
             let eps = client
                 .episodes(release_id, d.id, s.id, EpisodeSort::Ascending)
                 .await?;
-            eprintln!("    источник {} ({}): серий {}", s.id, s.name, eps.len());
+            eprintln!("{}", lang.chain_source(s.id, &s.name, eps.len()));
 
             for e in &eps {
                 let host = host_of(&e.url).unwrap_or("—").to_owned();
@@ -617,19 +636,19 @@ async fn chain(client: &Client, release_id: i64, all_dubbers: bool, json: bool) 
 
     let total = direct + embed;
     println!();
-    println!("всего серий: {total}");
+    println!("{}", lang.chain_total(total));
     if total > 0 {
         println!(
-            "  прямых ссылок: {direct} ({:.0}%)",
-            direct as f64 * 100.0 / total as f64
+            "{}",
+            lang.chain_direct(direct, direct as f64 * 100.0 / total as f64)
         );
         println!(
-            "  эмбедов:       {embed} ({:.0}%)  — нужен экстрактор",
-            embed as f64 * 100.0 / total as f64
+            "{}",
+            lang.chain_embeds(embed, embed as f64 * 100.0 / total as f64)
         );
     }
     println!();
-    println!("по хостам:");
+    println!("{}", lang.chain_by_host());
     for (host, n) in &by_host {
         println!("  {:<28} {n}", host);
     }
@@ -637,7 +656,11 @@ async fn chain(client: &Client, release_id: i64, all_dubbers: bool, json: bool) 
     Ok(())
 }
 
-fn print_release_page(page: &anirust_api::Page<anirust_api::Release>, json: bool) -> Result<()> {
+fn print_release_page(
+    page: &anirust_api::Page<anirust_api::Release>,
+    json: bool,
+    lang: Lang,
+) -> Result<()> {
     if json {
         return print_json(&page.content);
     }
@@ -652,10 +675,12 @@ fn print_release_page(page: &anirust_api::Page<anirust_api::Release>, json: bool
         );
     }
     eprintln!(
-        "страница {} из {} (всего {})",
-        page.current_page + 1,
-        page.total_page_count,
-        page.total_count
+        "{}",
+        lang.page_info(
+            page.current_page + 1,
+            page.total_page_count,
+            page.total_count
+        )
     );
     Ok(())
 }
@@ -679,8 +704,4 @@ fn truncate(s: &str, max: usize) -> &str {
         Some((idx, _)) => &s[..idx],
         None => s,
     }
-}
-
-fn yes_no(b: bool) -> &'static str {
-    if b { "да" } else { "нет" }
 }

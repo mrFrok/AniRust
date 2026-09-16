@@ -21,7 +21,7 @@
 //! possibly an extractor:
 //!
 //! ```text
-//! dubbers(release_id)                       -> Vec<Dubber>   // озвучки
+//! dubbers(release_id)                       -> Vec<Dubber>   // voice-over tracks
 //! sources(release_id, dubber_id)            -> Vec<Source>   // Kodik, Sibnet, …
 //! episodes(release_id, dubber_id, source_id) -> Vec<Episode>
 //! ```
@@ -36,7 +36,7 @@
 //! use anirust_api::{Client, EpisodeSort, SearchBy};
 //!
 //! let client = Client::new()?;
-//! let hits = client.search_releases("Стальной алхимик", SearchBy::Title, 0).await?;
+//! let hits = client.search_releases("Fullmetal Alchemist", SearchBy::Title, 0).await?;
 //! let release = &hits[0];
 //!
 //! let dubbers = client.dubbers(release.id).await?;

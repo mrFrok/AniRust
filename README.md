@@ -1,118 +1,125 @@
 # AniRust
 
-Кроссплатформенный десктопный клиент Anixart на Rust и Slint, с нормальным
-плеером на mpv.
+A cross-platform desktop client for Anixart, written in Rust with Slint, and a
+real player built on mpv.
 
-> AniRust — неофициальный проект, **не аффилированный** с разработчиками
-> Anixart. Название и оформление Anixart принадлежат их владельцам.
+*[Русская версия](README.ru.md)*
 
-## Зачем
+> AniRust is an unofficial project and is **not affiliated** with the
+> developers of Anixart. The Anixart name and branding belong to their owners.
 
-Официальное приложение существует только под Android, закрыто и с рекламой.
-AniRust — десктопный клиент с собственным плеером: своя скорость
-воспроизведения, свой рендер субтитров, аппаратный декод, апскейл Anime4K,
-сквозной прогресс просмотра и синхронизация с аккаунтом Anixart.
+## Why
 
-## Состояние
+The official client is Android-only, closed source and ad-supported. AniRust is
+a desktop client with a player of its own: playback speed, proper subtitle
+rendering, hardware decoding, Anime4K upscaling, resume across episodes, and
+progress synchronised with an Anixart account.
 
-Ранняя разработка. Готово:
+## Status
 
-- `api/` — типизированный клиент API (поиск, релизы, цепочка эпизодов,
-  аккаунт, списки, история, избранное);
-- `extract/` — разрешение эмбедов в прямой поток: **Kodik** (96% каталога),
-  **AniLibria** и **Sibnet**;
-- `cli/` — отладочный зонд для работы с живым API.
+Early development. Done:
 
-Не покрыт SovetRomantica: его хост недоступен из сети, на которой всё это
-делалось, поэтому протокол снять не удалось — а угадывать значило бы читать
-чужую реализацию. Allvideo, StudioMir, Myvi, VKVideo, OK, RuTube и MailRu
-перечислены в официальном клиенте, но в выборке каталога не встретились.
+- `api/` — typed API client (search, releases, the episode chain, account,
+  lists, history, favourites);
+- `extract/` — resolves embedded player pages to direct streams: **Kodik**
+  (96% of the catalogue), **AniLibria** and **Sibnet**;
+- `cli/` — a probe for driving the live API.
 
-В работе, по фазам: плеер на mpv → GUI на Slint.
+Not covered: SovetRomantica, whose host is unreachable from the network this
+was developed on, so its protocol could not be observed — and guessing it would
+mean reading someone else's implementation. Allvideo, StudioMir, Myvi, VKVideo,
+OK, RuTube and MailRu are listed by the official client but did not appear in
+the sampled catalogue.
 
-## Сборка
+Next, by phase: the mpv player → the Slint GUI.
 
-Нужен Rust 1.90+ и, для плеера, `libmpv` ≥ 2.
+## Building
+
+Needs Rust 1.90+ and, for the player, `libmpv` >= 2.
 
 ```sh
 cargo build --release
 ```
 
-## Зонд
+## The probe
 
-`anirust-cli` дёргает живой API и печатает результат. Диагностика идёт в stderr,
-данные — в stdout, поэтому вывод можно направлять в `jq`.
+`anirust-cli` drives the live API and prints what comes back. Diagnostics go to
+stderr and data to stdout, so output pipes cleanly into `jq`.
 
 ```sh
-# Поиск
-anirust-cli search "Стальной алхимик"
+# Search
+anirust-cli search "Fullmetal Alchemist"
 
-# Вся цепочка воспроизведения и доля серий, которым нужен экстрактор
+# Walk the whole playback chain and report how many episodes need an extractor
 anirust-cli chain 307 --all-dubbers
 
-# От id релиза сразу до потока
+# Straight from a release id to a playable stream
 anirust-cli stream 307 1
 
-# Готовая команда mpv — заголовки и таймаут уже подставлены
+# A ready-to-run mpv command, headers and timeout already filled in
 $(anirust-cli stream 307 1 --mpv)
 
-# Аккаунт
-export ANIRUST_TOKEN=$(anirust-cli login <логин>)
+# Hosts an extractor is implemented for
+anirust-cli hosts
+
+# Account
+export ANIRUST_TOKEN=$(anirust-cli login <login>)
 anirust-cli me
 anirust-cli list watching
 ```
 
-Ноды CDN, на которые редиректят манифесты, бывают очень медленными на
-установке соединения — замеряно 19 с у хоста, который секундой раньше
-отвечал за 14 мс. Дефолтный таймаут ffmpeg короче, поэтому `--mpv`
-всегда подставляет `--network-timeout`: без него исправный поток
-выглядит как сломанный экстрактор.
+The CDN nodes these manifests redirect to can be very slow to accept a
+connection — 19s was measured against a host that had answered in 14ms moments
+earlier. ffmpeg's default timeout is shorter, so `--mpv` always passes
+`--network-timeout`: without it a perfectly good stream looks like a broken
+extractor.
 
-## Архитектура
-
-```
-api/       типизированный клиент Anixart (reqwest + serde)
-extract/   трейт Extractor и реализации по хостам
-player/    обёртка libmpv, рендер в GL-текстуру Slint    [фаза 3]
-core/      сессия, кэш, оркестрация воспроизведения      [фаза 4]
-gui/       приложение на Slint                           [фаза 4]
-cli/       отладочный зонд
-```
-
-Путь от релиза до воспроизведения — три запроса и, как правило, экстрактор:
+## Architecture
 
 ```
-dubbers(release_id)                        → озвучки
-sources(release_id, dubber_id)             → Kodik, Sibnet, …
-episodes(release_id, dubber_id, source_id) → серии
+api/       typed Anixart client (reqwest + serde)
+extract/   the Extractor trait and per-host implementations
+player/    libmpv wrapper rendering into a Slint GL texture   [phase 3]
+core/      session, cache, playback orchestration             [phase 4]
+gui/       the Slint application                              [phase 4]
+cli/       the debugging probe
 ```
 
-Каждая серия несёт `url` и флаг `iframe`. Замер по 832 сериям из 8 релизов:
-эмбедов 97%, и 96% из них приходится на Kodik.
+Getting from a release to something playable takes three calls, then usually an
+extractor:
 
-**Флагу `iframe` доверять нельзя.** Серии Sibnet и AniLibria приходят с
-`iframe = false`, хотя их ссылки (`shell.php?videoid=`, `iframe.php?id=`) —
-страницы плеера, отдающие `text/html`. Поэтому решение принимается по хосту:
-если для него есть экстрактор, ссылка идёт через него независимо от флага.
+```
+dubbers(release_id)                        -> voice-over tracks
+sources(release_id, dubber_id)             -> Kodik, Sibnet, ...
+episodes(release_id, dubber_id, source_id) -> episodes
+```
 
-## Чистая комната
+Each episode carries a `url` and an `iframe` flag. Measured across 832 episodes
+in 8 releases: 97% are embeds, and 96% of those go through Kodik.
 
-Слой API и экстракторы написаны по **наблюдаемому поведению протокола**, а не по
-декомпилированным исходникам официального приложения. Это осознанное
-ограничение, и оно соблюдается буквально:
+**The `iframe` flag cannot be trusted.** Sibnet and AniLibria episodes arrive
+with `iframe = false` even though their URLs (`shell.php?videoid=`,
+`iframe.php?id=`) are player pages answering `text/html`. Routing is therefore
+decided by host: if an extractor claims it, the URL goes through that extractor
+regardless of the flag.
 
-1. Декомпилированный материал никогда не попадает в репозиторий — см.
-   `.gitignore`.
-2. Из официального приложения берутся только факты интерфейса: хост, путь,
-   метод, имя поля, значение enum. Это факты, а не форма выражения.
-3. Реализация пишется против живого обмена, а не против чужого кода.
-4. Фикстуры тестов — сохранённые HTTP-ответы, не чужие исходники.
-5. mpv, ffmpeg и шейдеры Anime4K берутся из апстрима, не из APK.
+## Clean room
 
-## Лицензия
+The API layer and the extractors are written against **observed protocol
+behaviour**, not against decompiled sources of the official app. This is a
+deliberate constraint, and it is honoured literally:
+
+1. Decompiled material never enters the repository — see `.gitignore`.
+2. Only interface facts are taken from the official app: host, path, method,
+   field name, enum value. Those are facts, not expression.
+3. Implementations are written against the live exchange, not someone's code.
+4. Test fixtures are captured HTTP responses, never third-party sources.
+5. mpv, ffmpeg and the Anime4K shaders come from upstream, not from the APK.
+
+## Licence
 
 [GPL-3.0-or-later](LICENSE).
 
-Slint используется по его опции GPLv3 — той, что предназначена для
-опенсорсных приложений. mpv (`GPL-2.0-or-later AND LGPL-2.1-or-later`)
-линкуется динамически. Шейдеры Anime4K — MIT, из апстрима.
+Slint is used under its GPLv3 option, the one intended for open-source
+applications. mpv (`GPL-2.0-or-later AND LGPL-2.1-or-later`) is linked
+dynamically. The Anime4K shaders are MIT, taken from upstream.
