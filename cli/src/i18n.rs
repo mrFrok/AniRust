@@ -235,6 +235,36 @@ catalog! {
         ru: "по хостам:",
     }
 
+    // ---- playback ---------------------------------------------------------
+    play_opening(url: &str) {
+        en: "opening: {url}",
+        ru: "открываю: {url}",
+    }
+    play_ready(width: u32, height: u32) {
+        en: "decoding: {width}x{height}",
+        ru: "декодируется: {width}x{height}",
+    }
+    play_duration(secs: f64) {
+        en: "duration: {secs:.1}s",
+        ru: "длительность: {secs:.1} с",
+    }
+    play_position(secs: f64) {
+        en: "position: {secs:.1}s",
+        ru: "позиция: {secs:.1} с",
+    }
+    play_speed(speed: f64) {
+        en: "speed: {speed}x",
+        ru: "скорость: {speed}x",
+    }
+    play_timed_out(secs: u64) {
+        en: "the stream did not start decoding within {secs}s",
+        ru: "поток не начал декодироваться за {secs} с",
+    }
+    play_shaders_missing(count: usize, dir: &str) {
+        en: "{count} Anime4K shaders are missing from {dir}; upscaling stays off",
+        ru: "в {dir} не хватает {count} шейдеров Anime4K; апскейл выключен",
+    }
+
     // ---- failures ---------------------------------------------------------
     err_no_dubbers() {
         en: "the release has no voice-over tracks",

@@ -15,6 +15,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use anirust_api::{Client, EpisodeSort, ProfileList, SearchBy};
 use anirust_extract::{Registry, ResolvedStream, StreamKind, StreamVariant};
+use anirust_player::{MediaSource, Player, PlayerConfig, UpscalePreset};
 
 use crate::i18n::Lang;
 
@@ -122,6 +123,33 @@ enum Command {
         #[command(flatten)]
         output: StreamOutput,
     },
+    /// Open a stream with the real player, headless, and report what mpv
+    /// makes of it. Exercises the player crate without needing a window.
+    Play {
+        release_id: i64,
+        /// Episode number, 1-based.
+        #[arg(default_value_t = 1)]
+        position: i32,
+        #[arg(long)]
+        dubber: Option<i64>,
+        #[arg(long)]
+        source: Option<i64>,
+        /// Seconds to keep decoding once playback starts.
+        #[arg(long, default_value_t = 5)]
+        seconds: u64,
+        /// Playback speed to exercise.
+        #[arg(long, default_value_t = 1.0)]
+        speed: f64,
+        /// Directory holding the Anime4K shaders.
+        #[arg(long, env = "ANIRUST_SHADER_DIR")]
+        shader_dir: Option<std::path::PathBuf>,
+        /// Upscaling preset. Needs --shader-dir.
+        #[arg(long, value_enum, default_value_t = Upscale::Off)]
+        upscale: Upscale,
+        /// Enable temporal interpolation.
+        #[arg(long)]
+        interpolation: bool,
+    },
     /// Walk the API chain to one episode and resolve it in one step.
     ///
     /// Without --dubber/--source the first of each is used, which is the
@@ -150,6 +178,25 @@ struct StreamOutput {
     /// Print a ready-to-run mpv command, headers included.
     #[arg(long)]
     mpv: bool,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+enum Upscale {
+    Off,
+    Fast,
+    Balanced,
+    Quality,
+}
+
+impl From<Upscale> for UpscalePreset {
+    fn from(u: Upscale) -> Self {
+        match u {
+            Upscale::Off => Self::Off,
+            Upscale::Fast => Self::Fast,
+            Upscale::Balanced => Self::Balanced,
+            Upscale::Quality => Self::Quality,
+        }
+    }
 }
 
 #[derive(Copy, Clone, ValueEnum)]
@@ -407,6 +454,31 @@ async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
             }
         }
 
+        Command::Play {
+            release_id,
+            position,
+            dubber,
+            source,
+            seconds,
+            speed,
+            shader_dir,
+            upscale,
+            interpolation,
+        } => {
+            let episode =
+                pick_episode(client, *release_id, *dubber, *source, *position, lang).await?;
+            let stream = resolve_episode(&episode, lang).await?;
+            play(
+                &stream,
+                *seconds,
+                *speed,
+                shader_dir.as_deref(),
+                *upscale,
+                *interpolation,
+                lang,
+            )?;
+        }
+
         Command::Resolve { url, output } => {
             let registry = Registry::new(reqwest::Client::new());
             let stream = registry.resolve(url).await?;
@@ -422,40 +494,7 @@ async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
         } => {
             let episode =
                 pick_episode(client, *release_id, *dubber, *source, *position, lang).await?;
-            let kind = if episode.iframe {
-                lang.embed()
-            } else {
-                lang.direct()
-            };
-            eprintln!(
-                "{}",
-                lang.episode_line(episode.position, &episode.url, &kind)
-            );
-
-            // The API's `iframe` flag is not trustworthy: Sibnet and
-            // AniLibria episodes arrive with `iframe = false` even though
-            // their URLs are player pages answering text/html. Routing by
-            // host instead means the flag can be wrong without breaking
-            // playback.
-            let registry = Registry::new(reqwest::Client::new());
-            let stream = if registry.supports(&episode.url) {
-                if !episode.iframe {
-                    eprintln!("{}", lang.note_flag_says_direct());
-                }
-                registry.resolve(&episode.url).await?
-            } else {
-                if episode.iframe {
-                    eprintln!("{}", lang.warn_no_extractor());
-                }
-                ResolvedStream {
-                    variants: vec![StreamVariant {
-                        height: episode.quality.max(0) as u32,
-                        url: episode.url.clone(),
-                        kind: StreamKind::classify(None, &episode.url),
-                    }],
-                    ..Default::default()
-                }
-            };
+            let stream = resolve_episode(&episode, lang).await?;
             print_stream(&stream, output, cli.json, lang)?;
         }
     }
@@ -500,6 +539,126 @@ async fn pick_episode(
         .into_iter()
         .find(|e| e.position == position)
         .with_context(|| lang.err_no_episode(position))
+}
+
+/// Turns an episode into a playable stream.
+///
+/// The API's `iframe` flag is not trustworthy: Sibnet and AniLibria episodes
+/// arrive with `iframe = false` even though their URLs are player pages
+/// answering text/html. Routing by host instead lets the flag be wrong without
+/// breaking playback, and the disagreement is reported rather than hidden.
+async fn resolve_episode(episode: &anirust_api::Episode, lang: Lang) -> Result<ResolvedStream> {
+    let kind = if episode.iframe {
+        lang.embed()
+    } else {
+        lang.direct()
+    };
+    eprintln!(
+        "{}",
+        lang.episode_line(episode.position, &episode.url, &kind)
+    );
+
+    let registry = Registry::new(reqwest::Client::new());
+    if registry.supports(&episode.url) {
+        if !episode.iframe {
+            eprintln!("{}", lang.note_flag_says_direct());
+        }
+        return Ok(registry.resolve(&episode.url).await?);
+    }
+
+    if episode.iframe {
+        eprintln!("{}", lang.warn_no_extractor());
+    }
+    Ok(ResolvedStream {
+        variants: vec![StreamVariant {
+            height: episode.quality.max(0) as u32,
+            url: episode.url.clone(),
+            kind: StreamKind::classify(None, &episode.url),
+        }],
+        ..Default::default()
+    })
+}
+
+/// Opens a stream with the real player, headless, and reports what mpv makes
+/// of it.
+///
+/// This is how the player crate gets exercised before a window exists: it
+/// drives the same code path the GUI will, minus the rendering.
+fn play(
+    stream: &ResolvedStream,
+    seconds: u64,
+    speed: f64,
+    shader_dir: Option<&std::path::Path>,
+    upscale: Upscale,
+    interpolation: bool,
+    lang: Lang,
+) -> Result<()> {
+    let best = stream.best().with_context(|| lang.err_nothing_resolved())?;
+
+    // Refuse to promise upscaling the install cannot deliver.
+    let mut preset: UpscalePreset = upscale.into();
+    if preset != UpscalePreset::Off {
+        match shader_dir {
+            Some(dir) => {
+                let missing = UpscalePreset::missing_from(dir);
+                if !missing.is_empty() {
+                    eprintln!(
+                        "{}",
+                        lang.play_shaders_missing(missing.len(), &dir.display().to_string())
+                    );
+                    preset = UpscalePreset::Off;
+                }
+            }
+            None => {
+                eprintln!("{}", lang.play_shaders_missing(0, "-"));
+                preset = UpscalePreset::Off;
+            }
+        }
+    }
+
+    let player = Player::new(&PlayerConfig {
+        upscale: preset,
+        interpolation,
+        shader_dir: shader_dir.map(std::path::Path::to_path_buf),
+        ..PlayerConfig::headless()
+    })?;
+
+    eprintln!("{}", lang.play_opening(&best.url));
+    player.open(
+        &MediaSource::new(&best.url)
+            .headers(stream.headers.iter().map(|(k, v)| (k.as_str(), v.as_str()))),
+    )?;
+    player.set_speed(speed)?;
+
+    // Poll rather than subscribe to mpv events: the probe only needs to know
+    // that decoding started, and polling keeps this free of an event loop.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let size = loop {
+        if let Some(size) = player.video_size() {
+            break Some(size);
+        }
+        if std::time::Instant::now() >= deadline {
+            break None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    };
+
+    let Some((width, height)) = size else {
+        bail!("{}", lang.play_timed_out(30));
+    };
+    println!("{}", lang.play_ready(width, height));
+    if let Some(duration) = player.duration() {
+        println!("{}", lang.play_duration(duration.as_secs_f64()));
+    }
+    println!("{}", lang.play_speed(player.speed()?));
+
+    std::thread::sleep(std::time::Duration::from_secs(seconds));
+    if let Some(position) = player.position() {
+        println!("{}", lang.play_position(position.as_secs_f64()));
+    }
+
+    player.stop()?;
+    Ok(())
 }
 
 fn print_stream(

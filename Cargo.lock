@@ -51,6 +51,7 @@ version = "0.1.0"
 dependencies = [
  "anirust-api",
  "anirust-extract",
+ "anirust-player",
  "anyhow",
  "clap",
  "reqwest",
@@ -76,6 +77,15 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "anirust-player"
+version = "0.1.0"
+dependencies = [
+ "libmpv2",
+ "thiserror 2.0.20",
+ "tracing",
 ]
 
 [[package]]
@@ -945,6 +955,21 @@ name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
+
+[[package]]
+name = "libmpv2"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f3d44c1c29b866d44453249d1d8b2822d891fdabd08359a5b85bb6944445e70"
+dependencies = [
+ "libmpv2-sys",
+]
+
+[[package]]
+name = "libmpv2-sys"
+version = "4.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edb32cabe7176b7d270b0dca6ff418b75187ae8d3854423e3d06fbff376841e4"
 
 [[package]]
 name = "litemap"

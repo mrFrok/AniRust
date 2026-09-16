@@ -1,0 +1,14 @@
+[package]
+name = "anirust-player"
+description = "libmpv-backed video playback rendering into a caller-owned GL texture"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+libmpv2 = "6"
+thiserror.workspace = true
+tracing.workspace = true
