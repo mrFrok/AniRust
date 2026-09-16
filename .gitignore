@@ -1,0 +1,23 @@
+/target
+**/*.rs.bk
+*.pdb
+
+# Never commit reverse-engineering material. The API and extractor layers are
+# written from observed protocol behaviour, not from decompiled sources — see
+# the "clean room" rules in README.md. Keeping these out of the tree is what
+# makes that claim checkable.
+/decompiled/
+/apk/
+*.apk
+*.dex
+jadx-*/
+
+# Captured traffic and response fixtures used while probing the live API.
+# Test fixtures that are meant to be committed live under */tests/fixtures/.
+*.har
+/captures/
+
+# Local credentials. The client stores its token in the system keyring, but the
+# CLI probe can be driven by an env file.
+.env
+.env.local

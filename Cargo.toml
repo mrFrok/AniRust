@@ -1,0 +1,82 @@
+[workspace]
+# Crates are added as their phase lands, so the workspace never carries an
+# empty package: extract (phase 2), player (phase 3), core + gui (phase 4).
+members = ["api", "cli"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "GPL-3.0-or-later"
+authors = ["mrfrok"]
+repository = "https://github.com/mrfrok/AniRust"
+homepage = "https://github.com/mrfrok/AniRust"
+
+[workspace.dependencies]
+anirust-api = { path = "api", version = "0.1.0" }
+
+# Async runtime
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
+futures = "0.3"
+async-trait = "0.1"
+
+# HTTP. rustls pinned explicitly rather than relying on the default, so a
+# feature-unification change elsewhere can never silently pull in native-tls.
+# reqwest 0.13 split TLS into a backend plus a certificate source, and moved
+# `.form()`/`.query()` behind their own features.
+reqwest = { version = "0.13", default-features = false, features = [
+    "rustls",
+    # System trust store, so the client still works behind a corporate proxy
+    # or a user-installed CA.
+    "rustls-native-certs",
+    "http2",
+    "charset",
+    "json",
+    "form",
+    "query",
+    "gzip",
+    "brotli",
+    "stream",
+    # Some embed hosts hand out a cookie on the first request and require it
+    # on the follow-up.
+    "cookies",
+] }
+url = "2.5"
+bytes = "1.12"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Errors: thiserror in the library crates, anyhow in the binaries.
+thiserror = "2"
+anyhow = "1"
+
+# Logging: tracing everywhere, including the GUI, so library-internal spans can
+# be forwarded into the on-screen log by a custom Layer.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Extractors
+scraper = "0.27"
+regex = "1.13"
+
+# CLI
+clap = { version = "4.6", features = ["derive", "env"] }
+
+# Platform
+dirs = "7"
+keyring = { version = "4", features = ["apple-native", "windows-native", "sync-secret-service"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+# Unwinding stays on deliberately: a panic inside an extractor or the decoder
+# thread must not take the whole player down.
+
+# Skia and the extractor HTML parsing are painfully slow in a debug build;
+# optimising dependencies only keeps our own crates fast to rebuild.
+[profile.dev.package."*"]
+opt-level = 2
