@@ -35,12 +35,18 @@ export component PlayerPage inherits Rectangle {
     in property <int> upscale: 0;
     in property <bool> interpolation: false;
     in property <bool> has-skip: false;
+    /// Whether the source has an episode either side of this one, so the
+    /// transport can say when it is at an end rather than doing nothing.
+    in property <bool> has-previous: false;
+    in property <bool> has-next: false;
     /// Available renditions, highest first, as "1080p" and the like.
     in property <[string]> qualities: [];
     in property <int> quality: 0;
     /// 0 automatic, 1 hardware, 2 software.
     in property <int> decoder: 0;
     in property <bool> fullscreen: false;
+    /// Filling the window, with the release screen stepped aside.
+    in property <bool> theatre: false;
 
     out property <bool> scrubbing: false;
 
@@ -49,15 +55,33 @@ export component PlayerPage inherits Rectangle {
     callback seek-fraction(float);
     callback seek-relative(float);
     callback skip-opening();
+    callback previous-episode();
+    callback next-episode();
     callback set-speed(float);
     callback set-upscale(int);
     callback set-quality(int);
     callback set-decoder(int);
     callback toggle-interpolation();
     callback toggle-fullscreen();
-    callback go-back();
+    /// Fill the window, or give the release screen its place back.
+    callback toggle-theatre();
+    /// Put the picture away entirely and stop playing.
+    callback close();
 
     background: #000000;
+
+    // The overlay floats over the picture and never dictates how large the
+    // picture should be, so the page's constraints are stated rather than
+    // derived from the chrome inside it. Leaving them to the children lets the
+    // controls push back on the layout that positions them.
+    min-width: 0px;
+    min-height: 0px;
+    preferred-width: 0px;
+    preferred-height: 0px;
+    max-width: 100000px;
+    max-height: 100000px;
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
 
     property <bool> chrome-visible: true;
     property <bool> waiting: root.state == "loading" || root.state == "buffering";
@@ -145,8 +169,12 @@ export component PlayerPage inherits Rectangle {
             alignment: stretch;
 
             IconButton {
-                icon: @image-url("../icons/back.svg");
-                clicked => { root.go-back(); }
+                icon: root.theatre
+                    ? @image-url("../icons/back.svg")
+                    : @image-url("../icons/close.svg");
+                clicked => {
+                    if (root.theatre) { root.toggle-theatre(); } else { root.close(); }
+                }
             }
 
             // The two title lines are a block of their own, centred against
@@ -160,7 +188,7 @@ export component PlayerPage inherits Rectangle {
                     width: 100%;
                     spacing: 1px;
 
-                    Text {
+                    if root.theatre: Text {
                         text: root.title;
                         color: #FFFFFF;
                         font-size: Typography.title-medium-size;
@@ -227,7 +255,7 @@ export component PlayerPage inherits Rectangle {
         alignment: center;
         spacing: Spacing.loose;
         opacity: root.chrome-visible && !root.locked ? 1.0 : 0.0;
-        visible: root.sheet == "" && !root.locked;
+        visible: root.sheet == "" && !root.locked && root.has-video;
         animate opacity { duration: Motion.enter-duration; easing: Motion.enter; }
 
         // One box size across the row, so the glyphs share a centre line
@@ -236,7 +264,8 @@ export component PlayerPage inherits Rectangle {
             icon: @image-url("../icons/prev-episode.svg");
             size: 30px;
             box: 72px;
-            clicked => { root.seek-relative(-10); }
+            dimmed: !root.has-previous;
+            clicked => { if (root.has-previous) { root.previous-episode(); } }
         }
 
         IconButton {
@@ -252,7 +281,8 @@ export component PlayerPage inherits Rectangle {
             icon: @image-url("../icons/next-episode.svg");
             size: 30px;
             box: 72px;
-            clicked => { root.seek-relative(10); }
+            dimmed: !root.has-next;
+            clicked => { if (root.has-next) { root.next-episode(); } }
         }
     }
 
@@ -299,6 +329,17 @@ export component PlayerPage inherits Rectangle {
                     icon: @image-url("../icons/fast-forward.svg");
                     size: 22px;
                     clicked => { root.skip-opening(); }
+                }
+
+                // Taller or shorter, which is a different request from
+                // filling the screen — so a different glyph from the corner
+                // brackets beside it.
+                IconButton {
+                    icon: root.theatre
+                        ? @image-url("../icons/collapse.svg")
+                        : @image-url("../icons/expand.svg");
+                    size: 22px;
+                    clicked => { root.toggle-theatre(); }
                 }
 
                 IconButton {

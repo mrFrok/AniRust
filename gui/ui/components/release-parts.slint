@@ -1,0 +1,361 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Pieces of the release screen.
+//
+// Unlike the player's chrome, these sit on a surface rather than on video, so
+// they use the palette properly instead of translucent white.
+
+import { ScrollView } from "std-widgets.slint";
+import { MaterialPalette } from "../globals/material-palette.slint";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing, Motion } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+import { PickerOption, EpisodeItem } from "../structs.slint";
+
+/// A dropdown over a list of options.
+///
+/// Rows of pills were the first attempt and they cost the screen its best
+/// space: a release with a dozen voice-overs pushed the episode list off the
+/// bottom, and the choice is made once and then left alone. A closed dropdown
+/// states the current choice in one line, which is all it needs to do for the
+/// rest of the session.
+export component Dropdown inherits Rectangle {
+    in property <[PickerOption]> model;
+    in property <int> current: 0;
+    /// Shown before the list has arrived.
+    in property <string> placeholder;
+    callback selected(int);
+
+    /// Beyond this the list scrolls rather than running off the window.
+    property <length> row-height: 44px;
+    property <length> max-popup-height: 320px;
+
+    height: Spacing.touch-target;
+    border-radius: Shape.medium;
+    border-width: 1px;
+    border-color: MaterialPalette.outline-variant;
+    background: touch.has-hover
+        ? MaterialPalette.surface-container-high
+        : MaterialPalette.surface-container;
+    animate background { duration: Motion.standard-duration; easing: Motion.standard; }
+
+    HorizontalLayout {
+        padding-left: Spacing.base;
+        padding-right: Spacing.medium;
+        spacing: Spacing.small;
+
+        Text {
+            text: root.model.length > 0 ? root.model[root.current].label : root.placeholder;
+            color: root.model.length > 0
+                ? MaterialPalette.on-surface
+                : MaterialPalette.on-surface-variant;
+            font-size: Typography.body-large-size;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+
+        if root.model.length > 0: Text {
+            text: detail(root.model[root.current]);
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.label-medium-size;
+            vertical-alignment: center;
+        }
+
+        Image {
+            source: @image-url("../icons/chevron-down.svg");
+            colorize: MaterialPalette.on-surface-variant;
+            width: 18px;
+            height: 18px;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            if (root.model.length > 1) {
+                popup.show();
+            }
+        }
+    }
+
+    popup := PopupWindow {
+        x: 0;
+        y: root.height + Spacing.tight;
+        width: root.width;
+        height: min(root.max-popup-height, root.model.length * root.row-height + 2 * Spacing.small);
+        close-policy: close-on-click-outside;
+
+        Rectangle {
+            background: MaterialPalette.surface-container-high;
+            border-radius: Shape.medium;
+            border-width: 1px;
+            border-color: MaterialPalette.outline-variant;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000066;
+
+            ScrollView {
+                x: 0;
+                y: Spacing.small;
+                width: 100%;
+                height: parent.height - 2 * Spacing.small;
+                viewport-height: root.model.length * root.row-height;
+
+                VerticalLayout {
+                    alignment: start;
+
+                    for option[index] in root.model: Rectangle {
+                        height: root.row-height;
+                        background: index == root.current
+                            ? MaterialPalette.primary-container
+                            : (option-touch.has-hover
+                                ? MaterialPalette.surface-container-highest
+                                : transparent);
+
+                        HorizontalLayout {
+                            padding-left: Spacing.base;
+                            padding-right: Spacing.base;
+                            spacing: Spacing.small;
+
+                            Text {
+                                text: option.label;
+                                color: index == root.current
+                                    ? MaterialPalette.on-primary-container
+                                    : MaterialPalette.on-surface;
+                                font-size: Typography.body-medium-size;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                overflow: elide;
+                            }
+
+                            Text {
+                                text: detail(option);
+                                color: index == root.current
+                                    ? MaterialPalette.on-primary-container
+                                    : MaterialPalette.on-surface-variant;
+                                font-size: Typography.label-medium-size;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        option-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.selected(index);
+                                popup.close();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// What sits to the right of a name: how much is behind this choice.
+    pure function detail(option: PickerOption) -> string {
+        option.is-sub
+            ? Tr.subtitles-short
+            : (option.episodes > 0 ? option.episodes + " " + Tr.episodes-short : "")
+    }
+}
+
+/// One row of the episode list.
+///
+/// Carries three pieces of state a viewer actually acts on: whether it has been
+/// seen, whether it was left part-way through, and whether it is filler. The
+/// last is why the list is worth building at all rather than showing bare
+/// numbers — someone following the manga skips those.
+export component EpisodeRow inherits Rectangle {
+    in property <EpisodeItem> episode;
+    in property <bool> playing: false;
+    callback clicked;
+
+    height: 48px;
+    border-radius: Shape.medium;
+    background: root.playing
+        ? MaterialPalette.primary-container
+        : (touch.has-hover ? MaterialPalette.surface-container-high : transparent);
+    animate background { duration: Motion.standard-duration; easing: Motion.standard; }
+
+    HorizontalLayout {
+        padding-left: Spacing.medium;
+        padding-right: Spacing.medium;
+        spacing: Spacing.medium;
+
+        // The word "episode" beside a column of numbers said nothing the
+        // numbers did not. What stays is the number itself, and the host's own
+        // title only where it differs from it.
+        Text {
+            text: root.episode.position;
+            color: root.playing
+                ? MaterialPalette.on-primary-container
+                : (root.episode.watched
+                    ? MaterialPalette.on-surface-variant
+                    : MaterialPalette.on-surface);
+            font-size: Typography.title-medium-size;
+            font-weight: Typography.title-medium-weight-em;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+            width: 30px;
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: Spacing.hair;
+
+            if root.episode.name != "": Text {
+                text: root.episode.name;
+                color: root.playing
+                    ? MaterialPalette.on-primary-container
+                    : MaterialPalette.on-surface;
+                font-size: Typography.body-medium-size;
+                overflow: elide;
+            }
+
+            if root.episode.resume-at != "" || root.episode.filler: Text {
+                text: root.episode.resume-at != ""
+                    ? Tr.resume-from + " " + root.episode.resume-at
+                    : Tr.filler;
+                color: root.playing
+                    ? MaterialPalette.on-primary-container
+                    : MaterialPalette.on-surface-variant;
+                font-size: Typography.label-small-size;
+            }
+        }
+
+        // A tick rather than a label: the list is scanned, not read.
+        if root.episode.watched: Text {
+            text: "✓";
+            color: root.playing ? MaterialPalette.on-primary-container : MaterialPalette.primary;
+            font-size: Typography.title-medium-size;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// Choosing what to watch: voice-over, then its source, then its episodes.
+///
+/// One component because the three are one decision made top to bottom, and
+/// because the screen places it in two different spots depending on how much
+/// room there is.
+export component EpisodePicker inherits VerticalLayout {
+    in property <[PickerOption]> dubbers;
+    in property <int> dubber: 0;
+    in property <[PickerOption]> sources;
+    in property <int> source: 0;
+    in property <[EpisodeItem]> episodes;
+    /// The episode in the player, or 0 when nothing is playing.
+    in property <int> current: 0;
+
+    callback select-dubber(int);
+    callback select-source(int);
+    callback play-episode(int);
+
+    spacing: Spacing.medium;
+
+    HorizontalLayout {
+        spacing: Spacing.small;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: Spacing.tight;
+
+            Text {
+                text: Tr.voice-overs;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.label-medium-size;
+            }
+
+            Dropdown {
+                model: root.dubbers;
+                current: root.dubber;
+                placeholder: Tr.loading;
+                selected(index) => { root.select-dubber(index); }
+            }
+        }
+
+        // A single source is not a choice; showing a dropdown that cannot be
+        // opened would only ask the viewer to check.
+        if root.sources.length > 1: VerticalLayout {
+            width: 40%;
+            spacing: Spacing.tight;
+
+            Text {
+                text: Tr.source;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.label-medium-size;
+            }
+
+            Dropdown {
+                model: root.sources;
+                current: root.source;
+                placeholder: Tr.loading;
+                selected(index) => { root.select-source(index); }
+            }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: Spacing.small;
+
+        Text {
+            text: Tr.episodes;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.title-medium-size;
+            font-weight: Typography.title-medium-weight-em;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        Text {
+            text: root.episodes.length;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.label-medium-size;
+            vertical-alignment: center;
+        }
+    }
+
+    ScrollView {
+        vertical-stretch: 1;
+        min-height: 120px;
+        viewport-height: episode-list.preferred-height;
+
+        episode-list := VerticalLayout {
+            spacing: Spacing.hair;
+            alignment: start;
+
+            for item in root.episodes: EpisodeRow {
+                episode: item;
+                playing: item.position == root.current;
+                clicked => { root.play-episode(item.position); }
+            }
+        }
+    }
+}
+
+/// Poster with a placeholder for the time before it arrives.
+export component Poster inherits Rectangle {
+    in property <image> source;
+    in property <bool> loaded: false;
+
+    width: 150px;
+    height: 216px;
+    border-radius: Shape.large;
+    clip: true;
+    background: MaterialPalette.surface-container-high;
+
+    Image {
+        source: root.source;
+        image-fit: cover;
+        width: 100%;
+        height: 100%;
+        opacity: root.loaded ? 1.0 : 0.0;
+        animate opacity { duration: Motion.enter-duration; easing: Motion.enter; }
+    }
+}

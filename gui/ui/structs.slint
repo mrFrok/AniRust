@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Shapes shared between Rust and the interface. `slint-build` generates a Rust
+// struct of the same name for each, so these are the contract between the two
+// halves — keep them narrow, and keep display formatting on the Slint side
+// where the translations live.
+
+/// One entry in a dropdown.
+///
+/// Voice-overs and sources are the same shape of choice — a name, and a hint at
+/// how much is behind it — so they share a struct rather than each having one
+/// that differs only in spelling.
+export struct PickerOption {
+    label: string,
+    /// Episodes this option carries, or 0 when the server does not say.
+    episodes: int,
+    /// Subtitles rather than a dub. Only voice-overs set this.
+    is-sub: bool,
+}
+
+/// One episode in the list.
+export struct EpisodeItem {
+    position: int,
+    /// The host's own title, empty unless it says something the number does
+    /// not. Rust drops titles that are just the number restated.
+    name: string,
+    /// Already seen, according to the account.
+    watched: bool,
+    /// Where playback left off, as "12:30", or empty if never started.
+    resume-at: string,
+    /// Filler, so a viewer following the manga can skip it.
+    filler: bool,
+}

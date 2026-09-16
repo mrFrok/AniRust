@@ -2,15 +2,19 @@
 
 //! AniRust.
 //!
-//! At this stage the application exists to prove one thing: that mpv's output
-//! reaches a Slint surface as a borrowed GL texture, with no per-frame copy
-//! through the CPU. The design system and the real screens are built on top
-//! once that is confirmed, because a beautiful UI around a player that cannot
-//! draw is worth nothing.
+//! One window, two screens: the release screen chooses what to watch, the
+//! player plays it. The player is a screen rather than a separate window, so
+//! leaving an episode lands back on the release it came from instead of on
+//! nothing.
+//!
+//! Nothing here blocks the event loop. Every lookup and every extractor run
+//! goes through [`tasks`] and comes back on the UI thread.
 
+mod release;
+mod tasks;
 mod video;
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -21,6 +25,7 @@ use anirust_api::{Client, EpisodeSort};
 use anirust_extract::{Registry, ResolvedStream};
 use anirust_player::{MediaSource, PlaybackState, Player, PlayerConfig, UpscalePreset};
 
+use crate::release::ReleaseState;
 use crate::video::VideoBridge;
 
 slint::include_modules!();
@@ -35,27 +40,8 @@ fn main() -> Result<()> {
         .with_writer(std::io::stderr)
         .init();
 
-    let target = Target::from_args()?;
-
-    // The stream is resolved before the event loop starts: the UI has nothing
-    // to show until there is something to play, and keeping the async work out
-    // of the loop keeps this file about rendering.
-    let playback = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .context("starting the async runtime")?
-        .block_on(target.resolve())?;
-
-    let Playback {
-        stream,
-        title,
-        episode_label,
-    } = playback;
-
-    let best = stream
-        .best()
-        .context("nothing resolved to a playable stream")?;
-    tracing::info!(url = %best.url, height = best.height, "resolved");
+    let release_id = release_id_from_args()?;
+    tasks::init()?;
 
     let window = MainWindow::new().context("creating the window")?;
     window.set_lang(if is_russian_locale() {
@@ -63,23 +49,44 @@ fn main() -> Result<()> {
     } else {
         "en".into()
     });
-    window.set_release_title(title.into());
-    window.set_episode_label(episode_label.into());
-    window.set_state("loading".into());
-    window.set_has_skip(stream.opening.is_some());
-    window.set_quality_label(
-        if best.height == anirust_extract::UNKNOWN_HEIGHT {
-            "—".to_owned()
-        } else {
-            format!("{}p", best.height)
-        }
-        .into(),
-    );
 
-    // Bring-up knobs. Hardware decoding hands frames over through
-    // DMA-BUF/EGLImage, which is where torn-band artefacts usually come from,
-    // so it has to be togglable without a rebuild while this is being sorted.
-    let config = PlayerConfig {
+    let config = player_config();
+    tracing::info!(hwdec = %config.hwdec, "player config");
+    let player = Player::new(&config).context("creating the player")?;
+    let bridge = Rc::new(VideoBridge::new(player).context("creating the video bridge")?);
+
+    bridge
+        .attach(&window, |window, frame| {
+            window.set_video_frame(frame);
+            window.set_has_video(true);
+        })
+        .context("attaching video to the window")?;
+
+    let http = reqwest_client();
+    let client = Rc::new(Client::new().context("creating the API client")?);
+    let registry = Rc::new(Registry::new(http.clone()));
+    let state = Rc::new(RefCell::new(ReleaseState::default()));
+    let playing = Rc::new(RefCell::new(None::<ResolvedStream>));
+    let settings = Rc::new(Settings::default());
+
+    wire_release(&window, &state, &client, &registry, &bridge, &playing);
+    wire_player(
+        &window, &state, &client, &registry, &bridge, &playing, &settings,
+    );
+    drive_status(&window, bridge.player(), &settings, &bridge);
+
+    release::load(&window, &state, client, http, release_id);
+
+    window.run().context("running the event loop")?;
+    Ok(())
+}
+
+/// Bring-up knobs, so a picture problem can be bisected without a rebuild.
+///
+/// Every one of these eliminated a suspect while the GL path was being brought
+/// up; they stay because the next driver will raise the same questions.
+fn player_config() -> PlayerConfig {
+    PlayerConfig {
         hwdec: std::env::var("ANIRUST_HWDEC")
             .map(std::borrow::Cow::Owned)
             .unwrap_or(std::borrow::Cow::Borrowed(anirust_player::DEFAULT_HWDEC)),
@@ -96,59 +103,324 @@ fn main() -> Result<()> {
         dumb_mode: std::env::var("ANIRUST_DUMB").is_ok(),
         verbose_log: std::env::var("ANIRUST_MPV_LOG").is_ok(),
         ..PlayerConfig::default()
-    };
-    tracing::info!(hwdec = %config.hwdec, "player config");
+    }
+}
 
-    let player = Player::new(&config).context("creating the player")?;
-    let bridge = VideoBridge::new(player).context("creating the video bridge")?;
+/// The stream currently loaded, kept so the quality menu and the skip button
+/// can act on what is playing rather than on what was resolved first.
+type Playing = Rc<RefCell<Option<ResolvedStream>>>;
 
-    bridge
-        .attach(&window, |window, frame| {
-            window.set_video_frame(frame);
-            window.set_has_video(true);
-        })
-        .context("attaching video to the window")?;
+// ---------------------------------------------------------------------------
+// Release screen
+// ---------------------------------------------------------------------------
 
-    bridge
-        .play(
-            MediaSource::new(&best.url).headers(
-                stream
-                    .headers
-                    .iter()
-                    .map(|(name, value)| (name.as_str(), value.as_str())),
-            ),
+fn wire_release(
+    window: &MainWindow,
+    state: &Rc<RefCell<ReleaseState>>,
+    client: &Rc<Client>,
+    registry: &Rc<Registry>,
+    bridge: &Rc<VideoBridge>,
+    playing: &Playing,
+) {
+    let weak = window.as_weak();
+    let chosen = Rc::clone(state);
+    let api = Rc::clone(client);
+    window.on_select_dubber(move |index| {
+        let Some(window) = weak.upgrade() else { return };
+        release::select_dubber(&window, &chosen, Rc::clone(&api), index.max(0) as usize);
+    });
+
+    let weak = window.as_weak();
+    let chosen = Rc::clone(state);
+    let api = Rc::clone(client);
+    window.on_select_source(move |index| {
+        let Some(window) = weak.upgrade() else { return };
+        release::select_source(&window, &chosen, Rc::clone(&api), index.max(0) as usize);
+    });
+
+    let weak = window.as_weak();
+    let chosen = Rc::clone(state);
+    let resolver = Rc::clone(registry);
+    let bridge = Rc::clone(bridge);
+    let playing = Rc::clone(playing);
+    let api = Rc::clone(client);
+    window.on_play_episode(move |position| {
+        let Some(window) = weak.upgrade() else { return };
+        play(
+            &window, &chosen, &api, &resolver, &bridge, &playing, position,
+        );
+    });
+
+    // Nothing above the release screen yet, so its back button has nowhere to
+    // go. Wiring it silently keeps the Slint side from warning about an
+    // unhandled callback.
+    window.on_go_back(|| tracing::debug!("nothing above the release screen yet"));
+}
+
+/// Resolves an episode and hands it to the player.
+///
+/// The selected source is tried first and the rest of the release after it.
+/// One host failing is routine rather than exceptional — Kodik answers `500`
+/// for stretches at a time and carries most of the catalogue — so giving up on
+/// the first failure would present a temporary outage as a broken client.
+fn play(
+    window: &MainWindow,
+    state: &Rc<RefCell<ReleaseState>>,
+    client: &Rc<Client>,
+    registry: &Rc<Registry>,
+    bridge: &Rc<VideoBridge>,
+    playing: &Playing,
+    position: i32,
+) {
+    let (attempt, dubber, resume) = {
+        let state = state.borrow();
+        let Some(episode) = state.episode_at(position) else {
+            tracing::warn!(position, "no such episode in this source");
+            return;
+        };
+        let Some(attempt) = Attempt::for_episode(&state, position) else {
+            tracing::warn!(position, "no voice-over selected");
+            return;
+        };
+        (
+            attempt,
+            state.selected_dubber().map(|d| d.name.clone()),
+            episode.resume_at(),
         )
-        .context("starting playback")?;
+    };
+
+    window.set_current_episode(position);
+    window.set_episode_label(match &dubber {
+        Some(name) => format!("{position} - {name}").into(),
+        None => position.to_string().into(),
+    });
+    show_neighbours(window, state, position);
+
+    // The picture area is handed over before the stream resolves: resolution
+    // goes through a CDN that can take tens of seconds just to accept a
+    // connection, and the viewer should watch that happen in the player rather
+    // than on a screen that appears to have ignored the click.
+    window.set_has_video(false);
+    window.set_state("loading".into());
+    window.set_qualities(slint::ModelRc::new(slint::VecModel::from(Vec::<
+        slint::SharedString,
+    >::new())));
+    window.set_has_skip(false);
+    window.set_playing(true);
+
+    let weak = window.as_weak();
+    let api = (**client).clone();
+    let resolver = (**registry).clone();
+    let bridge = Rc::clone(bridge);
+    let playing = Rc::clone(playing);
+
+    tasks::spawn(
+        async move { attempt.resolve(&api, &resolver).await },
+        move |resolved| {
+            let Some(window) = weak.upgrade() else { return };
+
+            // The viewer may have stepped on while this was in flight; what
+            // came back is then for an episode nobody is waiting for.
+            if window.get_current_episode() != position {
+                tracing::debug!(position, "discarding a stream for a superseded episode");
+                return;
+            }
+
+            match resolved {
+                Ok(stream) => start(&window, &bridge, &playing, stream, resume),
+                Err(error) => {
+                    tracing::error!(%error, position, "could not resolve the episode");
+                    // Nothing to show, so the picture area goes back to the
+                    // release rather than sitting black for ever.
+                    window.set_state("idle".into());
+                    window.set_playing(false);
+                    window.set_current_episode(0);
+                }
+            }
+        },
+    );
+}
+
+/// Everywhere one episode might be found, in the order worth trying.
+///
+/// Fallback stays inside the chosen voice-over: dropping to another one would
+/// silently change the language being spoken, which is not a decision a failed
+/// request gets to make.
+struct Attempt {
+    release_id: i64,
+    dubber_id: i64,
+    position: i32,
+    /// The URL the selected source already gave us, so the common case costs
+    /// no extra request.
+    known: Option<String>,
+    /// The voice-over's other sources, tried only if that URL fails.
+    fallbacks: Vec<i64>,
+}
+
+impl Attempt {
+    fn for_episode(state: &ReleaseState, position: i32) -> Option<Self> {
+        let dubber = state.selected_dubber()?;
+        let selected = state.selected_source().map(|s| s.id);
+
+        Some(Self {
+            release_id: state.release_id,
+            dubber_id: dubber.id,
+            position,
+            known: state.episode_at(position).map(|e| e.url.clone()),
+            fallbacks: state
+                .sources
+                .iter()
+                .map(|s| s.id)
+                .filter(|id| Some(*id) != selected)
+                .collect(),
+        })
+    }
+
+    /// Resolves the first source that yields a playable stream.
+    async fn resolve(self, client: &Client, registry: &Registry) -> Result<ResolvedStream> {
+        let mut failures = Vec::new();
+
+        if let Some(url) = self.known
+            && let Some(stream) = try_url(registry, url, &mut failures).await
+        {
+            return Ok(stream);
+        }
+
+        for source_id in self.fallbacks {
+            let episodes = match client
+                .episodes(
+                    self.release_id,
+                    self.dubber_id,
+                    source_id,
+                    EpisodeSort::Ascending,
+                )
+                .await
+            {
+                Ok(episodes) => episodes,
+                Err(error) => {
+                    failures.push(format!("source {source_id}: {error}"));
+                    continue;
+                }
+            };
+
+            let Some(episode) = episodes.into_iter().find(|e| e.position == self.position) else {
+                continue;
+            };
+
+            if let Some(stream) = try_url(registry, episode.url, &mut failures).await {
+                return Ok(stream);
+            }
+        }
+
+        bail!(
+            "no source could play episode {}:\n  {}",
+            self.position,
+            failures.join("\n  ")
+        )
+    }
+}
+
+/// Resolves one URL, recording why it failed rather than propagating it.
+async fn try_url(
+    registry: &Registry,
+    url: String,
+    failures: &mut Vec<String>,
+) -> Option<ResolvedStream> {
+    match resolve_url(registry, url.clone()).await {
+        Ok(stream) if stream.best().is_some() => Some(stream),
+        Ok(_) => {
+            failures.push(format!("{url}: nothing playable"));
+            None
+        }
+        Err(error) => {
+            tracing::warn!(%url, %error, "source failed, trying the next");
+            failures.push(format!("{url}: {error}"));
+            None
+        }
+    }
+}
+
+/// Points the player at a resolved stream.
+fn start(
+    window: &MainWindow,
+    bridge: &Rc<VideoBridge>,
+    playing: &Playing,
+    stream: ResolvedStream,
+    resume: Option<Duration>,
+) {
+    let Some(best) = stream.best() else {
+        tracing::error!("resolved a stream with no renditions");
+        window.set_state("idle".into());
+        window.set_playing(false);
+        return;
+    };
+    tracing::info!(url = %best.url, height = best.height, "resolved");
 
     window.set_qualities(slint::ModelRc::new(slint::VecModel::from(
         stream
             .variants
             .iter()
-            .map(|v| {
-                if v.height == anirust_extract::UNKNOWN_HEIGHT {
-                    slint::SharedString::from("auto")
-                } else {
-                    slint::SharedString::from(format!("{}p", v.height))
-                }
-            })
-            .collect::<Vec<_>>(),
+            .map(|v| quality_name(v.height).into())
+            .collect::<Vec<slint::SharedString>>(),
     )));
+    window.set_quality(0);
+    window.set_has_skip(stream.opening.is_some());
 
-    let player = bridge.player();
-    let settings = Rc::new(Settings::default());
-    let bridge = Rc::new(bridge);
-    wire_controls(&window, player, &settings, &bridge, stream);
-    drive_status(&window, player, &settings, &bridge);
+    let mut source = MediaSource::new(&best.url).headers(
+        stream
+            .headers
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str())),
+    );
+    if let Some(at) = resume {
+        source = source.start_at(at);
+    }
 
-    window.run().context("running the event loop")?;
-    Ok(())
+    if let Err(error) = bridge.play(source) {
+        tracing::error!(%error, "could not start playback");
+        window.set_state("idle".into());
+        window.set_playing(false);
+        return;
+    }
+
+    *playing.borrow_mut() = Some(stream);
 }
 
-/// Settings the overlay cycles through.
+/// Turns one episode URL into a stream, through an extractor when a host
+/// claims it.
 ///
-/// Kept beside the player rather than read back from mpv: "which preset is
-/// selected" is a choice the interface owns, and mpv has no notion of a preset
-/// once the shader list is applied.
+/// Routing is by host rather than by the API's `iframe` flag, which lies for
+/// several of them.
+async fn resolve_url(registry: &Registry, url: String) -> Result<ResolvedStream> {
+    if registry.supports(&url) {
+        return Ok(registry.resolve(&url).await?);
+    }
+
+    Ok(ResolvedStream {
+        variants: vec![anirust_extract::StreamVariant {
+            height: anirust_extract::UNKNOWN_HEIGHT,
+            kind: anirust_extract::StreamKind::classify(None, &url),
+            url,
+        }],
+        ..Default::default()
+    })
+}
+
+/// Tells the transport whether there is an episode either side of this one.
+fn show_neighbours(window: &MainWindow, state: &Rc<RefCell<ReleaseState>>, position: i32) {
+    let state = state.borrow();
+    window.set_has_previous(state.previous_before(position).is_some());
+    window.set_has_next(state.next_after(position).is_some());
+}
+
+// ---------------------------------------------------------------------------
+// Player screen
+// ---------------------------------------------------------------------------
+
+/// What the overlay's controls are set to.
+///
+/// Kept beside the player because "which preset is selected" is a choice the
+/// interface owns; mpv has no notion of a preset once a shader list is applied.
 struct Settings {
     speed: Cell<f64>,
     upscale: Cell<usize>,
@@ -180,15 +452,17 @@ const PRESETS: [UpscalePreset; 4] = [
 /// them: automatic, hardware, software.
 const DECODERS: [&str; 3] = [anirust_player::DEFAULT_HWDEC, "nvdec,vaapi", "no"];
 
-fn wire_controls(
+fn wire_player(
     window: &MainWindow,
-    player: &'static Player,
-    settings: &Rc<Settings>,
+    state: &Rc<RefCell<ReleaseState>>,
+    client: &Rc<Client>,
+    registry: &Rc<Registry>,
     bridge: &Rc<VideoBridge>,
-    stream: ResolvedStream,
+    playing: &Playing,
+    settings: &Rc<Settings>,
 ) {
-    let opening = stream.opening;
-    let stream = Rc::new(stream);
+    let player = bridge.player();
+
     window.on_toggle_pause(move || {
         if let Err(error) = player.toggle_pause() {
             tracing::warn!(%error, "pause failed");
@@ -211,12 +485,19 @@ fn wire_controls(
         }
     });
 
+    let current = Rc::clone(playing);
     window.on_skip_opening(move || {
-        let ends_at = opening.map(|range| Duration::from_secs(u64::from(range.end)));
+        let ends_at = current
+            .borrow()
+            .as_ref()
+            .and_then(|stream| stream.opening)
+            .map(|range| Duration::from_secs(u64::from(range.end)));
         if let Err(error) = player.skip_opening(ends_at) {
             tracing::warn!(%error, "skip failed");
         }
     });
+
+    wire_stepping(window, state, client, registry, bridge, playing);
 
     let chosen = Rc::clone(settings);
     window.on_set_speed(move |speed| {
@@ -236,21 +517,34 @@ fn wire_controls(
         }
     });
 
-    // Switching rendition means opening a different URL, so playback resumes
-    // where it left off rather than starting over.
     let chosen = Rc::clone(settings);
-    let switch_stream = Rc::clone(&stream);
-    let switch_bridge = Rc::clone(bridge);
+    window.on_toggle_interpolation(move || {
+        let next = !chosen.interpolation.get();
+        chosen.interpolation.set(next);
+        if let Err(error) = player.set_interpolation(next) {
+            tracing::warn!(%error, "interpolation change failed");
+        }
+    });
+
+    // Switching rendition reopens a different URL, so playback resumes where
+    // it left off rather than starting over.
+    let chosen = Rc::clone(settings);
+    let current = Rc::clone(playing);
+    let switch = Rc::clone(bridge);
     window.on_set_quality(move |index| {
         let index = index.max(0) as usize;
-        let Some(variant) = switch_stream.variants.get(index) else {
+        let stream = current.borrow();
+        let Some(stream) = stream.as_ref() else {
+            return;
+        };
+        let Some(variant) = stream.variants.get(index) else {
             return;
         };
         chosen.quality.set(index);
 
         let resume = player.position().unwrap_or_default();
         let mut source = MediaSource::new(&variant.url).headers(
-            switch_stream
+            stream
                 .headers
                 .iter()
                 .map(|(name, value)| (name.as_str(), value.as_str())),
@@ -259,7 +553,7 @@ fn wire_controls(
             source = source.start_at(resume);
         }
 
-        if let Err(error) = switch_bridge.play(source) {
+        if let Err(error) = switch.play(source) {
             tracing::warn!(%error, height = variant.height, "quality change failed");
         }
     });
@@ -279,16 +573,72 @@ fn wire_controls(
         let next = !window.get_fullscreen();
         window.set_fullscreen(next);
         window.window().set_fullscreen(next);
+        // Filling the screen with a window that still boxes the picture into
+        // one corner of itself is not what the button promises.
+        window.set_theatre(next);
     });
 
-    let cycle = Rc::clone(settings);
-    window.on_toggle_interpolation(move || {
-        let next = !cycle.interpolation.get();
-        cycle.interpolation.set(next);
-        if let Err(error) = player.set_interpolation(next) {
-            tracing::warn!(%error, "interpolation change failed");
+    // Closing the player stops decoding: a stream running behind a screen
+    // nobody is looking at costs bandwidth for nothing.
+    let current = Rc::clone(playing);
+    let weak = window.as_weak();
+    window.on_close_player(move || {
+        if let Err(error) = player.stop() {
+            tracing::warn!(%error, "stopping playback failed");
         }
+        current.borrow_mut().take();
+
+        let Some(window) = weak.upgrade() else { return };
+        window.set_playing(false);
+        window.set_current_episode(0);
+        window.set_state("idle".into());
+        window.set_has_video(false);
     });
+}
+
+/// The previous and next episode buttons.
+///
+/// Both do the same thing with a different neighbour, so they are built from
+/// one closure rather than written twice.
+fn wire_stepping(
+    window: &MainWindow,
+    state: &Rc<RefCell<ReleaseState>>,
+    client: &Rc<Client>,
+    registry: &Rc<Registry>,
+    bridge: &Rc<VideoBridge>,
+    playing: &Playing,
+) {
+    let stepper = |forward: bool| {
+        let weak = window.as_weak();
+        let state = Rc::clone(state);
+        let client = Rc::clone(client);
+        let registry = Rc::clone(registry);
+        let bridge = Rc::clone(bridge);
+        let playing = Rc::clone(playing);
+
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            let current = window.get_current_episode();
+            let neighbour = {
+                let state = state.borrow();
+                if forward {
+                    state.next_after(current)
+                } else {
+                    state.previous_before(current)
+                }
+            };
+
+            match neighbour {
+                Some(position) => play(
+                    &window, &state, &client, &registry, &bridge, &playing, position,
+                ),
+                None => tracing::debug!(current, forward, "no episode that way"),
+            }
+        }
+    };
+
+    window.on_previous_episode(stepper(false));
+    window.on_next_episode(stepper(true));
 }
 
 /// Mirrors the player's state into the window, four times a second.
@@ -312,6 +662,12 @@ fn drive_status(
         Duration::from_millis(250),
         move || {
             let Some(window) = weak.upgrade() else { return };
+
+            // With nothing loaded there is nothing to mirror, and asking mpv
+            // for properties it has no file for is pure waste.
+            if !window.get_playing() {
+                return;
+            }
 
             let position = player.position().unwrap_or_default();
             let duration = player.duration();
@@ -369,6 +725,10 @@ fn drive_status(
     std::mem::forget(timer);
 }
 
+// ---------------------------------------------------------------------------
+// Formatting
+// ---------------------------------------------------------------------------
+
 fn fraction_of(position: Duration, duration: Option<Duration>) -> f32 {
     match duration {
         Some(total) if total.as_secs_f32() > 0.0 => {
@@ -394,6 +754,15 @@ fn quality_label(source: Option<(u32, u32)>, rendered: Option<(u32, u32)>) -> St
             format!("{source_h}p → {rendered_h}p")
         }
         _ => format!("{source_h}p"),
+    }
+}
+
+/// What the quality menu calls a rendition.
+fn quality_name(height: u32) -> String {
+    if height == anirust_extract::UNKNOWN_HEIGHT {
+        "auto".to_owned()
+    } else {
+        format!("{height}p")
     }
 }
 
@@ -426,7 +795,7 @@ fn is_russian_locale() -> bool {
         .is_some_and(|locale| locale.to_ascii_lowercase().starts_with("ru"))
 }
 
-fn format_time(value: Duration) -> String {
+pub fn format_time(value: Duration) -> String {
     let total = value.as_secs();
     let (hours, minutes, seconds) = (total / 3600, (total % 3600) / 60, total % 60);
     if hours > 0 {
@@ -436,175 +805,18 @@ fn format_time(value: Duration) -> String {
     }
 }
 
-/// What the application was asked to play.
-enum Target {
-    /// A URL, embed or direct.
-    Url(String),
-    /// A release and an episode number, resolved through the API.
-    Episode { release_id: i64, position: i32 },
-}
-
-impl Target {
-    fn from_args() -> Result<Self> {
-        let args: Vec<String> = std::env::args().skip(1).collect();
-        match args.as_slice() {
-            [url] if url.contains("://") => Ok(Self::Url(url.clone())),
-            [release_id] => Ok(Self::Episode {
-                release_id: release_id.parse().context("release id must be a number")?,
-                position: 1,
-            }),
-            [release_id, position] => Ok(Self::Episode {
-                release_id: release_id.parse().context("release id must be a number")?,
-                position: position.parse().context("episode must be a number")?,
-            }),
-            _ => bail!("usage:\n  anirust <release-id> [episode]\n  anirust <url>"),
-        }
-    }
-
-    async fn resolve(&self) -> Result<Playback> {
-        let registry = Registry::new(reqwest_client());
-
-        match self {
-            Self::Url(url) => {
-                // Opened by link, so there is no release to name. The source's
-                // own name at least says something; a hostname is developer
-                // output and does not belong on screen.
-                let title = host_of(url)
-                    .and_then(|host| registry.for_host(&host).map(|e| e.name().to_owned()))
-                    .unwrap_or_else(|| "AniRust".to_owned());
-
-                Ok(Playback {
-                    stream: resolve_url(&registry, url.clone()).await?,
-                    title,
-                    episode_label: String::new(),
-                })
-            }
-            Self::Episode {
-                release_id,
-                position,
-            } => resolve_episode(&registry, *release_id, *position).await,
-        }
-    }
-}
-
-/// Finds a playable stream for an episode, trying every voice-over and source
-/// the release offers.
-///
-/// One source failing is routine rather than exceptional: Kodik answers `500`
-/// for stretches at a time, and it carries most of the catalogue. A release
-/// usually lists several voice-overs, each with its own host, so giving up on
-/// the first failure throws away working alternatives — and presents a
-/// temporary outage at one host as a broken client.
-async fn resolve_episode(registry: &Registry, release_id: i64, position: i32) -> Result<Playback> {
-    let client = Client::new().context("creating the API client")?;
-
-    // The screen names what is playing, so the release is fetched even though
-    // the stream itself does not need it.
-    let release = client.release(release_id, false).await?;
-    let title = release.title().to_owned();
-
-    let dubbers = client.dubbers(release_id).await?;
-    if dubbers.is_empty() {
-        bail!("the release has no voice-overs");
-    }
-
-    let mut failures = Vec::new();
-
-    for dubber in &dubbers {
-        let sources = match client.sources(release_id, dubber.id).await {
-            Ok(sources) => sources,
-            Err(error) => {
-                failures.push(format!("{}: {error}", dubber.name));
-                continue;
-            }
-        };
-
-        for source in &sources {
-            let episodes = match client
-                .episodes(release_id, dubber.id, source.id, EpisodeSort::Ascending)
-                .await
-            {
-                Ok(episodes) => episodes,
-                Err(error) => {
-                    failures.push(format!("{} / {}: {error}", dubber.name, source.name));
-                    continue;
-                }
-            };
-
-            let Some(episode) = episodes.into_iter().find(|e| e.position == position) else {
-                continue;
-            };
-
-            match resolve_url(registry, episode.url).await {
-                Ok(stream) => {
-                    tracing::info!(
-                        dubber = %dubber.name,
-                        source = %source.name,
-                        "resolved"
-                    );
-                    return Ok(Playback {
-                        stream,
-                        title,
-                        // The word "episode" is added on the Slint side, which
-                        // owns the translations.
-                        episode_label: format!("{position} - {}", dubber.name),
-                    });
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        dubber = %dubber.name,
-                        source = %source.name,
-                        %error,
-                        "source failed, trying the next"
-                    );
-                    failures.push(format!("{} / {}: {error}", dubber.name, source.name));
-                }
-            }
-        }
-    }
-
-    bail!(
-        "no source could play episode {position}:\n  {}",
-        failures.join("\n  ")
-    )
-}
-
-/// Turns one episode URL into a stream, through an extractor when a host
-/// claims it.
-///
-/// Routing is by host rather than by the API's `iframe` flag, which lies for
-/// several of them.
-async fn resolve_url(registry: &Registry, url: String) -> Result<ResolvedStream> {
-    if registry.supports(&url) {
-        return Ok(registry.resolve(&url).await?);
-    }
-
-    Ok(ResolvedStream {
-        variants: vec![anirust_extract::StreamVariant {
-            height: anirust_extract::UNKNOWN_HEIGHT,
-            kind: anirust_extract::StreamKind::classify(None, &url),
-            url,
-        }],
-        ..Default::default()
-    })
-}
-
-/// A resolved stream together with what the screen should call it.
-struct Playback {
-    stream: ResolvedStream,
-    title: String,
-    episode_label: String,
-}
-
-/// Host of a URL, used to find which extractor claims it.
-fn host_of(url: &str) -> Option<String> {
-    anirust_extract::host_of(url)
-}
-
 fn reqwest_client() -> reqwest::Client {
     reqwest::Client::builder()
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
+}
+
+fn release_id_from_args() -> Result<i64> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.as_slice() {
+        [id] => id.parse().context("the release id must be a number"),
+        _ => bail!("usage: anirust <release-id>"),
+    }
 }
 
 #[cfg(test)]
@@ -635,6 +847,12 @@ mod tests {
     #[test]
     fn nothing_loaded_shows_a_placeholder() {
         assert_eq!(quality_label(None, None), "—");
+    }
+
+    #[test]
+    fn an_unlabelled_rendition_is_called_auto() {
+        assert_eq!(quality_name(anirust_extract::UNKNOWN_HEIGHT), "auto");
+        assert_eq!(quality_name(1080), "1080p");
     }
 
     #[test]

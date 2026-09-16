@@ -19,6 +19,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::serde_ext::nullable;
 
+/// Where poster images are served from, for the responses that send only an
+/// id. Observed, not documented.
+const POSTER_BASE_URL: &str = "https://s.anixmirai.com/posters/";
+
 /// A voice-over track for a release. The app calls this a `Type` and returns
 /// it under a `types` key; "dubber" is used here because `Type` is unusable as
 /// a Rust name.
@@ -150,8 +154,10 @@ pub struct Release {
     #[serde(deserialize_with = "nullable")]
     pub note: String,
 
+    /// Storage id of the poster, not a URL. Use [`Self::poster_url`].
     #[serde(deserialize_with = "nullable")]
     pub poster: String,
+    /// Full poster URL, sent by `release/{id}` but not by every listing.
     #[serde(deserialize_with = "nullable")]
     pub image: String,
     /// Both of these are sent, as separate fields rather than aliases of one
@@ -293,6 +299,23 @@ impl Release {
     #[must_use]
     pub fn score(&self) -> f32 {
         self.grade
+    }
+
+    /// Poster URL.
+    ///
+    /// `image` carries it outright where the server sends it; elsewhere only
+    /// the storage id in `poster` arrives, and the URL has to be built. The
+    /// host is the one observed serving them, so a move on their side shows up
+    /// as a missing poster rather than as a wrong release.
+    #[must_use]
+    pub fn poster_url(&self) -> String {
+        if !self.image.is_empty() {
+            return self.image.clone();
+        }
+        if self.poster.is_empty() {
+            return String::new();
+        }
+        format!("{POSTER_BASE_URL}{}.jpg", self.poster)
     }
 
     /// Screenshot URLs, from whichever of the two fields the server filled.

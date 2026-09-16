@@ -1,0 +1,356 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The release screen: what a title is, and which of it to watch.
+//
+// The player lives here rather than on a screen of its own. Watching an episode
+// and picking the next one are the same activity, and sending the viewer away
+// from the release to do the first meant the screen spent most of its area
+// holding a description nobody was reading. So: the picture takes the space, the
+// release sits under it, and the episode list stays beside it the whole time.
+//
+// The player itself is injected as this component's child, so the one instance
+// that owns the video texture is declared once, in the window.
+
+import { ScrollView } from "std-widgets.slint";
+import { MaterialPalette } from "../globals/material-palette.slint";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing, Motion } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+import { PickerOption, EpisodeItem } from "../structs.slint";
+import { EpisodePicker, Poster } from "../components/release-parts.slint";
+
+export component ReleasePage inherits Rectangle {
+    // ---- from Rust -------------------------------------------------------
+    in property <string> title;
+    in property <string> original-title;
+    in property <string> year;
+    in property <string> genres;
+    in property <string> studio;
+    in property <string> status;
+    in property <string> description;
+    in property <string> score;
+    in property <string> episodes-label;
+    in property <image> poster;
+    in property <bool> poster-loaded: false;
+    /// A still from the release, shown behind the play button before anything
+    /// has been started.
+    in property <image> backdrop;
+    in property <bool> backdrop-loaded: false;
+    in property <bool> loading: false;
+
+    in property <[PickerOption]> dubbers;
+    in property <int> dubber: 0;
+    in property <[PickerOption]> sources;
+    in property <int> source: 0;
+    in property <[EpisodeItem]> episodes;
+    /// Episode to resume, or 0 when nothing was started.
+    in property <int> resume-episode: 0;
+    /// Episode in the player, or 0 when nothing is loaded.
+    in property <int> current-episode: 0;
+    /// Whether the player has anything at all — the difference between showing
+    /// the picture and showing the invitation to start it.
+    in property <bool> playing: false;
+    /// The player fills the window and everything else steps aside.
+    in property <bool> theatre: false;
+
+    // ---- to Rust ---------------------------------------------------------
+    callback select-dubber(int);
+    callback select-source(int);
+    callback play-episode(int);
+    callback go-back();
+
+    background: MaterialPalette.surface;
+
+    // Size constraints stated outright rather than derived from the children.
+    //
+    // The page is responsive: `narrow` reads its own width, and the children
+    // lay out differently below the threshold. Deriving the page's constraints
+    // from those children would close the loop — width feeds `narrow`, which
+    // feeds the children, which feed the width — so the page instead fills
+    // whatever it is given and lets the window declare the real limits.
+    min-width: 0px;
+    min-height: 0px;
+    preferred-width: 0px;
+    preferred-height: 0px;
+    max-width: 100000px;
+    max-height: 100000px;
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
+
+    /// Whether the episode list goes under the player instead of beside it.
+    ///
+    /// Decided by the window rather than measured here. A component that reads
+    /// its own width to choose which children exist is reading the answer to
+    /// the question its children are being asked, and Slint rightly calls that
+    /// a binding loop.
+    in property <bool> narrow: false;
+
+    /// What the play button starts: where the account left off, or the
+    /// beginning.
+    property <int> first-episode: root.resume-episode > 0
+        ? root.resume-episode
+        : (root.episodes.length > 0 ? root.episodes[0].position : 0);
+
+    VerticalLayout {
+        // ---- header ------------------------------------------------------
+        if !root.theatre: Rectangle {
+            height: 64px;
+            background: MaterialPalette.surface-container;
+
+            HorizontalLayout {
+                padding-left: Spacing.small;
+                padding-right: Spacing.base;
+                spacing: Spacing.small;
+
+                Rectangle {
+                    width: Spacing.touch-target;
+                    background: transparent;
+
+                    Image {
+                        source: @image-url("../icons/back.svg");
+                        colorize: MaterialPalette.on-surface;
+                        width: 22px;
+                        height: 22px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.go-back(); }
+                    }
+                }
+
+                Text {
+                    text: root.title;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-large-size;
+                    font-weight: Typography.title-large-weight-em;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // ---- body --------------------------------------------------------
+        HorizontalLayout {
+            vertical-stretch: 1;
+            padding: root.theatre ? 0px : Spacing.base;
+            spacing: root.theatre ? 0px : Spacing.base;
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: root.theatre ? 0px : Spacing.base;
+
+                // ---- the player ------------------------------------------
+                //
+                // Takes whatever the column has left, which is the point of
+                // the screen: everything else below it is sized outright so
+                // the picture gets the remainder rather than the leftovers.
+                Rectangle {
+                    // Weighted so the box lands near 16:9 once the list has
+                    // taken its share: video letterboxed into a squat box is
+                    // black bars where picture should be.
+                    vertical-stretch: 5;
+                    min-height: 180px;
+                    background: #000000;
+                    border-radius: root.theatre ? 0px : Shape.large;
+                    clip: true;
+
+                    @children
+
+                    // Nothing loaded yet: a still from the release and the one
+                    // button that matters, rather than a black rectangle.
+                    if !root.playing: Rectangle {
+                        background: MaterialPalette.surface-container;
+
+                        Image {
+                            source: root.backdrop;
+                            image-fit: cover;
+                            width: 100%;
+                            height: 100%;
+                            opacity: root.backdrop-loaded ? 0.45 : 0.0;
+                            animate opacity {
+                                duration: Motion.enter-duration;
+                                easing: Motion.enter;
+                            }
+                        }
+
+                        start := Rectangle {
+                            height: 56px;
+                            width: start-row.preferred-width + Spacing.loose;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: start-touch.pressed ? Shape.medium : Shape.pill;
+                            background: root.first-episode > 0
+                                ? MaterialPalette.primary
+                                : MaterialPalette.surface-container-high;
+                            animate border-radius {
+                                duration: Motion.spring-duration;
+                                easing: Motion.spring;
+                            }
+
+                            start-row := HorizontalLayout {
+                                spacing: Spacing.small;
+                                alignment: center;
+
+                                Image {
+                                    source: @image-url("../icons/play.svg");
+                                    colorize: MaterialPalette.on-primary;
+                                    width: 22px;
+                                    height: 22px;
+                                    visible: root.first-episode > 0;
+                                }
+
+                                Text {
+                                    text: root.first-episode == 0
+                                        ? (root.loading ? Tr.loading : Tr.nothing-to-play)
+                                        : (root.resume-episode > 0 && root.watched-any
+                                            ? Tr.continue-watching + " " + root.first-episode
+                                            : Tr.watch-episode + " " + root.first-episode);
+                                    color: root.first-episode > 0
+                                        ? MaterialPalette.on-primary
+                                        : MaterialPalette.on-surface-variant;
+                                    font-size: Typography.title-medium-size;
+                                    font-weight: Typography.title-medium-weight-em;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            start-touch := TouchArea {
+                                mouse-cursor: root.first-episode > 0 ? pointer : default;
+                                clicked => {
+                                    if (root.first-episode > 0) {
+                                        root.play-episode(root.first-episode);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // On a narrow window the list sits under the picture instead
+                // of beside it, and the description gives up its place — the
+                // column has room for two of the three, and the description is
+                // the one nobody came for.
+                if root.narrow && !root.theatre: EpisodePicker {
+                    // Shares by stretch rather than by a fraction of the
+                    // page's height: reading that height here to size a child
+                    // of it is what a layout loop is made of.
+                    vertical-stretch: 4;
+                    min-height: 220px;
+                    dubbers: root.dubbers;
+                    dubber: root.dubber;
+                    sources: root.sources;
+                    source: root.source;
+                    episodes: root.episodes;
+                    current: root.current-episode;
+                    select-dubber(i) => { root.select-dubber(i); }
+                    select-source(i) => { root.select-source(i); }
+                    play-episode(p) => { root.play-episode(p); }
+                }
+
+                // ---- the release itself ----------------------------------
+                if !root.narrow && !root.theatre: ScrollView {
+                    height: 220px;
+
+                    HorizontalLayout {
+                        spacing: Spacing.base;
+                        alignment: start;
+
+                        Poster {
+                            source: root.poster;
+                            loaded: root.poster-loaded;
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: Spacing.tight;
+                            alignment: start;
+
+                            if root.original-title != "": Text {
+                                text: root.original-title;
+                                color: MaterialPalette.on-surface-variant;
+                                font-size: Typography.body-medium-size;
+                            }
+
+                            HorizontalLayout {
+                                spacing: Spacing.small;
+                                alignment: start;
+
+                                Text {
+                                    text: "★ " + root.score;
+                                    color: MaterialPalette.primary;
+                                    font-size: Typography.title-medium-size;
+                                    font-weight: Typography.title-medium-weight-em;
+                                }
+
+                                Text {
+                                    text: root.year;
+                                    color: MaterialPalette.on-surface-variant;
+                                    font-size: Typography.body-medium-size;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: root.episodes-label;
+                                    color: MaterialPalette.on-surface-variant;
+                                    font-size: Typography.body-medium-size;
+                                    vertical-alignment: center;
+                                }
+
+                                if root.status != "": Text {
+                                    text: root.status;
+                                    color: MaterialPalette.on-surface-variant;
+                                    font-size: Typography.body-medium-size;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            if root.genres != "": Text {
+                                text: root.genres;
+                                color: MaterialPalette.on-surface-variant;
+                                font-size: Typography.body-small-size;
+                                wrap: word-wrap;
+                            }
+
+                            if root.studio != "": Text {
+                                text: root.studio;
+                                color: MaterialPalette.on-surface-variant;
+                                font-size: Typography.body-small-size;
+                            }
+
+                            Text {
+                                text: root.description;
+                                color: MaterialPalette.on-surface;
+                                font-size: Typography.body-medium-size;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ---- choosing what to play -----------------------------------
+            if !root.narrow && !root.theatre: EpisodePicker {
+                width: 400px;
+                dubbers: root.dubbers;
+                dubber: root.dubber;
+                sources: root.sources;
+                source: root.source;
+                episodes: root.episodes;
+                current: root.current-episode;
+                select-dubber(i) => { root.select-dubber(i); }
+                select-source(i) => { root.select-source(i); }
+                play-episode(p) => { root.play-episode(p); }
+            }
+        }
+    }
+
+    /// Whether the account has any progress here, which is the difference
+    /// between "continue" and "watch".
+    property <bool> watched-any: root.resume-episode > 0
+        && root.episodes.length > 0
+        && root.resume-episode != root.episodes[0].position;
+}
