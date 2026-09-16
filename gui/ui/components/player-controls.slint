@@ -68,7 +68,9 @@ export component TextIndicator inherits Rectangle {
     callback clicked;
 
     width: label.preferred-width + Spacing.base;
-    height: 40px;
+    // Same box as IconButton, so a row of mixed controls shares one centre
+    // line instead of each finding its own.
+    height: Spacing.touch-target;
     background: transparent;
 
     label := Text {

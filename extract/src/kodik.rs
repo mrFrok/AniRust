@@ -223,6 +223,19 @@ fn parse_embed_params(page: &str, embed_url: &url::Url) -> Result<EmbedParams> {
     })
 }
 
+/// Resolution named by the media file itself, as in `.../480.mp4:hls:...`.
+///
+/// This is the trustworthy number. Kodik pads its menu by serving one file
+/// under several quality keys — an episode with only a 480p master is offered
+/// as 720p too — and it hands each key a different CDN node, so the URLs are
+/// not equal as strings even though the file is the same. Reading the height
+/// out of the filename sees through both.
+fn height_from_url(url: &str) -> Option<u32> {
+    let name = url.rsplit('/').next()?;
+    let digits = name.split('.').next()?;
+    digits.parse().ok().filter(|h| *h > 0)
+}
+
 /// Turns the `links` map into renditions, skipping any entry that will not
 /// decode rather than failing the whole episode over one bad quality.
 fn decode_links(response: &FtorResponse) -> Vec<StreamVariant> {
@@ -237,6 +250,9 @@ fn decode_links(response: &FtorResponse) -> Vec<StreamVariant> {
         for link in links {
             match rotate::decode_url(&link.src) {
                 Some(url) => {
+                    // The file's own name wins over the menu key: see
+                    // `height_from_url` for why the key cannot be trusted.
+                    let height = height_from_url(&url).unwrap_or(height);
                     let kind = StreamKind::classify(link.mime.as_deref(), &url);
                     variants.push(StreamVariant { height, url, kind });
                 }
@@ -339,6 +355,39 @@ mod tests {
             assert!(v.url.contains(".m3u8"), "expected HLS: {}", v.url);
             assert_eq!(v.kind, StreamKind::Hls);
         }
+    }
+
+    #[test]
+    fn the_filename_decides_the_height_not_the_menu_key() {
+        assert_eq!(
+            height_from_url("https://p14.cdn/x/y:2026/480.mp4:hls:manifest.m3u8"),
+            Some(480)
+        );
+        assert_eq!(height_from_url("https://cdn/a/1080.mp4"), Some(1080));
+    }
+
+    #[test]
+    fn a_url_naming_no_resolution_leaves_the_key_alone() {
+        assert_eq!(height_from_url("https://cdn/a/manifest.m3u8"), None);
+        assert_eq!(height_from_url("https://cdn/a/0.mp4"), None);
+    }
+
+    #[test]
+    fn a_padded_quality_takes_the_height_of_the_file_behind_it() {
+        // Kodik offers 720p for an episode whose only master is 480p, and
+        // hands each key a different CDN node so the URLs differ as strings.
+        let body = r#"{"links":{
+            "480":[{"src":"aHR0cHM6Ly9wMTIuY2RuL2EvNDgwLm1wNA","type":"video/mp4"}],
+            "720":[{"src":"aHR0cHM6Ly9wMTQuY2RuL2EvNDgwLm1wNA","type":"video/mp4"}]
+        }}"#;
+        let response: FtorResponse = serde_json::from_str(body).unwrap();
+        let variants = decode_links(&response);
+
+        assert!(
+            variants.iter().all(|v| v.height == 480),
+            "a 480p file must not be labelled 720p: {:?}",
+            variants.iter().map(|v| v.height).collect::<Vec<_>>()
+        );
     }
 
     #[test]

@@ -464,70 +464,129 @@ impl Target {
     async fn resolve(&self) -> Result<Playback> {
         let registry = Registry::new(reqwest_client());
 
-        let mut episode_label = String::new();
-        let title;
-
-        let url = match self {
+        match self {
             Self::Url(url) => {
                 // Opened by link, so there is no release to name. The source's
                 // own name at least says something; a hostname is developer
                 // output and does not belong on screen.
-                title = host_of(url)
+                let title = host_of(url)
                     .and_then(|host| registry.for_host(&host).map(|e| e.name().to_owned()))
                     .unwrap_or_else(|| "AniRust".to_owned());
-                url.clone()
+
+                Ok(Playback {
+                    stream: resolve_url(&registry, url.clone()).await?,
+                    title,
+                    episode_label: String::new(),
+                })
             }
             Self::Episode {
                 release_id,
                 position,
-            } => {
-                let client = Client::new().context("creating the API client")?;
-
-                // The screen names what is playing, so the release has to be
-                // fetched even though the stream does not need it.
-                let release = client.release(*release_id, false).await?;
-                title = release.title().to_owned();
-
-                let dubbers = client.dubbers(*release_id).await?;
-                let dubber = dubbers.first().context("the release has no voice-overs")?;
-                let sources = client.sources(*release_id, dubber.id).await?;
-                let source = sources.first().context("the voice-over has no sources")?;
-                let episodes = client
-                    .episodes(*release_id, dubber.id, source.id, EpisodeSort::Ascending)
-                    .await?;
-                // The word "episode" is added on the Slint side, which owns
-                // the translations.
-                episode_label = format!("{position} - {}", dubber.name);
-
-                episodes
-                    .into_iter()
-                    .find(|e| e.position == *position)
-                    .with_context(|| format!("no episode {position}"))?
-                    .url
-            }
-        };
-
-        // Routing by host rather than by the API's `iframe` flag, which lies
-        // for several hosts.
-        let stream = if registry.supports(&url) {
-            registry.resolve(&url).await?
-        } else {
-            ResolvedStream {
-                variants: vec![anirust_extract::StreamVariant {
-                    height: anirust_extract::UNKNOWN_HEIGHT,
-                    kind: anirust_extract::StreamKind::classify(None, &url),
-                    url,
-                }],
-                ..Default::default()
-            }
-        };
-
-        Ok(Playback {
-            stream,
-            title,
-            episode_label,
-        })
+            } => resolve_episode(&registry, *release_id, *position).await,
+        }
     }
+}
+
+/// Finds a playable stream for an episode, trying every voice-over and source
+/// the release offers.
+///
+/// One source failing is routine rather than exceptional: Kodik answers `500`
+/// for stretches at a time, and it carries most of the catalogue. A release
+/// usually lists several voice-overs, each with its own host, so giving up on
+/// the first failure throws away working alternatives — and presents a
+/// temporary outage at one host as a broken client.
+async fn resolve_episode(registry: &Registry, release_id: i64, position: i32) -> Result<Playback> {
+    let client = Client::new().context("creating the API client")?;
+
+    // The screen names what is playing, so the release is fetched even though
+    // the stream itself does not need it.
+    let release = client.release(release_id, false).await?;
+    let title = release.title().to_owned();
+
+    let dubbers = client.dubbers(release_id).await?;
+    if dubbers.is_empty() {
+        bail!("the release has no voice-overs");
+    }
+
+    let mut failures = Vec::new();
+
+    for dubber in &dubbers {
+        let sources = match client.sources(release_id, dubber.id).await {
+            Ok(sources) => sources,
+            Err(error) => {
+                failures.push(format!("{}: {error}", dubber.name));
+                continue;
+            }
+        };
+
+        for source in &sources {
+            let episodes = match client
+                .episodes(release_id, dubber.id, source.id, EpisodeSort::Ascending)
+                .await
+            {
+                Ok(episodes) => episodes,
+                Err(error) => {
+                    failures.push(format!("{} / {}: {error}", dubber.name, source.name));
+                    continue;
+                }
+            };
+
+            let Some(episode) = episodes.into_iter().find(|e| e.position == position) else {
+                continue;
+            };
+
+            match resolve_url(registry, episode.url).await {
+                Ok(stream) => {
+                    tracing::info!(
+                        dubber = %dubber.name,
+                        source = %source.name,
+                        "resolved"
+                    );
+                    return Ok(Playback {
+                        stream,
+                        title,
+                        // The word "episode" is added on the Slint side, which
+                        // owns the translations.
+                        episode_label: format!("{position} - {}", dubber.name),
+                    });
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        dubber = %dubber.name,
+                        source = %source.name,
+                        %error,
+                        "source failed, trying the next"
+                    );
+                    failures.push(format!("{} / {}: {error}", dubber.name, source.name));
+                }
+            }
+        }
+    }
+
+    bail!(
+        "no source could play episode {position}:\n  {}",
+        failures.join("\n  ")
+    )
+}
+
+/// Turns one episode URL into a stream, through an extractor when a host
+/// claims it.
+///
+/// Routing is by host rather than by the API's `iframe` flag, which lies for
+/// several of them.
+async fn resolve_url(registry: &Registry, url: String) -> Result<ResolvedStream> {
+    if registry.supports(&url) {
+        return Ok(registry.resolve(&url).await?);
+    }
+
+    Ok(ResolvedStream {
+        variants: vec![anirust_extract::StreamVariant {
+            height: anirust_extract::UNKNOWN_HEIGHT,
+            kind: anirust_extract::StreamKind::classify(None, &url),
+            url,
+        }],
+        ..Default::default()
+    })
 }
 
 /// A resolved stream together with what the screen should call it.

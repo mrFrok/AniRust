@@ -133,11 +133,15 @@ export component PlayerPage inherits Rectangle {
         visible: root.chrome-visible && !root.locked;
         animate opacity { duration: Motion.enter-duration; easing: Motion.enter; }
 
+        // One row, one height, everything centred on the same axis. Sizing
+        // each control independently put the back button, the title and the
+        // indicators on three different centre lines.
         HorizontalLayout {
+            y: Spacing.small;
+            height: Spacing.touch-target;
             padding-left: Spacing.small;
             padding-right: Spacing.small;
-            padding-top: Spacing.small;
-            spacing: Spacing.tight;
+            spacing: Spacing.hair;
             alignment: stretch;
 
             IconButton {
@@ -145,39 +149,47 @@ export component PlayerPage inherits Rectangle {
                 clicked => { root.go-back(); }
             }
 
-            VerticalLayout {
+            // The two title lines are a block of their own, centred against
+            // the icons rather than stretched to the row's full height.
+            Rectangle {
                 horizontal-stretch: 1;
-                alignment: center;
-                spacing: 1px;
+                background: transparent;
 
-                Text {
-                    text: root.title;
-                    color: #FFFFFF;
-                    font-size: Typography.title-medium-size;
-                    font-weight: Typography.title-medium-weight-em;
-                    overflow: elide;
-                }
-
-                HorizontalLayout {
-                    spacing: Spacing.tight;
-                    alignment: start;
-                    visible: root.episode-label != "";
+                VerticalLayout {
+                    y: (parent.height - self.preferred-height) / 2;
+                    width: 100%;
+                    spacing: 1px;
 
                     Text {
-                        // The word belongs to the translations; the number and
-                        // voice-over come from Rust.
-                        text: Tr.episode + " " + root.episode-label;
-                        color: #FFFFFFA6;
-                        font-size: Typography.label-medium-size;
-                        vertical-alignment: center;
+                        text: root.title;
+                        color: #FFFFFF;
+                        font-size: Typography.title-medium-size;
+                        font-weight: Typography.title-medium-weight-em;
                         overflow: elide;
                     }
 
-                    Image {
-                        source: @image-url("../icons/chevron.svg");
-                        colorize: #FFFFFFA6;
-                        width: 14px;
-                        height: 14px;
+                    HorizontalLayout {
+                        spacing: Spacing.tight;
+                        alignment: start;
+                        visible: root.episode-label != "";
+
+                        Text {
+                            // The word belongs to the translations; the number
+                            // and voice-over come from Rust.
+                            text: Tr.episode + " " + root.episode-label;
+                            color: #FFFFFFA6;
+                            font-size: Typography.label-medium-size;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        Image {
+                            source: @image-url("../icons/chevron.svg");
+                            colorize: #FFFFFFA6;
+                            width: 12px;
+                            height: 12px;
+                            y: 1px;
+                        }
                     }
                 }
             }
