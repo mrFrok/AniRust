@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Corner radii and spacing, as tokens rather than as numbers scattered through
+// the components. The flasher this design system came from repeated the same
+// constants in about two hundred places; naming them once is what stops a
+// later change from being a search-and-replace across the tree.
+
+export global Shape {
+    // Material 3 shape scale.
+    out property <length> none: 0px;
+    out property <length> extra-small: 4px;
+    out property <length> small: 8px;
+    out property <length> medium: 12px;
+    out property <length> large: 16px;
+    out property <length> extra-large: 28px;
+    out property <length> full: 999px;
+
+    // Pressing morphs a pill towards a squircle; these are the pair.
+    out property <length> pill: 22px;
+    out property <length> pill-pressed: 12px;
+}
+
+export global Spacing {
+    out property <length> hair: 2px;
+    out property <length> tight: 4px;
+    out property <length> small: 8px;
+    out property <length> medium: 12px;
+    out property <length> base: 16px;
+    out property <length> comfortable: 24px;
+    out property <length> loose: 32px;
+
+    // Sizes that recur across controls.
+    out property <length> control-height: 44px;
+    out property <length> icon-button: 40px;
+    out property <length> touch-target: 48px;
+}
+
+export global Motion {
+    // Springy overshoot for shape and position: what makes a press feel
+    // physical rather than instant.
+    out property <duration> spring-duration: 350ms;
+    out property <easing> spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+    // Material's standard curve, for colour and state-layer changes.
+    out property <duration> standard-duration: 150ms;
+    out property <easing> standard: cubic-bezier(0.2, 0.0, 0, 1.0);
+
+    // Emphasized decelerate, for things entering the screen.
+    out property <duration> enter-duration: 300ms;
+    out property <easing> enter: cubic-bezier(0.05, 0.7, 0.1, 1.0);
+
+    // How long player chrome lingers after the pointer stops moving.
+    out property <duration> overlay-linger: 2500ms;
+}

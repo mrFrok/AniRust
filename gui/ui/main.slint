@@ -1,73 +1,107 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//
-// Minimal surface for proving the video path. The design system and the real
-// screens land on top of this once the picture is confirmed to arrive.
+
+import { Palette } from "std-widgets.slint";
+import { MaterialPalette } from "globals/material-palette.slint";
+import { Tr } from "globals/tr.slint";
+import { PlayerPage } from "pages/player.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
     preferred-width: 1280px;
-    preferred-height: 720px;
+    preferred-height: 760px;
     min-width: 640px;
-    min-height: 360px;
-    background: #101014;
+    min-height: 400px;
+    background: #000000;
 
-    // Written from Rust on every frame mpv reports as new.
+    // Language, pushed from Rust and mirrored into the global so every string
+    // on screen re-evaluates the moment it changes.
+    in property <string> lang: "en";
+    init => { Tr.lang = root.lang; Palette.color-scheme = ColorScheme.dark; }
+    changed lang => { Tr.lang = root.lang; }
+
     in property <image> video-frame;
-    in property <string> status: "";
     in property <bool> has-video: false;
+    in property <string> release-title;
+    in property <string> episode-label;
+    in property <string> position-text: "0:00";
+    in property <string> duration-text: "0:00";
+    in property <float> progress: 0.0;
+    in property <float> buffered: 0.0;
+    in property <bool> paused: false;
+    in property <string> state: "idle";
+    in property <string> quality-label: "—";
+    in property <string> decoder-label: "HW";
+    in property <string> speed-label: "1x";
+    /// Index into the upscale presets: 0 off, 1 fast, 2 balanced, 3 quality.
+    in property <int> upscale: 0;
+    in property <bool> interpolation: false;
+    in property <[string]> qualities: [];
+    in property <int> quality: 0;
+    in property <int> decoder: 0;
+    in property <bool> fullscreen: false;
+    in property <bool> has-skip: false;
+    /// Mirrored up from the player so the status timer can leave the seek bar
+    /// alone while it is being dragged.
+    out property <bool> scrubbing: player.scrubbing;
 
     callback toggle-pause();
-    callback seek(float);
+    callback seek-fraction(float);
+    callback seek-relative(float);
+    callback skip-opening();
+    callback set-speed(float);
+    callback set-upscale(int);
+    callback set-quality(int);
+    callback set-decoder(int);
+    callback toggle-interpolation();
+    callback toggle-fullscreen();
 
-    VerticalLayout {
-        Rectangle {
-            vertical-stretch: 1;
-            background: #000000;
+    player := PlayerPage {
+        width: 100%;
+        height: 100%;
 
-            Image {
-                source: root.video-frame;
-                // Letterbox rather than crop: cutting off frames of a video is
-                // never the friendly default.
-                image-fit: contain;
-                width: 100%;
-                height: 100%;
-                visible: root.has-video;
-            }
+        video-frame: root.video-frame;
+        has-video: root.has-video;
+        title: root.release-title;
+        episode-label: root.episode-label;
+        position-text: root.position-text;
+        duration-text: root.duration-text;
+        progress: root.progress;
+        buffered: root.buffered;
+        paused: root.paused;
+        state: root.state;
+        quality-label: root.quality-label;
+        decoder-label: root.decoder-label;
+        speed-label: root.speed-label;
+        upscale: root.upscale;
+        interpolation: root.interpolation;
+        qualities: root.qualities;
+        quality: root.quality;
+        decoder: root.decoder;
+        fullscreen: root.fullscreen;
+        has-skip: root.has-skip;
 
-            Text {
-                text: root.status;
-                color: #9aa0a6;
-                font-size: 14px;
-                visible: !root.has-video;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-
-            TouchArea {
-                clicked => { root.toggle-pause(); }
-            }
-        }
-
-        Rectangle {
-            height: 28px;
-            background: #17171d;
-
-            Text {
-                text: root.status;
-                color: #9aa0a6;
-                font-size: 12px;
-                x: 12px;
-                vertical-alignment: center;
-            }
-        }
+        toggle-pause => { root.toggle-pause(); }
+        seek-fraction(f) => { root.seek-fraction(f); }
+        seek-relative(d) => { root.seek-relative(d); }
+        skip-opening => { root.skip-opening(); }
+        set-speed(v) => { root.set-speed(v); }
+        set-upscale(v) => { root.set-upscale(v); }
+        set-quality(v) => { root.set-quality(v); }
+        set-decoder(v) => { root.set-decoder(v); }
+        toggle-fullscreen => { root.toggle-fullscreen(); }
+        toggle-interpolation => { root.toggle-interpolation(); }
     }
 
-    forward-focus: key-handler;
-    key-handler := FocusScope {
+    forward-focus: keys;
+    keys := FocusScope {
         key-pressed(event) => {
             if (event.text == " ") { root.toggle-pause(); return accept; }
-            if (event.text == Key.LeftArrow) { root.seek(-5); return accept; }
-            if (event.text == Key.RightArrow) { root.seek(5); return accept; }
+            if (event.text == Key.LeftArrow) { root.seek-relative(-10); return accept; }
+            if (event.text == Key.RightArrow) { root.seek-relative(10); return accept; }
+            if (event.text == "s") { root.skip-opening(); return accept; }
+            if (event.text == "u") { root.set-upscale(Math.mod(root.upscale + 1, 4)); return accept; }
+            if (event.text == "i") { root.toggle-interpolation(); return accept; }
+            if (event.text == "f") { root.toggle-fullscreen(); return accept; }
             reject
         }
     }

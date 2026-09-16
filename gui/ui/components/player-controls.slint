@@ -1,0 +1,323 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Controls for the player overlay.
+//
+// Modelled on the official Anixart player, which is what the audience already
+// knows. The defining choice there is restraint: icons sit flat on the video
+// with no pills or scrims behind them, so the chrome reads as an annotation on
+// the picture rather than a panel laid over it. Legibility comes from the
+// gradients at the top and bottom edges instead.
+
+import { MaterialPalette } from "../globals/material-palette.slint";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing, Motion } from "../globals/shape.slint";
+
+/// A flat icon button.
+///
+/// No background: over video, a circle behind every glyph turns the overlay
+/// into clutter. Hover and press are carried by opacity and a slight scale,
+/// which stay legible over any frame.
+export component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <length> size: 24px;
+    in property <bool> dimmed: false;
+    /// Colour of the glyph. Used to signal that a feature is live, not just
+    /// available.
+    in property <color> tint: #FFFFFF;
+    callback clicked;
+
+    /// Hit area, independent of the glyph.
+    ///
+    /// Sizing the box from the icon made rows of mixed-size buttons sit at
+    /// different heights, so the play button floated above its neighbours. A
+    /// fixed box keeps a row aligned whatever is drawn inside it, and gives
+    /// every control the same comfortable target.
+    in property <length> box: max(Spacing.touch-target, root.size + Spacing.base);
+
+    width: root.box;
+    height: root.box;
+    background: transparent;
+
+    // Animated on root rather than on the image: Slint only animates
+    // properties of the element declaring the animation.
+    property <length> glyph: touch.pressed ? root.size * 0.86 : root.size;
+    animate glyph { duration: Motion.spring-duration; easing: Motion.spring; }
+
+    image := Image {
+        source: root.icon;
+        colorize: root.tint;
+        opacity: root.dimmed ? 0.55 : (touch.has-hover ? 1.0 : 0.88);
+        width: root.glyph;
+        height: root.glyph;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        image-fit: contain;
+
+        animate opacity { duration: Motion.standard-duration; easing: Motion.standard; }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// A short text indicator in the top bar — quality, decoder and the like.
+export component TextIndicator inherits Rectangle {
+    in property <string> text;
+    callback clicked;
+
+    width: label.preferred-width + Spacing.base;
+    height: 40px;
+    background: transparent;
+
+    label := Text {
+        text: root.text;
+        color: #FFFFFF;
+        opacity: touch.has-hover ? 1.0 : 0.88;
+        font-size: Typography.body-medium-size;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%;
+        height: 100%;
+        animate opacity { duration: Motion.standard-duration; easing: Motion.standard; }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// Seek bar, showing what has played and what has arrived.
+///
+/// The buffered extent is a third band between track and playhead: when
+/// playback stalls, the viewer can see whether data is still coming rather
+/// than guessing. The handle is a rounded bar rather than a dot, matching the
+/// player this is modelled on.
+export component SeekBar inherits Rectangle {
+    in property <float> position;     // 0..1
+    in property <float> buffered;     // 0..1
+    /// Fires continuously while dragging, so the picture follows the thumb.
+    callback seek(float);
+    /// True while the pointer is down, so the caller stops overwriting the
+    /// position from the player's clock mid-drag.
+    callback scrubbing(bool);
+
+    height: 24px;
+    background: transparent;
+
+    property <bool> dragging: false;
+    property <float> drag-position: 0.0;
+    /// While dragging, the bar follows the pointer rather than the clock —
+    /// otherwise the handle fights the hand and jitters.
+    property <float> shown: root.dragging ? root.drag-position : root.position;
+
+    property <length> bar-height: touch.has-hover || root.dragging ? 5px : 3px;
+    animate bar-height { duration: Motion.standard-duration; easing: Motion.standard; }
+
+    track := Rectangle {
+        y: (parent.height - root.bar-height) / 2;
+        height: root.bar-height;
+        width: 100%;
+        border-radius: self.height / 2;
+        background: #FFFFFF40;
+
+        Rectangle {
+            x: 0;
+            width: parent.width * clamp(root.buffered, 0.0, 1.0);
+            height: 100%;
+            border-radius: self.height / 2;
+            background: #FFFFFF66;
+        }
+
+        Rectangle {
+            x: 0;
+            width: parent.width * clamp(root.shown, 0.0, 1.0);
+            height: 100%;
+            border-radius: self.height / 2;
+            background: #FFFFFF;
+        }
+    }
+
+    // A rounded bar, always visible: this is the main way to tell position at
+    // a glance, and it should not need a hover to appear.
+    Rectangle {
+        x: clamp(
+            root.width * clamp(root.shown, 0.0, 1.0) - self.width / 2,
+            0px,
+            root.width - self.width
+        );
+        y: (parent.height - self.height) / 2;
+        width: 5px;
+        height: touch.has-hover || root.dragging ? 20px : 14px;
+        border-radius: self.width / 2;
+        background: #FFFFFF;
+        animate height { duration: Motion.standard-duration; easing: Motion.standard; }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+
+        pointer-event(event) => {
+            if (event.button == PointerEventButton.left) {
+                if (event.kind == PointerEventKind.down) {
+                    root.dragging = true;
+                    root.scrubbing(true);
+                    root.drag-position = clamp(self.mouse-x / root.width, 0.0, 1.0);
+                    root.seek(root.drag-position);
+                }
+                if (event.kind == PointerEventKind.up) {
+                    root.dragging = false;
+                    root.scrubbing(false);
+                }
+            }
+        }
+
+        moved => {
+            if (root.dragging) {
+                root.drag-position = clamp(self.mouse-x / root.width, 0.0, 1.0);
+                root.seek(root.drag-position);
+            }
+        }
+    }
+}
+
+/// A chip from the settings sheets: outlined when idle, filled when chosen.
+///
+/// The reference marks the recommended option and the expensive ones, because
+/// "Maximum" is a trap on most hardware and saying so up front is kinder than
+/// letting the viewer find out by stuttering.
+export component SettingChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    /// Marks the sensible default.
+    in property <bool> recommended: false;
+    /// Marks an option heavy enough to cause trouble.
+    in property <bool> heavy: false;
+    callback clicked;
+
+    height: 44px;
+    width: row.preferred-width + Spacing.comfortable;
+    border-radius: Shape.medium;
+    border-width: root.selected ? 0px : 1px;
+    border-color: #FFFFFF33;
+
+    background: root.selected
+        ? (root.heavy ? #7F2B2B : MaterialPalette.surface-container-highest)
+        : (touch.has-hover ? #FFFFFF14 : transparent);
+
+    animate background { duration: Motion.standard-duration; easing: Motion.standard; }
+
+    row := HorizontalLayout {
+        padding-left: Spacing.medium;
+        padding-right: Spacing.medium;
+        spacing: Spacing.small;
+        alignment: center;
+
+        Text {
+            text: root.recommended ? "👍" : (root.heavy ? "🔥" : "");
+            font-size: Typography.body-medium-size;
+            vertical-alignment: center;
+            visible: root.recommended || root.heavy;
+        }
+
+        Text {
+            text: root.label;
+            color: #FFFFFF;
+            font-size: Typography.body-medium-size;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// A radio row: circle, title, and a line explaining what the choice costs.
+export component SettingOption inherits Rectangle {
+    in property <string> label;
+    in property <string> description;
+    in property <string> badge;
+    in property <bool> selected: false;
+    callback clicked;
+
+    height: row.preferred-height + Spacing.base;
+    background: touch.has-hover ? #FFFFFF0A : transparent;
+    border-radius: Shape.medium;
+
+    row := HorizontalLayout {
+        padding: Spacing.small;
+        spacing: Spacing.base;
+
+        Rectangle {
+            width: 22px;
+            height: 22px;
+            y: Spacing.tight;
+            border-radius: 11px;
+            border-width: 2px;
+            border-color: root.selected ? #FFFFFF : #FFFFFF73;
+
+            Rectangle {
+                width: root.selected ? 11px : 0px;
+                height: self.width;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: self.width / 2;
+                background: #FFFFFF;
+                animate width { duration: Motion.standard-duration; easing: Motion.standard; }
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: Spacing.tight;
+
+            HorizontalLayout {
+                spacing: Spacing.small;
+                alignment: start;
+
+                Text {
+                    text: root.label;
+                    color: #FFFFFF;
+                    font-size: Typography.title-medium-size;
+                    font-weight: Typography.title-medium-weight-em;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    visible: root.badge != "";
+                    height: 26px;
+                    width: badge-text.preferred-width + Spacing.medium;
+                    border-radius: Shape.small;
+                    background: #FFFFFF1F;
+
+                    badge-text := Text {
+                        text: root.badge;
+                        color: #FFFFFFD9;
+                        font-size: Typography.label-medium-size;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: 100%;
+                        height: 100%;
+                    }
+                }
+            }
+
+            Text {
+                text: root.description;
+                color: #FFFFFF8C;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+                visible: root.description != "";
+            }
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}

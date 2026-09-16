@@ -1,0 +1,572 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The player screen.
+//
+// Laid out after the official Anixart player, which is the interface this
+// audience already has in their hands. Three clusters of chrome float over the
+// picture — a top bar, a centre transport, and a bottom row — and settings
+// open as sheets rather than crowding the overlay. Everything sits flat on the
+// video; the gradients at the edges carry legibility so the controls do not
+// need panels of their own.
+
+import { MaterialPalette } from "../globals/material-palette.slint";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing, Motion } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+import { IconButton, TextIndicator, SeekBar, SettingChip, SettingOption } from "../components/player-controls.slint";
+
+export component PlayerPage inherits Rectangle {
+    // ---- from Rust -------------------------------------------------------
+    in property <image> video-frame;
+    in property <bool> has-video: false;
+    in property <string> title;
+    in property <string> episode-label;
+    in property <string> position-text: "0:00";
+    in property <string> duration-text: "0:00";
+    in property <float> progress: 0.0;
+    in property <float> buffered: 0.0;
+    in property <bool> paused: false;
+    /// One of: idle, loading, buffering, playing, paused, ended.
+    in property <string> state: "idle";
+    in property <string> quality-label: "—";
+    in property <string> decoder-label: "HW";
+    in property <string> speed-label: "1x";
+    /// Index into the upscale presets: 0 off, 1 fast, 2 balanced, 3 quality.
+    in property <int> upscale: 0;
+    in property <bool> interpolation: false;
+    in property <bool> has-skip: false;
+    /// Available renditions, highest first, as "1080p" and the like.
+    in property <[string]> qualities: [];
+    in property <int> quality: 0;
+    /// 0 automatic, 1 hardware, 2 software.
+    in property <int> decoder: 0;
+    in property <bool> fullscreen: false;
+
+    out property <bool> scrubbing: false;
+
+    // ---- to Rust ---------------------------------------------------------
+    callback toggle-pause();
+    callback seek-fraction(float);
+    callback seek-relative(float);
+    callback skip-opening();
+    callback set-speed(float);
+    callback set-upscale(int);
+    callback set-quality(int);
+    callback set-decoder(int);
+    callback toggle-interpolation();
+    callback toggle-fullscreen();
+    callback go-back();
+
+    background: #000000;
+
+    property <bool> chrome-visible: true;
+    property <bool> waiting: root.state == "loading" || root.state == "buffering";
+    /// Which sheet is open: "", "speed", "upscale".
+    property <string> sheet: "";
+    /// Locked hides every control but the lock itself, so a stray touch
+    /// cannot pause or seek. The reference has this because a phone lives in
+    /// a pocket; on a desktop it is just as useful against a cat.
+    property <bool> locked: false;
+    /// Chrome stays put while a sheet is up, or the sheet would be orphaned.
+    property <bool> chrome-pinned: root.sheet != "" || root.state != "playing";
+    /// Anime4K counts as working only once something is actually applied.
+    property <bool> enhancing: root.upscale != 0 || root.interpolation;
+
+    video := Image {
+        source: root.video-frame;
+        // Letterbox rather than crop: cutting frames off a video is never a
+        // friendly default.
+        image-fit: contain;
+        width: 100%;
+        height: 100%;
+        visible: root.has-video;
+    }
+
+    Text {
+        text: root.state == "loading" ? Tr.loading
+            : root.state == "buffering" ? Tr.buffering
+            : root.state == "ended" ? Tr.ended
+            : Tr.idle;
+        color: #FFFFFFB3;
+        font-size: Typography.body-large-size;
+        visible: !root.has-video || root.waiting;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%;
+        height: 100%;
+    }
+
+    hover := TouchArea {
+        mouse-cursor: root.chrome-visible ? MouseCursor.default : MouseCursor.none;
+        moved => {
+            if (root.locked) { return; }
+            root.chrome-visible = true;
+            linger.running = false;
+            linger.running = true;
+        }
+        clicked => {
+            // A click inside a sheet must not also toggle playback, and a
+            // locked overlay must not react at all.
+            if (root.locked) { return; }
+            if (root.sheet != "") { root.sheet = ""; } else { root.toggle-pause(); }
+        }
+    }
+
+    linger := Timer {
+        interval: Motion.overlay-linger;
+        running: false;
+        triggered => {
+            if (!root.chrome-pinned) { root.chrome-visible = false; }
+            self.running = false;
+        }
+    }
+
+    // ---- top bar ---------------------------------------------------------
+    Rectangle {
+        y: 0;
+        height: 84px;
+        width: 100%;
+        background: @linear-gradient(180deg, #000000B3 0%, #00000000 100%);
+        opacity: root.chrome-visible && !root.locked ? 1.0 : 0.0;
+        // Opacity alone leaves a bar in the hit-test tree, so an invisible
+        // one still swallows clicks. Locking has to remove it outright.
+        visible: root.chrome-visible && !root.locked;
+        animate opacity { duration: Motion.enter-duration; easing: Motion.enter; }
+
+        HorizontalLayout {
+            padding-left: Spacing.small;
+            padding-right: Spacing.small;
+            padding-top: Spacing.small;
+            spacing: Spacing.tight;
+            alignment: stretch;
+
+            IconButton {
+                icon: @image-url("../icons/back.svg");
+                clicked => { root.go-back(); }
+            }
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 1px;
+
+                Text {
+                    text: root.title;
+                    color: #FFFFFF;
+                    font-size: Typography.title-medium-size;
+                    font-weight: Typography.title-medium-weight-em;
+                    overflow: elide;
+                }
+
+                HorizontalLayout {
+                    spacing: Spacing.tight;
+                    alignment: start;
+                    visible: root.episode-label != "";
+
+                    Text {
+                        // The word belongs to the translations; the number and
+                        // voice-over come from Rust.
+                        text: Tr.episode + " " + root.episode-label;
+                        color: #FFFFFFA6;
+                        font-size: Typography.label-medium-size;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+
+                    Image {
+                        source: @image-url("../icons/chevron.svg");
+                        colorize: #FFFFFFA6;
+                        width: 14px;
+                        height: 14px;
+                    }
+                }
+            }
+
+            TextIndicator {
+                text: root.quality-label;
+            }
+
+            TextIndicator {
+                text: root.decoder-label;
+            }
+
+            // Green while enhancement is actually in effect: the indicator
+            // answers "is this doing anything right now", which a dimmed
+            // white glyph does not.
+            IconButton {
+                icon: @image-url("../icons/sparkle.svg");
+                tint: root.enhancing ? #6BD97F : #FFFFFF;
+                dimmed: !root.enhancing;
+                clicked => { root.sheet = root.sheet == "anime4k" ? "" : "anime4k"; }
+            }
+
+            IconButton {
+                icon: @image-url("../icons/settings.svg");
+                clicked => { root.sheet = root.sheet == "settings" ? "" : "settings"; }
+            }
+        }
+    }
+
+    // ---- centre transport ------------------------------------------------
+    HorizontalLayout {
+        y: (parent.height - self.height) / 2;
+        height: 72px;
+        width: 100%;
+        alignment: center;
+        spacing: Spacing.loose;
+        opacity: root.chrome-visible && !root.locked ? 1.0 : 0.0;
+        visible: root.sheet == "" && !root.locked;
+        animate opacity { duration: Motion.enter-duration; easing: Motion.enter; }
+
+        // One box size across the row, so the glyphs share a centre line
+        // however differently sized they are.
+        IconButton {
+            icon: @image-url("../icons/prev-episode.svg");
+            size: 30px;
+            box: 72px;
+            clicked => { root.seek-relative(-10); }
+        }
+
+        IconButton {
+            icon: root.paused
+                ? @image-url("../icons/play.svg")
+                : @image-url("../icons/pause.svg");
+            size: 52px;
+            box: 72px;
+            clicked => { root.toggle-pause(); }
+        }
+
+        IconButton {
+            icon: @image-url("../icons/next-episode.svg");
+            size: 30px;
+            box: 72px;
+            clicked => { root.seek-relative(10); }
+        }
+    }
+
+    // ---- bottom chrome ---------------------------------------------------
+    Rectangle {
+        y: parent.height - self.height;
+        height: 132px;
+        width: 100%;
+        background: @linear-gradient(0deg, #000000CC 0%, #00000000 100%);
+        opacity: root.chrome-visible && !root.locked ? 1.0 : 0.0;
+        visible: root.chrome-visible && !root.locked;
+        animate opacity { duration: Motion.enter-duration; easing: Motion.enter; }
+
+        VerticalLayout {
+            padding-left: Spacing.small;
+            padding-right: Spacing.small;
+            padding-bottom: Spacing.small;
+            alignment: end;
+            spacing: Spacing.tight;
+
+            // Secondary controls, split to the edges the way the reference
+            // does: the middle stays clear of the picture.
+            HorizontalLayout {
+                spacing: Spacing.tight;
+
+                IconButton {
+                    icon: @image-url("../icons/lock.svg");
+                    size: 22px;
+                    clicked => { root.locked = true; }
+                }
+
+                IconButton {
+                    icon: @image-url("../icons/speed.svg");
+                    size: 22px;
+                    clicked => { root.sheet = root.sheet == "speed" ? "" : "speed"; }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                // One button, not two: a separate "skip opening" label beside
+                // a fast-forward that jumped the same distance was the same
+                // action twice.
+                IconButton {
+                    icon: @image-url("../icons/fast-forward.svg");
+                    size: 22px;
+                    clicked => { root.skip-opening(); }
+                }
+
+                IconButton {
+                    icon: root.fullscreen
+                        ? @image-url("../icons/fullscreen-exit.svg")
+                        : @image-url("../icons/fullscreen.svg");
+                    size: 22px;
+                    clicked => { root.toggle-fullscreen(); }
+                }
+            }
+
+            // Time flanks the bar, as in the reference: both ends are read at
+            // a glance without the eye leaving the row.
+            HorizontalLayout {
+                spacing: Spacing.medium;
+                padding-left: Spacing.small;
+                padding-right: Spacing.small;
+
+                Text {
+                    text: root.position-text;
+                    color: #FFFFFF;
+                    font-size: Typography.body-medium-size;
+                    vertical-alignment: center;
+                    min-width: 52px;
+                }
+
+                SeekBar {
+                    horizontal-stretch: 1;
+                    position: root.progress;
+                    buffered: root.buffered;
+                    seek(fraction) => { root.seek-fraction(fraction); }
+                    scrubbing(active) => { root.scrubbing = active; }
+                }
+
+                Text {
+                    text: root.duration-text;
+                    color: #FFFFFF;
+                    font-size: Typography.body-medium-size;
+                    vertical-alignment: center;
+                    horizontal-alignment: right;
+                    min-width: 52px;
+                }
+            }
+        }
+    }
+
+    // The one control that survives the lock, so it can be undone. Declared
+    // after the video's touch area so it receives the click first.
+    if root.locked: Rectangle {
+        x: Spacing.base;
+        y: parent.height - self.height - Spacing.comfortable;
+        width: 48px;
+        height: 48px;
+        border-radius: 24px;
+        background: #000000A6;
+
+        Image {
+            source: @image-url("../icons/lock.svg");
+            colorize: #FFFFFF;
+            width: 22px;
+            height: 22px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+        }
+
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                root.locked = false;
+                // Come back with the chrome showing and the hide countdown
+                // restarted; otherwise the overlay returns to whatever state
+                // it happened to be in when the lock went on.
+                root.chrome-visible = true;
+                linger.running = false;
+                linger.running = true;
+            }
+        }
+    }
+
+    Text {
+        text: Tr.lock-hint;
+        color: #FFFFFF8C;
+        font-size: Typography.label-medium-size;
+        visible: root.locked;
+        horizontal-alignment: center;
+        y: parent.height - 40px;
+        width: 100%;
+    }
+
+    // ---- sheets ----------------------------------------------------------
+    //
+    // Anchored to the bottom with a large top radius, matching the reference.
+    // Settings that need explaining get room to explain themselves, which an
+    // inline chip never has.
+    if root.sheet != "": Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000073;
+
+        TouchArea {
+            clicked => { root.sheet = ""; }
+        }
+
+        sheet := Rectangle {
+            y: parent.height - self.height;
+            width: 100%;
+            height: sheet-body.preferred-height + Spacing.loose;
+            background: MaterialPalette.surface-container;
+            border-top-left-radius: Shape.extra-large;
+            border-top-right-radius: Shape.extra-large;
+
+            // Swallow clicks so they do not reach the scrim behind.
+            TouchArea {}
+
+            sheet-body := VerticalLayout {
+                padding: Spacing.comfortable;
+                spacing: Spacing.base;
+
+                HorizontalLayout {
+                    Text {
+                        text: root.sheet == "anime4k" ? "Anime4K"
+                            : root.sheet == "settings" ? Tr.settings
+                            : Tr.speed;
+                        color: #FFFFFF;
+                        font-size: Typography.headline-small-size;
+                        horizontal-stretch: 1;
+                    }
+
+                    IconButton {
+                        icon: @image-url("../icons/close.svg");
+                        size: 20px;
+                        clicked => { root.sheet = ""; }
+                    }
+                }
+
+                if root.sheet == "anime4k": VerticalLayout {
+                    spacing: Spacing.medium;
+
+                    Text {
+                        text: Tr.upscale-hint;
+                        color: #FFFFFF8C;
+                        font-size: Typography.body-medium-size;
+                        wrap: word-wrap;
+                    }
+
+                    HorizontalLayout {
+                        spacing: Spacing.small;
+                        alignment: start;
+
+                        SettingChip {
+                            label: Tr.off;
+                            selected: root.upscale == 0;
+                            clicked => { root.set-upscale(0); }
+                        }
+
+                        SettingChip {
+                            label: Tr.preset-fast;
+                            selected: root.upscale == 1;
+                            clicked => { root.set-upscale(1); }
+                        }
+
+                        SettingChip {
+                            label: Tr.preset-balanced;
+                            recommended: true;
+                            selected: root.upscale == 2;
+                            clicked => { root.set-upscale(2); }
+                        }
+
+                        SettingChip {
+                            label: Tr.preset-quality;
+                            heavy: true;
+                            selected: root.upscale == 3;
+                            clicked => { root.set-upscale(3); }
+                        }
+                    }
+
+                    SettingOption {
+                        label: Tr.interpolation;
+                        description: Tr.interpolation-hint;
+                        selected: root.interpolation;
+                        clicked => { root.toggle-interpolation(); }
+                    }
+                }
+
+                if root.sheet == "settings": VerticalLayout {
+                    spacing: Spacing.base;
+
+                    Text {
+                        text: Tr.quality;
+                        color: #FFFFFF;
+                        font-size: Typography.title-medium-size;
+                        font-weight: Typography.title-medium-weight-em;
+                    }
+
+                    HorizontalLayout {
+                        spacing: Spacing.small;
+                        alignment: start;
+
+                        for name[index] in root.qualities: SettingChip {
+                            label: name;
+                            selected: index == root.quality;
+                            clicked => { root.set-quality(index); }
+                        }
+                    }
+
+                    Text {
+                        text: Tr.decoder;
+                        color: #FFFFFF;
+                        font-size: Typography.title-medium-size;
+                        font-weight: Typography.title-medium-weight-em;
+                    }
+
+                    Text {
+                        text: Tr.decoder-hint;
+                        color: #FFFFFF8C;
+                        font-size: Typography.body-medium-size;
+                        wrap: word-wrap;
+                    }
+
+                    SettingOption {
+                        label: Tr.decoder-auto;
+                        description: Tr.decoder-auto-hint;
+                        selected: root.decoder == 0;
+                        clicked => { root.set-decoder(0); }
+                    }
+
+                    SettingOption {
+                        label: Tr.decoder-hw;
+                        description: Tr.decoder-hw-hint;
+                        badge: "HW";
+                        selected: root.decoder == 1;
+                        clicked => { root.set-decoder(1); }
+                    }
+
+                    SettingOption {
+                        label: Tr.decoder-sw;
+                        description: Tr.decoder-sw-hint;
+                        badge: "SW";
+                        selected: root.decoder == 2;
+                        clicked => { root.set-decoder(2); }
+                    }
+                }
+
+                if root.sheet == "speed": HorizontalLayout {
+                    spacing: Spacing.small;
+                    alignment: start;
+
+                    SettingChip {
+                        label: "0.5x";
+                        selected: root.speed-label == "0.5x";
+                        clicked => { root.set-speed(0.5); }
+                    }
+                    SettingChip {
+                        label: "0.75x";
+                        selected: root.speed-label == "0.75x";
+                        clicked => { root.set-speed(0.75); }
+                    }
+                    SettingChip {
+                        label: "1x";
+                        recommended: true;
+                        selected: root.speed-label == "1x";
+                        clicked => { root.set-speed(1.0); }
+                    }
+                    SettingChip {
+                        label: "1.25x";
+                        selected: root.speed-label == "1.25x";
+                        clicked => { root.set-speed(1.25); }
+                    }
+                    SettingChip {
+                        label: "1.5x";
+                        selected: root.speed-label == "1.5x";
+                        clicked => { root.set-speed(1.5); }
+                    }
+                    SettingChip {
+                        label: "2x";
+                        selected: root.speed-label == "2x";
+                        clicked => { root.set-speed(2.0); }
+                    }
+                }
+            }
+        }
+    }
+}

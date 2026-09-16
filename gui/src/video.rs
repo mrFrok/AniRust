@@ -26,7 +26,7 @@
 //! mpv's "new frame" callback fires on an mpv thread and may only wake the UI
 //! thread; it must never touch GL or call back into mpv.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
 use std::rc::Rc;
 
@@ -266,6 +266,12 @@ pub struct VideoBridge {
     live: Rc<RefCell<Option<Live>>>,
     /// A source asked for before the render context existed.
     pending: Rc<RefCell<Option<MediaSource>>>,
+    /// Resolution frames are actually rendered at.
+    ///
+    /// Not the same as the source's: with upscaling the chain runs at the
+    /// window's size, and the interface should be able to say so rather than
+    /// quietly reporting the input resolution.
+    rendered: Rc<Cell<(u32, u32)>>,
 }
 
 impl VideoBridge {
@@ -275,6 +281,7 @@ impl VideoBridge {
             player: Box::leak(Box::new(player)),
             live: Rc::new(RefCell::new(None)),
             pending: Rc::new(RefCell::new(None)),
+            rendered: Rc::new(Cell::new((0, 0))),
         }
     }
 
@@ -298,10 +305,22 @@ impl VideoBridge {
         self.player
     }
 
+    /// Resolution the last frame was rendered at, or `None` before the first.
+    #[must_use]
+    pub fn rendered_size(&self) -> Option<(u32, u32)> {
+        let size = self.rendered.get();
+        (size.0 > 0 && size.1 > 0).then_some(size)
+    }
+
     /// Hooks the bridge into a window's render loop.
     ///
     /// `on_frame` receives the borrowed texture whenever a new frame was
     /// drawn; the caller assigns it to whatever property the UI binds to.
+    ///
+    /// Frames are rendered at the window's size rather than the source's. That
+    /// matters for upscaling: rendering at the source resolution would run
+    /// Anime4K's chain and then squeeze the result back down to where it
+    /// started, so the work would never reach the screen.
     pub fn attach<C>(&self, component: &C, on_frame: impl Fn(&C, Image) + 'static) -> Result<()>
     where
         C: ComponentHandle + 'static,
@@ -309,6 +328,7 @@ impl VideoBridge {
         let player = self.player;
         let live = Rc::clone(&self.live);
         let pending = Rc::clone(&self.pending);
+        let rendered = Rc::clone(&self.rendered);
         let weak = component.as_weak();
         // Handed to mpv so it can wake the UI when a frame is ready. Cloned
         // because the notifier closure needs its own.
@@ -368,7 +388,11 @@ impl VideoBridge {
                             return;
                         };
 
-                        match draw(player, live) {
+                        let surface_size = (
+                            component.window().size().width,
+                            component.window().size().height,
+                        );
+                        match draw(player, live, surface_size, &rendered) {
                             Ok(Some(image)) => {
                                 live.frames_drawn += 1;
                                 // Evidence that the texture path is alive, at
@@ -482,16 +506,55 @@ fn setup(player: &'static Player, graphics_api: &GraphicsAPI<'_>) -> Result<Live
     })
 }
 
+/// Largest render target we will allocate, per side.
+///
+/// A guard rather than a preference: a window dragged onto a 5K display should
+/// not silently ask the GPU for a texture that big every frame.
+const MAX_TARGET_SIDE: u32 = 3840;
+
+/// Chooses the resolution to render at.
+///
+/// Never below the source, because that would throw detail away, and never
+/// above what the window can show, because those pixels are discarded on the
+/// way to the screen. The aspect ratio is the source's: letterboxing is the
+/// image element's job, not the renderer's.
+fn target_size(source: (u32, u32), surface: (u32, u32)) -> (u32, u32) {
+    let (source_w, source_h) = source;
+    let (surface_w, surface_h) = surface;
+
+    if source_w == 0 || source_h == 0 || surface_w == 0 || surface_h == 0 {
+        return source;
+    }
+
+    // Scale the source up until it just covers the surface in one dimension.
+    let scale = (f64::from(surface_w) / f64::from(source_w))
+        .min(f64::from(surface_h) / f64::from(source_h))
+        .max(1.0);
+
+    let width = ((f64::from(source_w) * scale).round() as u32).min(MAX_TARGET_SIDE);
+    let height = ((f64::from(source_h) * scale).round() as u32).min(MAX_TARGET_SIDE);
+
+    // Even dimensions keep chroma subsampling and downscaling filters happy.
+    (width & !1, height & !1)
+}
+
 /// Draws the current frame, returning the image to show when one was produced.
-fn draw(player: &Player, live: &mut Live) -> Result<Option<Image>> {
+fn draw(
+    player: &Player,
+    live: &mut Live,
+    surface_size: (u32, u32),
+    rendered: &Cell<(u32, u32)>,
+) -> Result<Option<Image>> {
     live.draw_calls += 1;
 
     // Size is checked first on purpose: `needs_redraw` consumes mpv's frame
     // flag, so bailing out after asking would throw the frame away and mpv
     // would never offer it again. That shows up as stutter, not as an error.
-    let Some((width, height)) = player.video_size() else {
+    let Some(source) = player.video_size() else {
         return Ok(None);
     };
+    let (width, height) = target_size(source, surface_size);
+    rendered.set((width, height));
     let size = Some((width, height));
     let redraw = live.renderer.needs_redraw();
 
@@ -717,5 +780,62 @@ impl GlLoader {
         // SAFETY: `symbol` is a valid NUL-terminated string, and the function
         // pointer came from a library this struct keeps loaded.
         unsafe { (self.get_proc_address)(symbol.as_ptr()) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_small_window_never_renders_below_the_source() {
+        // Downscaling here would throw away detail the source actually has.
+        assert_eq!(target_size((1280, 720), (640, 360)), (1280, 720));
+    }
+
+    #[test]
+    fn a_large_window_renders_up_to_it() {
+        // This is what makes upscaling worth running: without it the chain
+        // would be squeezed back to the source resolution before display.
+        assert_eq!(target_size((1280, 720), (2560, 1440)), (2560, 1440));
+    }
+
+    #[test]
+    fn the_source_aspect_is_kept() {
+        // A window wider than the video must not stretch it; the spare width
+        // becomes letterboxing when the image is drawn.
+        let (w, h) = target_size((1280, 720), (3000, 1080));
+        assert_eq!(w * 720 / 1280, h);
+    }
+
+    #[test]
+    fn enormous_windows_are_capped() {
+        let (w, h) = target_size((1280, 720), (8000, 5000));
+        assert!(w <= MAX_TARGET_SIDE && h <= MAX_TARGET_SIDE, "{w}x{h}");
+    }
+
+    #[test]
+    fn dimensions_stay_even() {
+        let (w, h) = target_size((1280, 720), (1919, 1079));
+        assert_eq!(w % 2, 0);
+        assert_eq!(h % 2, 0);
+    }
+
+    #[test]
+    fn a_missing_size_falls_back_to_the_source() {
+        assert_eq!(target_size((1280, 720), (0, 0)), (1280, 720));
+    }
+
+    #[test]
+    fn targets_carry_the_flip_toolkits_expect() {
+        let target = Target::new(3, 1920, 1080);
+        assert!(target.flip_y);
+        assert_eq!((target.fbo, target.width, target.height), (3, 1920, 1080));
+    }
+
+    #[test]
+    fn a_zero_sized_target_is_empty() {
+        assert!(Target::new(0, 0, 1080).is_empty());
+        assert!(!Target::new(0, 1920, 1080).is_empty());
     }
 }

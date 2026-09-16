@@ -600,6 +600,16 @@ impl Player {
         Ok(())
     }
 
+    /// Switches hardware decoding while playing.
+    ///
+    /// mpv accepts this at runtime and reconfigures on the next frame, so a
+    /// viewer troubleshooting a bad picture does not have to restart the
+    /// episode. Takes any mpv `hwdec` value, including `"no"`.
+    pub fn set_hwdec(&self, value: &str) -> Result<()> {
+        self.mpv.set_property("hwdec", value)?;
+        Ok(())
+    }
+
     pub fn set_network_timeout(&self, secs: u32) -> Result<()> {
         self.mpv.set_property("network-timeout", i64::from(secs))?;
         Ok(())

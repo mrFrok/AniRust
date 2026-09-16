@@ -1,0 +1,77 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// User-facing strings, in both languages the client ships.
+//
+// The audience is mostly Russian-speaking, so Russian is a first-class output
+// language rather than an afterthought - but identifiers and comments stay
+// English, as everywhere else in the repository.
+//
+// A global with ternaries rather than gettext: every string is checked at
+// compile time, changing `lang` re-evaluates the whole screen instantly, and
+// there is no tooling or runtime file loading to go wrong. The trade is that a
+// third language would make these unwieldy; at that point this becomes a model
+// indexed by language, and the wiring around it does not change.
+
+export global Tr {
+    // Set from Rust at startup and whenever the setting changes.
+    in-out property <string> lang: "en";
+
+    // ---- player ----------------------------------------------------------
+    out property <string> play: lang == "ru" ? "Воспроизвести" : "Play";
+    out property <string> pause: lang == "ru" ? "Пауза" : "Pause";
+    out property <string> back-10: lang == "ru" ? "Назад 10 с" : "Back 10s";
+    out property <string> forward-10: lang == "ru" ? "Вперёд 10 с" : "Forward 10s";
+    out property <string> skip-opening: lang == "ru" ? "Пропустить опенинг" : "Skip opening";
+    out property <string> next-episode: lang == "ru" ? "Следующая серия" : "Next episode";
+
+    out property <string> speed: lang == "ru" ? "Скорость" : "Speed";
+    out property <string> quality: lang == "ru" ? "Качество" : "Quality";
+    out property <string> subtitles: lang == "ru" ? "Субтитры" : "Subtitles";
+    out property <string> audio-track: lang == "ru" ? "Аудио" : "Audio";
+    out property <string> dubber: lang == "ru" ? "Озвучка" : "Voice-over";
+    out property <string> upscale: lang == "ru" ? "Апскейл" : "Upscale";
+    out property <string> interpolation: lang == "ru" ? "Интерполяция" : "Interpolation";
+    out property <string> off: lang == "ru" ? "Выкл" : "Off";
+    out property <string> on: lang == "ru" ? "Вкл" : "On";
+
+    // ---- state -----------------------------------------------------------
+    out property <string> loading: lang == "ru" ? "Загрузка…" : "Loading…";
+    out property <string> buffering: lang == "ru" ? "Буферизация…" : "Buffering…";
+    out property <string> ended: lang == "ru" ? "Серия закончилась" : "Episode ended";
+    out property <string> idle: lang == "ru" ? "Ничего не воспроизводится" : "Nothing playing";
+
+    // ---- upscale presets -------------------------------------------------
+    out property <string> upscale-hint: lang == "ru"
+        ? "Повышает чёткость аниме. Чем тяжелее пресет, тем выше нагрузка на видеокарту."
+        : "Sharpens anime. The heavier the preset, the more it asks of the GPU.";
+    out property <string> interpolation-hint: lang == "ru"
+        ? "Сглаживает рывки, когда частота кадров не совпадает с частотой монитора. Новых кадров не добавляет."
+        : "Smooths judder when the frame rate does not match the display. Does not invent frames.";
+
+    out property <string> decoder: lang == "ru" ? "Декодер" : "Decoder";
+    out property <string> decoder-hint: lang == "ru"
+        ? "Отвечает за обработку видео при воспроизведении."
+        : "Handles video processing during playback.";
+    out property <string> decoder-auto: lang == "ru" ? "Автоматически" : "Automatic";
+    out property <string> decoder-auto-hint: lang == "ru"
+        ? "Подбирает лучший доступный вариант."
+        : "Picks the best option available.";
+    out property <string> decoder-hw: lang == "ru" ? "Аппаратный" : "Hardware";
+    out property <string> decoder-hw-hint: lang == "ru"
+        ? "Рекомендуемый режим для большинства видео."
+        : "The recommended mode for most video.";
+    out property <string> decoder-sw: lang == "ru" ? "Программный" : "Software";
+    out property <string> decoder-sw-hint: lang == "ru"
+        ? "Помогает при проблемах с картинкой, но сильнее нагружает процессор."
+        : "Helps when the picture misbehaves, at a cost in CPU.";
+    out property <string> lock-hint: lang == "ru"
+        ? "Управление заблокировано" : "Controls locked";
+    out property <string> preset-fast: lang == "ru" ? "Быстро" : "Fast";
+    out property <string> preset-balanced: lang == "ru" ? "Сбалансировано" : "Balanced";
+    out property <string> preset-quality: lang == "ru" ? "Качество" : "Quality";
+
+    // ---- generic ---------------------------------------------------------
+    out property <string> back: lang == "ru" ? "Назад" : "Back";
+    out property <string> settings: lang == "ru" ? "Настройки" : "Settings";
+    out property <string> episode: lang == "ru" ? "Серия" : "Episode";
+}
