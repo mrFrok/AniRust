@@ -469,7 +469,12 @@ impl Target {
 
         let url = match self {
             Self::Url(url) => {
-                title = host_of(url).unwrap_or_else(|| "AniRust".to_owned());
+                // Opened by link, so there is no release to name. The source's
+                // own name at least says something; a hostname is developer
+                // output and does not belong on screen.
+                title = host_of(url)
+                    .and_then(|host| registry.for_host(&host).map(|e| e.name().to_owned()))
+                    .unwrap_or_else(|| "AniRust".to_owned());
                 url.clone()
             }
             Self::Episode {
@@ -532,7 +537,7 @@ struct Playback {
     episode_label: String,
 }
 
-/// Host of a URL, for naming a stream opened by link.
+/// Host of a URL, used to find which extractor claims it.
 fn host_of(url: &str) -> Option<String> {
     anirust_extract::host_of(url)
 }

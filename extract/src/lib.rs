@@ -170,7 +170,21 @@ impl ResolvedStream {
 
     /// Sorts renditions highest-first and drops duplicates, so callers can
     /// rely on [`Self::best`] regardless of the order a host returned.
+    ///
+    /// Two kinds of duplicate go. Repeated heights are the obvious one. The
+    /// subtler one is several heights sharing a single URL: hosts pad their
+    /// menus by aliasing a lower rendition into a higher slot — Kodik offers
+    /// "720p" for an episode whose file is plainly named `480.mp4`. Keeping
+    /// both would put a choice in front of the viewer that changes nothing
+    /// and labels it with a resolution the file does not have, so the lowest
+    /// — and therefore truthful — label is the one kept.
     fn normalize(&mut self) {
+        // Ascending first, so the survivor of a shared URL is its lowest,
+        // honest label rather than the padded one.
+        self.variants.sort_by_key(|v| v.height);
+        let mut seen = std::collections::HashSet::new();
+        self.variants.retain(|v| seen.insert(v.url.clone()));
+
         self.variants.sort_by_key(|v| std::cmp::Reverse(v.height));
         self.variants.dedup_by(|a, b| a.height == b.height);
     }
@@ -391,6 +405,43 @@ mod tests {
         let s = stream_of(&[360, 1080, 720, 720]);
         let heights: Vec<_> = s.variants.iter().map(|v| v.height).collect();
         assert_eq!(heights, vec![1080, 720, 360]);
+    }
+
+    #[test]
+    fn heights_sharing_one_url_collapse_to_the_honest_label() {
+        // Kodik pads its menu by serving the 480p file in the 720p slot. A
+        // viewer picking "720p" would get 480p and no way to tell.
+        let mut stream = ResolvedStream {
+            variants: vec![
+                StreamVariant {
+                    height: 720,
+                    url: "https://h/480.m3u8".to_owned(),
+                    kind: StreamKind::Hls,
+                },
+                StreamVariant {
+                    height: 480,
+                    url: "https://h/480.m3u8".to_owned(),
+                    kind: StreamKind::Hls,
+                },
+                StreamVariant {
+                    height: 360,
+                    url: "https://h/360.m3u8".to_owned(),
+                    kind: StreamKind::Hls,
+                },
+            ],
+            ..Default::default()
+        };
+        stream.normalize();
+
+        let heights: Vec<_> = stream.variants.iter().map(|v| v.height).collect();
+        assert_eq!(heights, vec![480, 360], "the aliased 720p must not survive");
+    }
+
+    #[test]
+    fn genuinely_distinct_renditions_all_survive() {
+        let mut stream = stream_of(&[1080, 720, 480]);
+        stream.normalize();
+        assert_eq!(stream.variants.len(), 3);
     }
 
     #[test]
