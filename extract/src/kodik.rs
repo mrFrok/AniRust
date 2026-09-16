@@ -110,15 +110,11 @@ impl Extractor for KodikExtractor {
     }
 
     async fn resolve(&self, embed_url: &str) -> Result<ResolvedStream> {
-        let embed_url = with_scheme(embed_url);
+        let embed_url = crate::with_scheme(embed_url);
         let parsed = url::Url::parse(&embed_url)?;
-        let origin = format!(
-            "{}://{}/",
-            parsed.scheme(),
-            parsed.host_str().ok_or_else(|| ExtractError::NoHost {
-                url: embed_url.clone()
-            })?
-        );
+        let origin = crate::origin_of(&parsed).ok_or_else(|| ExtractError::NoHost {
+            url: embed_url.clone(),
+        })?;
 
         let page = self
             .http
@@ -162,6 +158,8 @@ impl Extractor for KodikExtractor {
                 ("User-Agent".to_owned(), DEFAULT_USER_AGENT.to_owned()),
             ]),
             subtitles: Vec::new(),
+            // Kodik publishes no opening boundaries.
+            opening: None,
         })
     }
 }
@@ -251,15 +249,6 @@ fn decode_links(response: &FtorResponse) -> Vec<StreamVariant> {
     }
 
     variants
-}
-
-/// Episode URLs are sometimes protocol-relative.
-fn with_scheme(url: &str) -> String {
-    if let Some(rest) = url.strip_prefix("//") {
-        format!("https://{rest}")
-    } else {
-        url.to_owned()
-    }
 }
 
 #[cfg(test)]

@@ -106,6 +106,8 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         page: i32,
     },
+    /// List the hosts an extractor is implemented for.
+    Hosts,
     /// Resolve an embed URL to a directly playable stream.
     Resolve {
         url: String,
@@ -375,6 +377,12 @@ async fn run(client: &Client, cli: &Cli) -> Result<()> {
             print_release_page(&p, cli.json)?;
         }
 
+        Command::Hosts => {
+            for host in Registry::new(reqwest::Client::new()).supported_hosts() {
+                println!("{host}");
+            }
+        }
+
         Command::Resolve { url, output } => {
             let registry = Registry::new(reqwest::Client::new());
             let stream = registry.resolve(url).await?;
@@ -400,13 +408,27 @@ async fn run(client: &Client, cli: &Cli) -> Result<()> {
                 }
             );
 
-            let stream = if episode.iframe {
-                Registry::new(reqwest::Client::new())
-                    .resolve(&episode.url)
-                    .await?
+            // The API's `iframe` flag is not trustworthy: Sibnet and
+            // AniLibria episodes arrive with `iframe = false` even though
+            // their URLs are player pages answering text/html. Routing by
+            // host instead means the flag can be wrong without breaking
+            // playback.
+            let registry = Registry::new(reqwest::Client::new());
+            let stream = if registry.supports(&episode.url) {
+                if !episode.iframe {
+                    eprintln!(
+                        "примечание: API пометил серию как прямую ссылку, но хост требует \
+                         экстрактора — разрешаю через него"
+                    );
+                }
+                registry.resolve(&episode.url).await?
             } else {
-                // Already playable; present it in the same shape so callers
-                // do not have to special-case direct links.
+                if episode.iframe {
+                    eprintln!(
+                        "внимание: это эмбед, но экстрактора для хоста нет — \
+                         ссылка отдана как есть и, скорее всего, не проиграется"
+                    );
+                }
                 ResolvedStream {
                     variants: vec![StreamVariant {
                         height: episode.quality.max(0) as u32,
@@ -493,11 +515,20 @@ fn print_stream(stream: &ResolvedStream, output: &StreamOutput, json: bool) -> R
     }
 
     for v in &stream.variants {
-        println!(
-            "{:>5}p  {:<12} {}",
-            v.height,
-            format!("{:?}", v.kind),
-            v.url
+        // A height of zero means the host did not advertise a resolution.
+        let quality = if v.height == anirust_extract::UNKNOWN_HEIGHT {
+            "?".to_owned()
+        } else {
+            format!("{}p", v.height)
+        };
+        println!("{:>6}  {:<12} {}", quality, format!("{:?}", v.kind), v.url);
+    }
+    if let Some(op) = stream.opening {
+        eprintln!(
+            "опенинг: {}–{} с ({} с)",
+            op.start,
+            op.end,
+            op.duration_secs()
         );
     }
     if !stream.headers.is_empty() {

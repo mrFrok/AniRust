@@ -29,10 +29,21 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+pub mod anilibria;
 pub mod kodik;
 pub mod rotate;
+pub mod sibnet;
 
+pub use anilibria::AniLibriaExtractor;
 pub use kodik::KodikExtractor;
+pub use sibnet::SibnetExtractor;
+
+/// Height for a rendition whose resolution the host does not advertise.
+///
+/// Sorting puts these last, so a labelled rendition always wins when both are
+/// on offer, and a lone unlabelled one is still returned by
+/// [`ResolvedStream::best`].
+pub const UNKNOWN_HEIGHT: u32 = 0;
 
 /// A browser-like identity. Several hosts serve an error page to anything that
 /// looks automated, so this is the default for every extractor and is carried
@@ -84,6 +95,20 @@ impl StreamKind {
     }
 }
 
+/// Where the opening runs, in seconds from the start of the episode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SkipRange {
+    pub start: u32,
+    pub end: u32,
+}
+
+impl SkipRange {
+    #[must_use]
+    pub fn duration_secs(self) -> u32 {
+        self.end.saturating_sub(self.start)
+    }
+}
+
 /// Everything a player needs to open an episode.
 #[derive(Debug, Clone, Default)]
 pub struct ResolvedStream {
@@ -93,6 +118,9 @@ pub struct ResolvedStream {
     /// omitting them usually yields a 403 on the segments.
     pub headers: BTreeMap<String, String>,
     pub subtitles: Vec<SubtitleTrack>,
+    /// Opening boundaries, when the host publishes them. Only some do, so a
+    /// "skip opening" control has to degrade gracefully rather than assume it.
+    pub opening: Option<SkipRange>,
 }
 
 impl ResolvedStream {
@@ -206,8 +234,17 @@ impl Registry {
     }
 
     /// Every implemented extractor.
+    ///
+    /// Not yet covered: SovetRomantica, whose host is unreachable from the
+    /// network this was developed on, so its protocol could not be observed —
+    /// and guessing it would mean reading someone else's implementation.
+    /// Allvideo, StudioMir, Myvi, VKVideo, OK, RuTube and MailRu are listed by
+    /// the official client but did not appear in the sampled catalogue.
     pub fn new(http: reqwest::Client) -> Self {
-        Self::empty().with(KodikExtractor::new(http))
+        Self::empty()
+            .with(KodikExtractor::new(http.clone()))
+            .with(AniLibriaExtractor::new(http.clone()))
+            .with(SibnetExtractor::new(http))
     }
 
     #[must_use]
@@ -282,6 +319,21 @@ pub fn host_of(url: &str) -> Option<String> {
 fn normalize_host(host: &str) -> String {
     let host = host.to_ascii_lowercase();
     host.strip_prefix("www.").unwrap_or(&host).to_owned()
+}
+
+/// Gives a protocol-relative URL an explicit scheme. Episode URLs occasionally
+/// arrive without one.
+#[must_use]
+pub(crate) fn with_scheme(url: &str) -> String {
+    match url.strip_prefix("//") {
+        Some(rest) => format!("https://{rest}"),
+        None => url.to_owned(),
+    }
+}
+
+/// `scheme://host/` for use as a `Referer`.
+pub(crate) fn origin_of(url: &url::Url) -> Option<String> {
+    Some(format!("{}://{}/", url.scheme(), url.host_str()?))
 }
 
 #[cfg(test)]
