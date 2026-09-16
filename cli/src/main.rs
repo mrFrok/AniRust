@@ -595,24 +595,19 @@ fn play(
 ) -> Result<()> {
     let best = stream.best().with_context(|| lang.err_nothing_resolved())?;
 
-    // Refuse to promise upscaling the install cannot deliver.
+    // The player carries the shaders and writes them out on startup, so a
+    // preset only has to be checked when the caller overrode the directory.
     let mut preset: UpscalePreset = upscale.into();
-    if preset != UpscalePreset::Off {
-        match shader_dir {
-            Some(dir) => {
-                let missing = UpscalePreset::missing_from(dir);
-                if !missing.is_empty() {
-                    eprintln!(
-                        "{}",
-                        lang.play_shaders_missing(missing.len(), &dir.display().to_string())
-                    );
-                    preset = UpscalePreset::Off;
-                }
-            }
-            None => {
-                eprintln!("{}", lang.play_shaders_missing(0, "-"));
-                preset = UpscalePreset::Off;
-            }
+    if preset != UpscalePreset::Off
+        && let Some(dir) = shader_dir
+    {
+        let missing = UpscalePreset::missing_from(dir);
+        if !missing.is_empty() {
+            eprintln!(
+                "{}",
+                lang.play_shaders_missing(missing.len(), &dir.display().to_string())
+            );
+            preset = UpscalePreset::Off;
         }
     }
 

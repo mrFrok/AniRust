@@ -45,14 +45,17 @@ const DUMP_AT_FRAME: u64 = 60;
 /// drifts with the picture.
 const DUMP_AT_FRAME_LATE: u64 = 300;
 
-/// How often the UI is asked to repaint while something is playing.
+/// How often the repaint loop is nudged back into motion.
 ///
-/// mpv's update callback alone is not enough to get started: the window
-/// repaints only when asked, the callback fires only once mpv has a frame, and
-/// mpv produces frames only once it is being rendered. That is a standstill, so
-/// a timer drives the loop and the callback merely makes it more responsive.
-/// Roughly 60Hz, which is what a video player is for.
-const REPAINT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
+/// The loop itself is driven from `AfterRendering`, which keeps it in step
+/// with the display: mpv derives the refresh rate from when frames are
+/// reported as swapped, and a fixed-interval timer drifting out of phase makes
+/// that estimate wrong — enough that interpolation stops producing frames
+/// entirely.
+///
+/// This timer only starts the loop and restarts it if it ever stalls, so it
+/// can be slow.
+const REPAINT_KICK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// A texture plus the framebuffer that draws into it.
 ///
@@ -393,6 +396,16 @@ impl VideoBridge {
                             // screen.
                             live.renderer.report_swap();
                         }
+
+                        // Ask for the next frame from inside the render loop,
+                        // so repaints follow the display rather than a timer
+                        // of our own. This is what gives mpv a usable refresh
+                        // estimate.
+                        if player.is_playing()
+                            && let Some(component) = weak.upgrade()
+                        {
+                            component.window().request_redraw();
+                        }
                     }
 
                     // Dropping here, rather than letting it happen whenever,
@@ -411,26 +424,33 @@ impl VideoBridge {
         Ok(())
     }
 
-    /// Keeps the window repainting while something is playing.
+    /// Starts the repaint loop, and restarts it if it ever stalls.
     ///
-    /// See [`REPAINT_INTERVAL`] for why a timer is needed at all. The timer is
-    /// kept alive for the window's lifetime; stopping it early would freeze
-    /// the picture rather than merely save a little work.
+    /// The loop itself runs from `AfterRendering`; this only kicks it off.
+    /// Something has to, because the window will not repaint until asked, and
+    /// until it does mpv has no reason to produce a frame.
+    ///
+    /// Kept alive for the window's lifetime: dropping the timer would leave a
+    /// stall unrecoverable.
     fn drive_repaints<C: ComponentHandle + 'static>(&self, component: &C) {
         let player = self.player;
         let weak = component.as_weak();
 
         let timer = slint::Timer::default();
-        timer.start(slint::TimerMode::Repeated, REPAINT_INTERVAL, move || {
-            let Some(component) = weak.upgrade() else {
-                return;
-            };
-            // Idle means nothing is loaded; repainting then would burn the GPU
-            // for a static picture.
-            if player.is_playing() {
-                component.window().request_redraw();
-            }
-        });
+        timer.start(
+            slint::TimerMode::Repeated,
+            REPAINT_KICK_INTERVAL,
+            move || {
+                let Some(component) = weak.upgrade() else {
+                    return;
+                };
+                // Idle means nothing is loaded; repainting then would burn the GPU
+                // for a static picture.
+                if player.is_playing() {
+                    component.window().request_redraw();
+                }
+            },
+        );
         std::mem::forget(timer);
     }
 }

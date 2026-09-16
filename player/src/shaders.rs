@@ -17,8 +17,79 @@
 //! is the chain meant for typical anime sources rather than for heavily
 //! degraded ones.
 //!
-//! Shaders are not vendored in this repository; [`crate::PlayerConfig`] points
-//! at a directory holding them. See `player/shaders/README.md`.
+//! The shaders are vendored in `player/shaders/` and embedded in the binary,
+//! then written to a cache directory the first time they are needed. That
+//! costs about 270KB of binary and buys a feature that works with no setup and
+//! no guessing where an install put its data files — which matters for
+//! something that ships as a single executable as often as an AppImage or a
+//! `cargo run`.
+
+/// The vendored shaders, embedded so the feature needs no installation step.
+///
+/// Upstream: <https://github.com/bloc97/Anime4K>, MIT, see
+/// `player/shaders/LICENSE-Anime4K`.
+const EMBEDDED: &[(&str, &str)] = &[
+    (
+        "Anime4K_Clamp_Highlights.glsl",
+        include_str!("../shaders/Anime4K_Clamp_Highlights.glsl"),
+    ),
+    (
+        "Anime4K_Restore_CNN_S.glsl",
+        include_str!("../shaders/Anime4K_Restore_CNN_S.glsl"),
+    ),
+    (
+        "Anime4K_Restore_CNN_M.glsl",
+        include_str!("../shaders/Anime4K_Restore_CNN_M.glsl"),
+    ),
+    (
+        "Anime4K_Restore_CNN_L.glsl",
+        include_str!("../shaders/Anime4K_Restore_CNN_L.glsl"),
+    ),
+    (
+        "Anime4K_Upscale_CNN_x2_S.glsl",
+        include_str!("../shaders/Anime4K_Upscale_CNN_x2_S.glsl"),
+    ),
+    (
+        "Anime4K_Upscale_CNN_x2_M.glsl",
+        include_str!("../shaders/Anime4K_Upscale_CNN_x2_M.glsl"),
+    ),
+    (
+        "Anime4K_Upscale_CNN_x2_L.glsl",
+        include_str!("../shaders/Anime4K_Upscale_CNN_x2_L.glsl"),
+    ),
+    (
+        "Anime4K_AutoDownscalePre_x2.glsl",
+        include_str!("../shaders/Anime4K_AutoDownscalePre_x2.glsl"),
+    ),
+];
+
+/// Writes the embedded shaders to `dir`, creating it if needed.
+///
+/// Existing files are rewritten only when their contents differ, so upgrading
+/// the application refreshes them while a normal start touches nothing.
+pub fn install_to(dir: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+
+    for (name, contents) in EMBEDDED {
+        let path = dir.join(name);
+        let current = std::fs::read_to_string(&path).ok();
+        if current.as_deref() != Some(*contents) {
+            std::fs::write(&path, contents)?;
+            tracing::debug!(shader = name, "shader written");
+        }
+    }
+    Ok(())
+}
+
+/// Where the shaders live: the user's cache directory, falling back to a
+/// temporary one when the platform has no cache directory.
+#[must_use]
+pub fn default_dir() -> std::path::PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("anirust")
+        .join("shaders")
+}
 
 /// How much work to spend on upscaling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

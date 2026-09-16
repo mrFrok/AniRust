@@ -11,4 +11,5 @@ repository.workspace = true
 [dependencies]
 libmpv2 = "6"
 thiserror.workspace = true
+dirs.workspace = true
 tracing.workspace = true

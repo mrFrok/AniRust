@@ -66,6 +66,14 @@ fn main() -> Result<()> {
             .or(Some(std::borrow::Cow::Borrowed(
                 anirust_player::DEFAULT_FBO_FORMAT,
             ))),
+        // Until there is a settings screen, these come from the environment.
+        upscale: match std::env::var("ANIRUST_UPSCALE").as_deref() {
+            Ok("fast") => anirust_player::UpscalePreset::Fast,
+            Ok("balanced") => anirust_player::UpscalePreset::Balanced,
+            Ok("quality") => anirust_player::UpscalePreset::Quality,
+            _ => anirust_player::UpscalePreset::Off,
+        },
+        interpolation: std::env::var("ANIRUST_INTERP").is_ok(),
         dumb_mode: std::env::var("ANIRUST_DUMB").is_ok(),
         direct_rendering: std::env::var("ANIRUST_DR").as_deref() != Ok("no"),
         dither_depth: std::env::var("ANIRUST_DITHER")

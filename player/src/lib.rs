@@ -121,8 +121,11 @@ pub struct PlayerConfig {
     pub network_timeout_secs: u32,
     /// Seconds of stream to buffer ahead.
     pub cache_secs: u32,
-    /// Directory holding the Anime4K shaders. Required by every preset other
-    /// than [`UpscalePreset::Off`].
+    /// Where to keep the Anime4K shaders.
+    ///
+    /// `None` uses [`shaders::default_dir`]. The shaders are embedded in the
+    /// binary and written there on startup, so this exists for packagers who
+    /// want them somewhere specific — not as a setup step.
     pub shader_dir: Option<std::path::PathBuf>,
     /// Let the decoder write frames straight into GPU-mapped buffers.
     ///
@@ -261,9 +264,19 @@ impl Player {
             Ok(())
         })?;
 
+        // Materialise the embedded shaders before any preset is applied, so
+        // upscaling cannot fail for want of files the binary already carries.
+        let shader_dir = config
+            .shader_dir
+            .clone()
+            .unwrap_or_else(shaders::default_dir);
+        if let Err(error) = shaders::install_to(&shader_dir) {
+            tracing::warn!(%error, dir = %shader_dir.display(), "could not install the shaders; upscaling will be unavailable");
+        }
+
         let player = Self {
             mpv,
-            shader_dir: config.shader_dir.clone(),
+            shader_dir: Some(shader_dir),
         };
 
         player.set_network_timeout(config.network_timeout_secs)?;
