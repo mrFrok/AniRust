@@ -40,6 +40,15 @@ pub use kodik::KodikExtractor;
 pub const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
      (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
+/// How long a player should wait for one of these CDN nodes.
+///
+/// Deliberately generous. A manifest URL redirects to a randomly chosen edge
+/// node, and those nodes vary wildly: the same host answered a request in 14ms
+/// and then took 19.3s to accept the next connection. ffmpeg's default timeout
+/// is shorter than that, so an episode that is merely slow fails outright with
+/// `avformat_open_input() failed`, which reads like a broken extractor.
+pub const NETWORK_TIMEOUT_SECS: u32 = 60;
+
 /// One playable rendition of an episode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamVariant {
@@ -103,27 +112,31 @@ impl ResolvedStream {
             .or_else(|| self.variants.last())
     }
 
-    /// Arguments that carry [`Self::headers`] into mpv.
+    /// Arguments that make mpv able to play this stream.
     ///
-    /// Two details matter and are easy to get wrong:
+    /// Three details matter, each of which silently breaks playback:
     ///
     /// * `--http-header-fields` is a *list* option, so repeating it replaces
     ///   the previous value instead of adding to it. Each header therefore
     ///   uses `--http-header-fields-append`.
     /// * mpv sends its own `User-Agent`, which a header field does not
     ///   override, so that one becomes `--user-agent`.
+    /// * the edge nodes these manifests redirect to can take a long time to
+    ///   accept a connection — 19s was measured against a node that had
+    ///   answered in 14ms moments earlier. ffmpeg's default is shorter, so it
+    ///   gives up and the episode looks broken when it is merely slow. See
+    ///   [`NETWORK_TIMEOUT_SECS`].
     #[must_use]
     pub fn mpv_args(&self) -> Vec<String> {
-        self.headers
-            .iter()
-            .map(|(name, value)| {
-                if name.eq_ignore_ascii_case("user-agent") {
-                    format!("--user-agent={value}")
-                } else {
-                    format!("--http-header-fields-append={name}: {value}")
-                }
-            })
-            .collect()
+        let mut args = vec![format!("--network-timeout={NETWORK_TIMEOUT_SECS}")];
+        args.extend(self.headers.iter().map(|(name, value)| {
+            if name.eq_ignore_ascii_case("user-agent") {
+                format!("--user-agent={value}")
+            } else {
+                format!("--http-header-fields-append={name}: {value}")
+            }
+        }));
+        args
     }
 
     /// Sorts renditions highest-first and drops duplicates, so callers can
@@ -360,6 +373,11 @@ mod tests {
         assert!(
             !args.iter().any(|a| a.starts_with("--http-header-fields=")),
             "must not use the replacing form: {args:?}"
+        );
+        // Without this the slower edge nodes read as a broken extractor.
+        assert!(
+            args.iter().any(|a| a.starts_with("--network-timeout=")),
+            "missing the network timeout: {args:?}"
         );
     }
 }
