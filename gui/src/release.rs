@@ -10,10 +10,13 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Duration;
 
 use slint::{ComponentHandle, VecModel};
 
 use anirust_api::{Client, Dubber, Episode, EpisodeSort, Release, Source};
+
+use crate::progress::Store;
 
 use crate::{EpisodeItem, MainWindow, PickerOption, tasks};
 
@@ -31,6 +34,9 @@ pub struct ReleaseState {
     pub sources: Vec<Source>,
     pub source: usize,
     pub episodes: Vec<Episode>,
+    /// What this machine remembers, which fills in what an unauthenticated
+    /// account cannot.
+    pub progress: Rc<RefCell<Store>>,
     /// Bumped on every selection change.
     ///
     /// A request started for an older selection may still be in flight when a
@@ -40,6 +46,15 @@ pub struct ReleaseState {
 }
 
 impl ReleaseState {
+    /// A state that keeps its watch positions in `progress`.
+    #[must_use]
+    pub fn new(progress: Rc<RefCell<Store>>) -> Self {
+        Self {
+            progress,
+            ..Self::default()
+        }
+    }
+
     /// Marks a new selection and returns the token to check results against.
     fn next_generation(&mut self) -> u64 {
         self.generation += 1;
@@ -60,6 +75,42 @@ impl ReleaseState {
 
     pub fn episode_at(&self, position: i32) -> Option<&Episode> {
         self.episodes.iter().find(|e| e.position == position)
+    }
+
+    /// Index of an episode in the list, for scrolling to it.
+    #[must_use]
+    pub fn index_of(&self, position: i32) -> Option<usize> {
+        self.episodes.iter().position(|e| e.position == position)
+    }
+
+    /// Whether an episode has been seen, according to either the account or
+    /// this machine.
+    #[must_use]
+    pub fn watched(&self, episode: &Episode) -> bool {
+        episode.is_watched
+            || self
+                .progress
+                .borrow()
+                .get(self.release_id, episode.position)
+                .is_some_and(|entry| entry.finished)
+    }
+
+    /// Where to resume an episode from.
+    ///
+    /// This machine's record wins over the account's: it is the one that was
+    /// updated a second ago, while the account's only moves when an episode is
+    /// finished.
+    #[must_use]
+    pub fn resume_of(&self, episode: &Episode) -> Option<Duration> {
+        if self.watched(episode) {
+            return None;
+        }
+
+        self.progress
+            .borrow()
+            .get(self.release_id, episode.position)
+            .and_then(|entry| entry.resume_at())
+            .or_else(|| episode.resume_at())
     }
 
     /// Episode numbers in order, for stepping to the next or previous one.
@@ -88,7 +139,7 @@ impl ReleaseState {
         let started = self
             .episodes
             .iter()
-            .filter(|e| e.is_watched || e.playback_position > 0)
+            .filter(|e| self.watched(e) || self.resume_of(e).is_some())
             .map(|e| e.position)
             .max();
 
@@ -103,7 +154,7 @@ impl ReleaseState {
 
     fn partly_watched(&self, position: i32) -> bool {
         self.episode_at(position)
-            .is_some_and(|e| e.playback_position > 0 && !e.is_watched)
+            .is_some_and(|e| self.resume_of(e).is_some())
     }
 }
 
@@ -371,12 +422,9 @@ fn show_episodes(window: &MainWindow, state: &ReleaseState) {
         .map(|e| EpisodeItem {
             position: e.position,
             name: episode_name(e).into(),
-            watched: e.is_watched,
-            resume_at: e
-                .resume_at()
-                // Only worth showing where it is genuinely mid-episode: a few
-                // seconds in is not "resume from", it is "start".
-                .filter(|d| d.as_secs() > 30 && !e.is_watched)
+            watched: state.watched(e),
+            resume_at: state
+                .resume_of(e)
                 .map(crate::format_time)
                 .unwrap_or_default()
                 .into(),
@@ -385,7 +433,14 @@ fn show_episodes(window: &MainWindow, state: &ReleaseState) {
         .collect();
 
     window.set_episodes(slint::ModelRc::new(VecModel::from(items)));
-    window.set_resume_episode(state.resume_position());
+
+    let resume = state.resume_position();
+    window.set_resume_episode(resume);
+    // Open the list where the viewer left off rather than at episode one.
+    // Nothing is playing yet, so this scrolls without marking anything.
+    if let Some(index) = state.index_of(resume) {
+        window.set_current_index(index as i32);
+    }
 }
 
 /// The host's title for an episode, or nothing when it only restates the

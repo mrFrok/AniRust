@@ -10,6 +10,7 @@
 //! Nothing here blocks the event loop. Every lookup and every extractor run
 //! goes through [`tasks`] and comes back on the UI thread.
 
+mod progress;
 mod release;
 mod tasks;
 mod video;
@@ -65,15 +66,24 @@ fn main() -> Result<()> {
     let http = reqwest_client();
     let client = Rc::new(Client::new().context("creating the API client")?);
     let registry = Rc::new(Registry::new(http.clone()));
-    let state = Rc::new(RefCell::new(ReleaseState::default()));
+    let state = Rc::new(RefCell::new(ReleaseState::new(Rc::new(RefCell::new(
+        progress::Store::load(),
+    )))));
     let playing = Rc::new(RefCell::new(None::<ResolvedStream>));
     let settings = Rc::new(Settings::default());
 
     wire_release(&window, &state, &client, &registry, &bridge, &playing);
-    wire_player(
+    let advance = wire_player(
         &window, &state, &client, &registry, &bridge, &playing, &settings,
     );
-    drive_status(&window, bridge.player(), &settings, &bridge);
+    drive_status(
+        &window,
+        bridge.player(),
+        &settings,
+        &bridge,
+        &state,
+        advance,
+    );
 
     release::load(&window, &state, client, http, release_id);
 
@@ -172,7 +182,7 @@ fn play(
     playing: &Playing,
     position: i32,
 ) {
-    let (attempt, dubber, resume) = {
+    let (attempt, dubber, resume, index) = {
         let state = state.borrow();
         let Some(episode) = state.episode_at(position) else {
             tracing::warn!(position, "no such episode in this source");
@@ -185,11 +195,13 @@ fn play(
         (
             attempt,
             state.selected_dubber().map(|d| d.name.clone()),
-            episode.resume_at(),
+            state.resume_of(episode),
+            state.index_of(position).unwrap_or_default(),
         )
     };
 
     window.set_current_episode(position);
+    window.set_current_index(index as i32);
     window.set_episode_label(match &dubber {
         Some(name) => format!("{position} - {name}").into(),
         None => position.to_string().into(),
@@ -460,7 +472,7 @@ fn wire_player(
     bridge: &Rc<VideoBridge>,
     playing: &Playing,
     settings: &Rc<Settings>,
-) {
+) -> Rc<dyn Fn()> {
     let player = bridge.player();
 
     window.on_toggle_pause(move || {
@@ -497,7 +509,7 @@ fn wire_player(
         }
     });
 
-    wire_stepping(window, state, client, registry, bridge, playing);
+    let advance = wire_stepping(window, state, client, registry, bridge, playing);
 
     let chosen = Rc::clone(settings);
     window.on_set_speed(move |speed| {
@@ -594,6 +606,8 @@ fn wire_player(
         window.set_state("idle".into());
         window.set_has_video(false);
     });
+
+    advance
 }
 
 /// The previous and next episode buttons.
@@ -607,7 +621,7 @@ fn wire_stepping(
     registry: &Rc<Registry>,
     bridge: &Rc<VideoBridge>,
     playing: &Playing,
-) {
+) -> Rc<dyn Fn()> {
     let stepper = |forward: bool| {
         let weak = window.as_weak();
         let state = Rc::clone(state);
@@ -638,7 +652,13 @@ fn wire_stepping(
     };
 
     window.on_previous_episode(stepper(false));
-    window.on_next_episode(stepper(true));
+
+    let advance: Rc<dyn Fn()> = Rc::new(stepper(true));
+    window.on_next_episode({
+        let advance = Rc::clone(&advance);
+        move || advance()
+    });
+    advance
 }
 
 /// Mirrors the player's state into the window, four times a second.
@@ -651,10 +671,19 @@ fn drive_status(
     player: &'static Player,
     settings: &Rc<Settings>,
     bridge: &Rc<VideoBridge>,
+    state: &Rc<RefCell<ReleaseState>>,
+    advance: Rc<dyn Fn()>,
 ) {
     let weak = window.as_weak();
     let settings = Rc::clone(settings);
     let bridge = Rc::clone(bridge);
+    let state = Rc::clone(state);
+    // Edge-triggered: mpv stays in `Ended` until something else is loaded, and
+    // an episode should only be followed by the next one once.
+    let was_ended = Cell::new(false);
+    // Positions are written every few seconds rather than four times a second,
+    // which would rewrite the file for nothing.
+    let ticks = Cell::new(0u32);
 
     let timer = slint::Timer::default();
     timer.start(
@@ -706,12 +735,25 @@ fn drive_status(
                 quality_label(player.video_size(), bridge.rendered_size()).into(),
             );
 
-            let state = player.state();
-            window.set_state(state_name(state).into());
-            window.set_paused(state == PlaybackState::Paused);
+            let playback = player.state();
+            window.set_state(state_name(playback).into());
+            window.set_paused(playback == PlaybackState::Paused);
             // The render loop reads this instead of querying mpv on every
             // frame; a quarter-second of staleness costs nothing here.
-            bridge.set_advancing(state.is_active());
+            bridge.set_advancing(playback.is_active());
+
+            remember(&state, &window, position, duration, &ticks);
+
+            // Following on to the next episode is what a viewer who watched
+            // one to the end was going to ask for anyway.
+            if playback == PlaybackState::Ended {
+                if !was_ended.replace(true) {
+                    tracing::info!("episode ended; going on to the next");
+                    advance();
+                }
+            } else {
+                was_ended.set(false);
+            }
 
             window.set_speed_label(format_speed(settings.speed.get()).into());
             window.set_upscale(settings.upscale.get() as i32);
@@ -723,6 +765,38 @@ fn drive_status(
     // The window needs this for its whole life; dropping the timer would stop
     // the clock.
     std::mem::forget(timer);
+}
+
+/// Writes the current position to the store, every few seconds.
+///
+/// Called from the status poll because that is already asking mpv where it is;
+/// doing it again on its own timer would be the same question twice.
+fn remember(
+    state: &Rc<RefCell<ReleaseState>>,
+    window: &MainWindow,
+    position: Duration,
+    duration: Option<Duration>,
+    ticks: &Cell<u32>,
+) {
+    const EVERY: u32 = 8;
+
+    let episode = window.get_current_episode();
+    if episode == 0 || position == Duration::ZERO {
+        return;
+    }
+
+    let tick = ticks.get().wrapping_add(1);
+    ticks.set(tick);
+    if !tick.is_multiple_of(EVERY) {
+        return;
+    }
+
+    let state = state.borrow();
+    let mut store = state.progress.borrow_mut();
+    if store.record(state.release_id, episode, position, duration) {
+        tracing::info!(episode, "episode finished");
+    }
+    store.flush();
 }
 
 // ---------------------------------------------------------------------------

@@ -47,6 +47,8 @@ export component ReleasePage inherits Rectangle {
     in property <int> resume-episode: 0;
     /// Episode in the player, or 0 when nothing is loaded.
     in property <int> current-episode: 0;
+    /// Where that episode sits in the list.
+    in property <int> current-index: 0;
     /// Whether the player has anything at all — the difference between showing
     /// the picture and showing the invitation to start it.
     in property <bool> playing: false;
@@ -246,6 +248,7 @@ export component ReleasePage inherits Rectangle {
                     source: root.source;
                     episodes: root.episodes;
                     current: root.current-episode;
+                    current-index: root.current-index;
                     select-dubber(i) => { root.select-dubber(i); }
                     select-source(i) => { root.select-source(i); }
                     play-episode(p) => { root.play-episode(p); }
@@ -341,6 +344,7 @@ export component ReleasePage inherits Rectangle {
                 source: root.source;
                 episodes: root.episodes;
                 current: root.current-episode;
+                current-index: root.current-index;
                 select-dubber(i) => { root.select-dubber(i); }
                 select-source(i) => { root.select-source(i); }
                 play-episode(p) => { root.play-episode(p); }

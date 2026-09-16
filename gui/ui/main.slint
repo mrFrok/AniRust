@@ -86,6 +86,8 @@ export component MainWindow inherits Window {
     /// The episode in the player, so the list can mark it and the transport can
     /// step to its neighbours.
     in-out property <int> current-episode: 0;
+    /// Where that episode sits in the list, which the list scrolls to.
+    in property <int> current-index: 0;
     /// The player fills the window, with the release stepped aside.
     in-out property <bool> theatre: false;
     /// Mirrored up from the player so the status timer can leave the seek bar
@@ -144,6 +146,7 @@ export component MainWindow inherits Window {
         episodes: root.episodes;
         resume-episode: root.resume-episode;
         current-episode: root.current-episode;
+        current-index: root.current-index;
         playing: root.playing;
         theatre: root.theatre;
 

@@ -51,19 +51,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }))?;
 
     let ui = MainWindow::new()?;
-    populate(&ui, &state);
+    populate(&ui);
     window.set_size(PhysicalSize::new(width, height));
 
-    // One pass settles the bindings, the second draws what they settled on:
-    // the first frame is where `init` runs and the breakpoint is measured.
     let mut pixels = vec![slint::Rgb8Pixel { r: 0, g: 0, b: 0 }; (width * height) as usize];
-    for _ in 0..2 {
+    let mut draw = |window: &MinimalSoftwareWindow| {
         slint::platform::update_timers_and_animations();
         window.draw_if_needed(|renderer| {
             renderer.render(&mut pixels, width as usize);
         });
         window.request_redraw();
+    };
+
+    // The first pass is where `init` runs, the breakpoint is measured and the
+    // list learns its own height. Only then does starting an episode mean
+    // anything — scrolling to it needs a list that has been laid out.
+    draw(&window);
+    if state == "playing" || state == "theatre" {
+        start_playing(&ui, state == "theatre");
     }
+    draw(&window);
+    draw(&window);
 
     let mut buffer = image::RgbImage::new(width, height);
     for (pixel, out) in pixels.iter().zip(buffer.pixels_mut()) {
@@ -78,7 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// Fills the window with a release that exercises the cases worth looking at:
 /// a long description, several voice-overs, episodes both watched and
 /// part-watched, and one with a title of its own.
-fn populate(ui: &MainWindow, state: &str) {
+fn populate(ui: &MainWindow) {
     ui.set_lang("ru".into());
     ui.set_release_title("Демоны старшей школы".into());
     ui.set_release_original_title("High School DxD".into());
@@ -87,7 +95,7 @@ fn populate(ui: &MainWindow, state: &str) {
     ui.set_release_studio("TNK".into());
     ui.set_release_status("Вышел".into());
     ui.set_release_score("4.6".into());
-    ui.set_release_episodes_label("12/12".into());
+    ui.set_release_episodes_label("24/24".into());
     ui.set_release_description(
         "Что нужно от жизни простому 17-летнему японскому школьнику? Иссэй Хёдо отлично \
          знает ответ, ведь ради этого он и записался в бывшую женскую академию Куо! Хёдо \
@@ -108,7 +116,9 @@ fn populate(ui: &MainWindow, state: &str) {
         option("Libria", 12, false),
     ])));
 
-    let episodes: Vec<EpisodeItem> = (1..=12)
+    // Long enough that the list has to scroll, which is the case worth
+    // looking at: resuming episode 13 should not start the list at episode 1.
+    let episodes: Vec<EpisodeItem> = (1..=24)
         .map(|position| EpisodeItem {
             position,
             name: if position == 7 {
@@ -116,8 +126,8 @@ fn populate(ui: &MainWindow, state: &str) {
             } else {
                 "".into()
             },
-            watched: position <= 3,
-            resume_at: if position == 4 {
+            watched: position < 13,
+            resume_at: if position == 13 {
                 "8:21".into()
             } else {
                 "".into()
@@ -126,12 +136,16 @@ fn populate(ui: &MainWindow, state: &str) {
         })
         .collect();
     ui.set_episodes(slint::ModelRc::new(slint::VecModel::from(episodes)));
-    ui.set_resume_episode(4);
+    ui.set_resume_episode(13);
+}
 
-    if state == "playing" || state == "theatre" {
+/// Puts an episode in the player, as clicking one would.
+fn start_playing(ui: &MainWindow, theatre: bool) {
+    {
         ui.set_playing(true);
-        ui.set_current_episode(4);
-        ui.set_episode_label("4 - AniLibria".into());
+        ui.set_current_episode(13);
+        ui.set_current_index(12);
+        ui.set_episode_label("13 - AniLibria".into());
         ui.set_state("playing".into());
         ui.set_position_text("8:21".into());
         ui.set_duration_text("23:40".into());
@@ -142,12 +156,13 @@ fn populate(ui: &MainWindow, state: &str) {
         ui.set_upscale(2);
         ui.set_has_skip(true);
         ui.set_has_next(true);
+        ui.set_has_previous(true);
         ui.set_qualities(slint::ModelRc::new(slint::VecModel::from(vec![
             slint::SharedString::from("1080p"),
             slint::SharedString::from("720p"),
             slint::SharedString::from("480p"),
         ])));
-        ui.set_theatre(state == "theatre");
+        ui.set_theatre(theatre);
     }
 }
 

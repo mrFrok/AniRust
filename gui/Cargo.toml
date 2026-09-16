@@ -32,6 +32,10 @@ glow = "0.18"
 # nothing.
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 libloading = "0.9"
+# Where playback positions are kept, and how the file is written.
+dirs.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
 slint = { version = "1.17", default-features = false, features = [
     "std",
     "compat-1-2",

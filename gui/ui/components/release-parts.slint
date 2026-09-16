@@ -252,6 +252,9 @@ export component EpisodePicker inherits VerticalLayout {
     in property <[EpisodeItem]> episodes;
     /// The episode in the player, or 0 when nothing is playing.
     in property <int> current: 0;
+    /// Where that episode sits in the list, so it can be scrolled to. A
+    /// position is not an index: sources skip numbers.
+    in property <int> current-index: 0;
 
     callback select-dubber(int);
     callback select-source(int);
@@ -321,7 +324,28 @@ export component EpisodePicker inherits VerticalLayout {
         }
     }
 
-    ScrollView {
+    /// Height of one row plus the gap under it, which is what turns an index
+    /// into a distance down the list.
+    property <length> row-pitch: 50px;
+
+    // A viewer who resumes episode 30 should not have to scroll to it. Assigned
+    // when the episode changes rather than bound to it, so scrolling by hand
+    // afterwards is not fought by the binding.
+    changed current-index => { root.scroll-to-current(); }
+    // And again when the list itself is replaced — switching source rebuilds it
+    // around the same episode, which is not a change of index.
+    changed episodes => { root.scroll-to-current(); }
+
+    function scroll-to-current() {
+        if (root.current-index <= 0) { return; }
+        episodes-view.viewport-y = clamp(
+            episodes-view.visible-height / 2 - (root.current-index + 0.5) * root.row-pitch,
+            min(0px, episodes-view.visible-height - episodes-view.viewport-height),
+            0px,
+        );
+    }
+
+    episodes-view := ScrollView {
         vertical-stretch: 1;
         min-height: 120px;
         viewport-height: episode-list.preferred-height;
