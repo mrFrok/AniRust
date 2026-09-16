@@ -1,0 +1,164 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Finding something to watch.
+//
+// A search field and a wall of posters, which is what this kind of catalogue
+// is for. The grid is positioned rather than laid out: the number of columns
+// depends on the window's width, and a layout that reads the width it is being
+// given is a binding loop — so the window counts the columns and the cards
+// place themselves.
+
+import { ScrollView } from "std-widgets.slint";
+import { MaterialPalette } from "../globals/material-palette.slint";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing, Motion } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+import { ReleaseCard } from "../structs.slint";
+import { PosterCard } from "../components/release-cards.slint";
+
+export component HomePage inherits Rectangle {
+    in property <[ReleaseCard]> results;
+    /// Whether the grid is showing search results or the default list.
+    in property <bool> searching: false;
+    in property <bool> loading: false;
+    /// How many cards fit across, counted by the window.
+    in property <int> columns: 5;
+    in-out property <string> query;
+
+    callback search(string);
+    callback open-release(int);
+
+    background: MaterialPalette.surface;
+
+    min-width: 0px;
+    min-height: 0px;
+    preferred-width: 0px;
+    preferred-height: 0px;
+    max-width: 100000px;
+    max-height: 100000px;
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
+
+    // The card's own size, repeated here because the grid places cards by
+    // arithmetic rather than by layout.
+    property <length> card-width: 160px;
+    property <length> card-height: 280px;
+    property <length> gutter: Spacing.base;
+    property <int> rows: Math.ceil(root.results.length / max(1, root.columns));
+
+    VerticalLayout {
+        // ---- search ------------------------------------------------------
+        Rectangle {
+            height: 72px;
+            background: MaterialPalette.surface-container;
+
+            HorizontalLayout {
+                padding-left: Spacing.base;
+                padding-right: Spacing.base;
+                spacing: Spacing.base;
+
+                Text {
+                    text: "AniRust";
+                    color: MaterialPalette.primary;
+                    font-size: Typography.title-large-size;
+                    font-weight: Typography.title-large-weight-em;
+                    vertical-alignment: center;
+                }
+
+                field := Rectangle {
+                    horizontal-stretch: 1;
+                    height: Spacing.touch-target;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: Shape.pill;
+                    background: MaterialPalette.surface-container-highest;
+                    border-width: input.has-focus ? 1px : 0px;
+                    border-color: MaterialPalette.primary;
+
+                    HorizontalLayout {
+                        padding-left: Spacing.base;
+                        padding-right: Spacing.base;
+                        spacing: Spacing.small;
+
+                        Image {
+                            source: @image-url("../icons/search.svg");
+                            colorize: MaterialPalette.on-surface-variant;
+                            width: 18px;
+                            height: 18px;
+                        }
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            background: transparent;
+
+                            if root.query == "" && !input.has-focus: Text {
+                                text: Tr.search-hint;
+                                color: MaterialPalette.on-surface-variant;
+                                font-size: Typography.body-large-size;
+                                vertical-alignment: center;
+                                width: 100%;
+                                height: 100%;
+                            }
+
+                            input := TextInput {
+                                text <=> root.query;
+                                color: MaterialPalette.on-surface;
+                                font-size: Typography.body-large-size;
+                                vertical-alignment: center;
+                                single-line: true;
+                                width: 100%;
+                                height: 100%;
+                                accepted => { root.search(self.text); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- results -----------------------------------------------------
+        HorizontalLayout {
+            padding-left: Spacing.base;
+            padding-right: Spacing.base;
+            padding-top: Spacing.medium;
+            spacing: Spacing.small;
+
+            Text {
+                text: root.searching ? Tr.search-results : Tr.now-watching;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.title-medium-size;
+                font-weight: Typography.title-medium-weight-em;
+                horizontal-stretch: 1;
+            }
+
+            if root.loading: Text {
+                text: Tr.loading;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.label-medium-size;
+                vertical-alignment: center;
+            }
+        }
+
+        if !root.loading && root.results.length == 0: Text {
+            text: Tr.nothing-found;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.body-large-size;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            vertical-stretch: 1;
+        }
+
+        if root.results.length > 0: ScrollView {
+            vertical-stretch: 1;
+            viewport-height: root.rows * (root.card-height + root.gutter) + root.gutter;
+
+            for card[index] in root.results: PosterCard {
+                card: card;
+                x: Spacing.base + Math.mod(index, root.columns) * (root.card-width + root.gutter);
+                y: root.gutter + Math.floor(index / root.columns) * (root.card-height + root.gutter);
+                width: root.card-width;
+                height: root.card-height;
+                clicked => { root.open-release(index); }
+            }
+        }
+    }
+}

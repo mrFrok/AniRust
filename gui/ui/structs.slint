@@ -18,6 +18,20 @@ export struct PickerOption {
     is-sub: bool,
 }
 
+/// A release as a browsing screen shows it.
+///
+/// Carries no id: which release a card is comes from its place in the list, and
+/// Anixart ids are 64-bit while Slint's `int` is not.
+export struct ReleaseCard {
+    title: string,
+    /// Year and episode count, already joined — the separator is punctuation,
+    /// not data.
+    subtitle: string,
+    score: string,
+    poster: image,
+    poster-loaded: bool,
+}
+
 /// One episode in the list.
 export struct EpisodeItem {
     position: int,

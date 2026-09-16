@@ -16,8 +16,8 @@
 //! cargo run -p anirust-gui --example screenshot -- out.png [width height] [state]
 //! ```
 //!
-//! `state` is `release` (default), `playing`, or `theatre`. Narrow is a
-//! width, not a state: pass one below 900.
+//! `state` is `home`, `release` (default), `playing`, or `theatre`. Narrow is
+//! a width, not a state: pass one below 900.
 
 use std::rc::Rc;
 
@@ -52,6 +52,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ui = MainWindow::new()?;
     populate(&ui);
+    populate_home(&ui);
+    ui.set_screen(if state == "home" {
+        "home".into()
+    } else {
+        "release".into()
+    });
     window.set_size(PhysicalSize::new(width, height));
 
     let mut pixels = vec![slint::Rgb8Pixel { r: 0, g: 0, b: 0 }; (width * height) as usize];
@@ -164,6 +170,37 @@ fn start_playing(ui: &MainWindow, theatre: bool) {
         ])));
         ui.set_theatre(theatre);
     }
+}
+
+/// A grid of results, so the browsing screen can be looked at too.
+fn populate_home(ui: &MainWindow) {
+    let titles = [
+        ("Демоны старшей школы", "2012 · 12/12", "4.6"),
+        ("Стальной алхимик: Братство", "2009 · 64/64", "4.9"),
+        ("Магическая битва", "2020 · 24/24", "4.8"),
+        ("Клинок, рассекающий демонов", "2019 · 26/26", "4.8"),
+        ("Атака титанов", "2013 · 25/25", "4.9"),
+        ("Ван-Пис", "1999 · 1122", "4.7"),
+        ("Наруто: Ураганные хроники", "2007 · 500/500", "4.5"),
+        ("Токийский гуль", "2014 · 12/12", "4.4"),
+        ("Код Гиас: Восставший Лелуш", "2006 · 25/25", "4.8"),
+        ("Тетрадь смерти", "2006 · 37/37", "4.9"),
+        ("Re:Zero", "2016 · 25/25", "4.7"),
+        ("Доктор Стоун", "2019 · 24/24", "4.6"),
+    ];
+
+    let cards: Vec<ReleaseCard> = titles
+        .iter()
+        .map(|(title, subtitle, score)| ReleaseCard {
+            title: (*title).into(),
+            subtitle: (*subtitle).into(),
+            score: (*score).into(),
+            poster: slint::Image::default(),
+            poster_loaded: false,
+        })
+        .collect();
+
+    ui.set_results(slint::ModelRc::new(slint::VecModel::from(cards)));
 }
 
 fn option(label: &str, episodes: i32, is_sub: bool) -> PickerOption {

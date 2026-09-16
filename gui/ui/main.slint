@@ -5,7 +5,8 @@ import { MaterialPalette } from "globals/material-palette.slint";
 import { Tr } from "globals/tr.slint";
 import { PlayerPage } from "pages/player.slint";
 import { ReleasePage } from "pages/release.slint";
-import { PickerOption, EpisodeItem } from "structs.slint";
+import { HomePage } from "pages/home.slint";
+import { PickerOption, EpisodeItem, ReleaseCard } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -117,10 +118,48 @@ export component MainWindow inherits Window {
     /// size; assigning it breaks that circle while giving the same answer.
     property <length> narrow-threshold: 900px;
     property <bool> narrow: false;
+    /// How many poster cards fit across the browsing screen.
+    property <int> columns: 5;
     changed width => { root.measure(); }
-    function measure() { root.narrow = root.width < root.narrow-threshold; }
+    function measure() {
+        root.narrow = root.width < root.narrow-threshold;
+        root.columns = max(2, Math.floor((root.width - 32px) / 176px));
+    }
+
+    /// Which screen is up: "home" or "release".
+    ///
+    /// The release screen stays instantiated while the browsing screen is up,
+    /// because the player inside it owns the video texture and rebuilding that
+    /// to change screens would throw away the stream.
+    in-out property <string> screen: "home";
+
+    // ---- browsing --------------------------------------------------------
+    in property <[ReleaseCard]> results: [];
+    /// Whether the grid is showing search results or the default list.
+    in property <bool> searching: false;
+    in property <bool> results-loading: false;
+    in-out property <string> query;
+
+    callback search(string);
+    callback open-release(int);
+
+    home := HomePage {
+        width: 100%;
+        height: 100%;
+        visible: root.screen == "home";
+
+        results: root.results;
+        searching: root.searching;
+        loading: root.results-loading;
+        columns: root.columns;
+        query <=> root.query;
+
+        search(q) => { root.search(q); }
+        open-release(i) => { root.open-release(i); }
+    }
 
     release := ReleasePage {
+        visible: root.screen == "release";
         width: 100%;
         height: 100%;
         narrow: root.narrow;

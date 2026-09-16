@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// A release as a browsing screen shows it.
+
+import { MaterialPalette } from "../globals/material-palette.slint";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing, Motion } from "../globals/shape.slint";
+import { ReleaseCard } from "../structs.slint";
+
+/// One poster with its title underneath.
+export component PosterCard inherits Rectangle {
+    in property <ReleaseCard> card;
+    callback clicked;
+
+    background: transparent;
+
+    VerticalLayout {
+        spacing: Spacing.tight;
+
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: Shape.large;
+            clip: true;
+            background: MaterialPalette.surface-container-high;
+            // Lifts slightly under the pointer, which is the whole hover
+            // affordance a poster needs.
+            border-width: touch.has-hover ? 2px : 0px;
+            border-color: MaterialPalette.primary;
+            animate border-width { duration: Motion.standard-duration; easing: Motion.standard; }
+
+            Image {
+                source: root.card.poster;
+                image-fit: cover;
+                width: 100%;
+                height: 100%;
+                opacity: root.card.poster-loaded ? 1.0 : 0.0;
+                animate opacity { duration: Motion.enter-duration; easing: Motion.enter; }
+            }
+
+            // Score sits on the poster, as it does on every catalogue that has
+            // ever shown one.
+            if root.card.score != "": Rectangle {
+                x: parent.width - self.width - Spacing.small;
+                y: Spacing.small;
+                height: 22px;
+                width: score.preferred-width + Spacing.medium;
+                border-radius: Shape.small;
+                background: #000000B3;
+
+                score := Text {
+                    text: "★ " + root.card.score;
+                    color: #FFFFFF;
+                    font-size: Typography.label-small-size;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: 100%;
+                    height: 100%;
+                }
+            }
+        }
+
+        // One line each, elided. A wall of cards lives on its rhythm, and a
+        // title that wraps to three lines breaks the row it is in — the poster
+        // above it is what the eye is using anyway.
+        Text {
+            text: root.card.title;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.body-medium-size;
+            height: 20px;
+            overflow: elide;
+        }
+
+        Text {
+            text: root.card.subtitle;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.label-small-size;
+            height: 16px;
+            overflow: elide;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}

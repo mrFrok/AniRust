@@ -10,6 +10,7 @@
 //! Nothing here blocks the event loop. Every lookup and every extractor run
 //! goes through [`tasks`] and comes back on the UI thread.
 
+mod home;
 mod progress;
 mod release;
 mod tasks;
@@ -26,6 +27,7 @@ use anirust_api::{Client, EpisodeSort};
 use anirust_extract::{Registry, ResolvedStream};
 use anirust_player::{MediaSource, PlaybackState, Player, PlayerConfig, UpscalePreset};
 
+use crate::home::HomeState;
 use crate::release::ReleaseState;
 use crate::video::VideoBridge;
 
@@ -41,7 +43,7 @@ fn main() -> Result<()> {
         .with_writer(std::io::stderr)
         .init();
 
-    let release_id = release_id_from_args()?;
+    let opening = release_id_from_args()?;
     tasks::init()?;
 
     let window = MainWindow::new().context("creating the window")?;
@@ -72,6 +74,9 @@ fn main() -> Result<()> {
     let playing = Rc::new(RefCell::new(None::<ResolvedStream>));
     let settings = Rc::new(Settings::default());
 
+    let home = Rc::new(RefCell::new(HomeState::default()));
+
+    wire_home(&window, &home, &state, &client, &http);
     wire_release(&window, &state, &client, &registry, &bridge, &playing);
     let advance = wire_player(
         &window, &state, &client, &registry, &bridge, &playing, &settings,
@@ -85,7 +90,15 @@ fn main() -> Result<()> {
         advance,
     );
 
-    release::load(&window, &state, client, http, release_id);
+    // A release id on the command line opens straight into it; otherwise the
+    // client starts where a client should, on something to choose from.
+    match opening {
+        Some(release_id) => {
+            window.set_screen("release".into());
+            release::load(&window, &state, client, http, release_id);
+        }
+        None => home::open(&window, &home, client, http),
+    }
 
     window.run().context("running the event loop")?;
     Ok(())
@@ -119,6 +132,52 @@ fn player_config() -> PlayerConfig {
 /// The stream currently loaded, kept so the quality menu and the skip button
 /// can act on what is playing rather than on what was resolved first.
 type Playing = Rc<RefCell<Option<ResolvedStream>>>;
+
+// ---------------------------------------------------------------------------
+// Browsing
+// ---------------------------------------------------------------------------
+
+fn wire_home(
+    window: &MainWindow,
+    home: &Rc<RefCell<HomeState>>,
+    state: &Rc<RefCell<ReleaseState>>,
+    client: &Rc<Client>,
+    http: &reqwest::Client,
+) {
+    let weak = window.as_weak();
+    let searching = Rc::clone(home);
+    let api = Rc::clone(client);
+    let net = http.clone();
+    window.on_search(move |query| {
+        let Some(window) = weak.upgrade() else { return };
+        home::search(
+            &window,
+            &searching,
+            Rc::clone(&api),
+            net.clone(),
+            query.to_string(),
+        );
+    });
+
+    let weak = window.as_weak();
+    let browsing = Rc::clone(home);
+    let opening = Rc::clone(state);
+    let api = Rc::clone(client);
+    let net = http.clone();
+    window.on_open_release(move |index| {
+        let Some(window) = weak.upgrade() else { return };
+        let Some(release_id) = browsing
+            .borrow()
+            .release_at(index.max(0) as usize)
+            .map(|release| release.id)
+        else {
+            return;
+        };
+
+        window.set_screen("release".into());
+        release::load(&window, &opening, Rc::clone(&api), net.clone(), release_id);
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Release screen
@@ -161,10 +220,11 @@ fn wire_release(
         );
     });
 
-    // Nothing above the release screen yet, so its back button has nowhere to
-    // go. Wiring it silently keeps the Slint side from warning about an
-    // unhandled callback.
-    window.on_go_back(|| tracing::debug!("nothing above the release screen yet"));
+    let weak = window.as_weak();
+    window.on_go_back(move || {
+        let Some(window) = weak.upgrade() else { return };
+        window.set_screen("home".into());
+    });
 }
 
 /// Resolves an episode and hands it to the player.
@@ -885,11 +945,16 @@ fn reqwest_client() -> reqwest::Client {
         .unwrap_or_else(|_| reqwest::Client::new())
 }
 
-fn release_id_from_args() -> Result<i64> {
+/// A release to open straight away, if one was named.
+fn release_id_from_args() -> Result<Option<i64>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.as_slice() {
-        [id] => id.parse().context("the release id must be a number"),
-        _ => bail!("usage: anirust <release-id>"),
+        [] => Ok(None),
+        [id] => id
+            .parse()
+            .map(Some)
+            .context("the release id must be a number"),
+        _ => bail!("usage: anirust [release-id]"),
     }
 }
 
