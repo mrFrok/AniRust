@@ -3,10 +3,9 @@
 // Finding something to watch.
 //
 // A search field and a wall of posters, which is what this kind of catalogue
-// is for. The grid is positioned rather than laid out: the number of columns
-// depends on the window's width, and a layout that reads the width it is being
-// given is a binding loop — so the window counts the columns and the cards
-// place themselves.
+// is for. The wall is a `FlexboxLayout`, which wraps to the next row on its own
+// — the cards never have to know how many fit across, and nothing has to read
+// the width it is being given to work it out.
 
 import { ScrollView } from "std-widgets.slint";
 import { MaterialPalette } from "../globals/material-palette.slint";
@@ -21,8 +20,6 @@ export component HomePage inherits Rectangle {
     /// Whether the grid is showing search results or the default list.
     in property <bool> searching: false;
     in property <bool> loading: false;
-    /// How many cards fit across, counted by the window.
-    in property <int> columns: 5;
     in-out property <string> query;
     in property <bool> signed-in: false;
     in property <string> account-name;
@@ -43,12 +40,9 @@ export component HomePage inherits Rectangle {
     horizontal-stretch: 1;
     vertical-stretch: 1;
 
-    // The card's own size, repeated here because the grid places cards by
-    // arithmetic rather than by layout.
     property <length> card-width: 160px;
     property <length> card-height: 280px;
     property <length> gutter: Spacing.base;
-    property <int> rows: Math.ceil(root.results.length / max(1, root.columns));
 
     VerticalLayout {
         // ---- search ------------------------------------------------------
@@ -196,15 +190,22 @@ export component HomePage inherits Rectangle {
 
         if root.results.length > 0: ScrollView {
             vertical-stretch: 1;
-            viewport-height: root.rows * (root.card-height + root.gutter) + root.gutter;
+            content-height: wall.preferred-height;
 
-            for card[index] in root.results: PosterCard {
-                card: card;
-                x: Spacing.base + Math.mod(index, root.columns) * (root.card-width + root.gutter);
-                y: root.gutter + Math.floor(index / root.columns) * (root.card-height + root.gutter);
-                width: root.card-width;
-                height: root.card-height;
-                clicked => { root.open-release(index); }
+            wall := FlexboxLayout {
+                x: Spacing.base;
+                y: root.gutter;
+                width: parent.width - 2 * Spacing.base;
+                flex-wrap: wrap;
+                alignment: start;
+                spacing: root.gutter;
+
+                for card[index] in root.results: PosterCard {
+                    card: card;
+                    width: root.card-width;
+                    height: root.card-height;
+                    clicked => { root.open-release(index); }
+                }
             }
         }
     }

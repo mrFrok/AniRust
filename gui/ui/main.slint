@@ -138,13 +138,8 @@ export component MainWindow inherits Window {
     /// size; assigning it breaks that circle while giving the same answer.
     property <length> narrow-threshold: 900px;
     property <bool> narrow: false;
-    /// How many poster cards fit across the browsing screen.
-    property <int> columns: 5;
     changed width => { root.measure(); }
-    function measure() {
-        root.narrow = root.width < root.narrow-threshold;
-        root.columns = max(2, Math.floor((root.width - 32px) / 176px));
-    }
+    function measure() { root.narrow = root.width < root.narrow-threshold; }
 
     /// Which screen is up: "home" or "release".
     ///
@@ -184,7 +179,6 @@ export component MainWindow inherits Window {
         results: root.results;
         searching: root.searching;
         loading: root.results-loading;
-        columns: root.columns;
         query <=> root.query;
 
         signed-in: root.signed-in;

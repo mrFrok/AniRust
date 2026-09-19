@@ -59,15 +59,18 @@ export component PosterCard inherits Rectangle {
             }
         }
 
-        // One line each, elided. A wall of cards lives on its rhythm, and a
-        // title that wraps to three lines breaks the row it is in — the poster
-        // above it is what the eye is using anyway.
+        // Two lines at most, then elided: a wall of cards lives on its
+        // rhythm, and a title long enough to need a third is long enough to
+        // cut.
         Text {
             text: root.card.title;
             color: MaterialPalette.on-surface;
             font-size: Typography.body-medium-size;
-            height: 20px;
-            overflow: elide;
+            wrap: word-wrap;
+            // `max-lines` cuts the third line; `elide` on its own would cut at
+            // the first, because eliding and wrapping are alternatives.
+            max-lines: 2;
+            height: 38px;
         }
 
         Text {

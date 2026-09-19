@@ -39,7 +39,7 @@ dirs.workspace = true
 keyring.workspace = true
 serde = { workspace = true }
 serde_json.workspace = true
-slint = { version = "1.17", default-features = false, features = [
+slint = { version = "1.18", default-features = false, features = [
     "std",
     "compat-1-2",
     "backend-winit",
@@ -49,4 +49,4 @@ slint = { version = "1.17", default-features = false, features = [
 ] }
 
 [build-dependencies]
-slint-build = "1.17"
+slint-build = "1.18"

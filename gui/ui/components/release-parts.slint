@@ -99,7 +99,7 @@ export component Dropdown inherits Rectangle {
                 y: Spacing.small;
                 width: 100%;
                 height: parent.height - 2 * Spacing.small;
-                viewport-height: root.model.length * root.row-height;
+                content-height: root.model.length * root.row-height;
 
                 VerticalLayout {
                     alignment: start;
@@ -338,9 +338,9 @@ export component EpisodePicker inherits VerticalLayout {
 
     function scroll-to-current() {
         if (root.current-index <= 0) { return; }
-        episodes-view.viewport-y = clamp(
+        episodes-view.content-y = clamp(
             episodes-view.visible-height / 2 - (root.current-index + 0.5) * root.row-pitch,
-            min(0px, episodes-view.visible-height - episodes-view.viewport-height),
+            min(0px, episodes-view.visible-height - episodes-view.content-height),
             0px,
         );
     }
@@ -348,7 +348,7 @@ export component EpisodePicker inherits VerticalLayout {
     episodes-view := ScrollView {
         vertical-stretch: 1;
         min-height: 120px;
-        viewport-height: episode-list.preferred-height;
+        content-height: episode-list.preferred-height;
 
         episode-list := VerticalLayout {
             spacing: Spacing.hair;
