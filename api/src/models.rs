@@ -458,6 +458,91 @@ pub struct ProfileToken {
     pub token: String,
 }
 
+/// What a catalogue request asks for.
+///
+/// Every field the server accepts is optional but `sort`, and an omitted field
+/// is left out of the body rather than sent as null — the endpoint treats a
+/// present null as a value in some cases, so silence is the safer way to say
+/// "no preference".
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Filter {
+    /// 1 series, 2 film, 3 OVA. Observed, not documented.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<i64>,
+    /// 1 finished, 2 airing, 3 announced.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_id: Option<i64>,
+    /// Genre names as the catalogue spells them, lowercase and in Russian.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub genres: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_year: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_year: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub studio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
+    pub sort: i32,
+}
+
+impl Filter {
+    #[must_use]
+    pub fn sorted_by(sort: FilterSort) -> Self {
+        Self {
+            sort: sort.raw(),
+            ..Self::default()
+        }
+    }
+
+    #[must_use]
+    pub fn category(mut self, id: i64) -> Self {
+        self.category_id = Some(id);
+        self
+    }
+
+    #[must_use]
+    pub fn status(mut self, id: i64) -> Self {
+        self.status_id = Some(id);
+        self
+    }
+
+    #[must_use]
+    pub fn genre(mut self, name: impl Into<String>) -> Self {
+        self.genres.push(name.into());
+        self
+    }
+}
+
+/// Orderings the catalogue accepts.
+///
+/// Read off the wire rather than from documentation: each was identified by
+/// what the first page comes back sorted on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FilterSort {
+    /// Most recently updated — new episodes first.
+    #[default]
+    LastUpdate,
+    /// Highest rated.
+    Rating,
+    /// Newest by year, which puts announcements at the top.
+    Year,
+    /// Most watched.
+    Popularity,
+}
+
+impl FilterSort {
+    #[must_use]
+    pub fn raw(self) -> i32 {
+        match self {
+            Self::LastUpdate => 0,
+            Self::Rating => 1,
+            Self::Year => 2,
+            Self::Popularity => 3,
+        }
+    }
+}
+
 /// One page of a paged collection. Pages are 0-based.
 #[derive(Debug, Clone, Default)]
 pub struct Page<T> {

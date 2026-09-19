@@ -214,6 +214,30 @@ fn populate_home(ui: &MainWindow) {
         .collect();
 
     ui.set_results(slint::ModelRc::new(slint::VecModel::from(cards)));
+
+    ui.set_genres(slint::ModelRc::new(slint::VecModel::from(
+        anirust_gui_genres()
+            .iter()
+            .map(|name| slint::SharedString::from(*name))
+            .collect::<Vec<_>>(),
+    )));
+    ui.set_section(2);
+    ui.set_genre(5);
+}
+
+/// The chips the browsing screen offers. Repeated here rather than imported:
+/// an example cannot reach into the binary crate it renders.
+fn anirust_gui_genres() -> [&'static str; 8] {
+    [
+        "экшен",
+        "фэнтези",
+        "приключения",
+        "драма",
+        "комедия",
+        "романтика",
+        "школа",
+        "исэкай",
+    ]
 }
 
 fn option(label: &str, episodes: i32, is_sub: bool) -> PickerOption {

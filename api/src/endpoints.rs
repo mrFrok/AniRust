@@ -14,7 +14,7 @@ use serde::Deserialize;
 use crate::client::{Ack, Client, SEARCH_API_VERSION};
 use crate::error::{ApiCode, Error, Result};
 use crate::models::{
-    Dubber, Episode, Page, Profile, ProfileList, ProfileToken, Release, SearchBy, Source,
+    Dubber, Episode, Filter, Page, Profile, ProfileList, ProfileToken, Release, SearchBy, Source,
 };
 
 // ---------------------------------------------------------------------------
@@ -315,6 +315,24 @@ impl Client {
     pub async fn discover_discussing(&self) -> Result<Page<Release>> {
         let payload: PageablePayload<Release> = self
             .send(self.post("discover/discussing").with_token())
+            .await?;
+        Ok(payload.into())
+    }
+
+    /// The catalogue, filtered. Pages are 0-based.
+    ///
+    /// `POST filter/{page}` with the filter as a JSON body. No token needed,
+    /// though one is sent when there is one: the answer then carries the
+    /// account's own watched flags.
+    pub async fn filter(&self, filter: &Filter, page: i32) -> Result<Page<Release>> {
+        let payload: PageablePayload<Release> = self
+            .send(
+                self.post(format!("filter/{page}"))
+                    // Serialising a filter cannot fail: every field is a
+                    // scalar or a list of strings.
+                    .json(serde_json::to_value(filter).unwrap_or_default())
+                    .with_token(),
+            )
             .await?;
         Ok(payload.into())
     }

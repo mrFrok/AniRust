@@ -155,8 +155,14 @@ export component MainWindow inherits Window {
     in property <bool> results-loading: false;
     in-out property <string> query;
 
+    in property <int> section: 0;
+    in property <[string]> genres: [];
+    in property <int> genre: 0;
+
     callback search(string);
     callback open-release(int);
+    callback select-section(int);
+    callback select-genre(int);
 
     // ---- account ---------------------------------------------------------
     in property <bool> signed-in: false;
@@ -184,8 +190,14 @@ export component MainWindow inherits Window {
         signed-in: root.signed-in;
         account-name: root.account-name;
 
+        section: root.section;
+        genres: root.genres;
+        genre: root.genre;
+
         search(q) => { root.search(q); }
         open-release(i) => { root.open-release(i); }
+        select-section(i) => { root.select-section(i); }
+        select-genre(i) => { root.select-genre(i); }
         sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
         sign-out => { root.sign-out(); }
     }

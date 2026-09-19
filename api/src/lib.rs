@@ -62,6 +62,6 @@ pub use client::{Ack, Client, ClientBuilder, DEFAULT_BASE_URL};
 pub use endpoints::{EpisodeSort, SignInError};
 pub use error::{ApiCode, Error, Result};
 pub use models::{
-    Dubber, Episode, Page, Profile, ProfileList, ProfileToken, Release, ReleaseCategory,
-    ReleaseStatus, SearchBy, Source,
+    Dubber, Episode, Filter, FilterSort, Page, Profile, ProfileList, ProfileToken, Release,
+    ReleaseCategory, ReleaseStatus, SearchBy, Source,
 };

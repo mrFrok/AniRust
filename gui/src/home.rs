@@ -12,7 +12,7 @@ use std::rc::Rc;
 
 use slint::{ComponentHandle, Model, VecModel};
 
-use anirust_api::{Client, Release, SearchBy};
+use anirust_api::{Client, Filter, FilterSort, Release, SearchBy};
 
 use crate::{MainWindow, ReleaseCard, tasks};
 
@@ -23,12 +23,98 @@ use crate::{MainWindow, ReleaseCard, tasks};
 /// nobody scrolls to.
 const DEFAULT_LIMIT: usize = 30;
 
+/// Genres offered as chips, most common in the catalogue first.
+///
+/// The server matches these by name — its own spelling, lowercase and Russian
+/// — and no endpoint lists them. The tail of rarely used ones is left out: a
+/// row of fifty chips is not a filter, it is a wall.
+pub const GENRES: [&str; 18] = [
+    "экшен",
+    "фэнтези",
+    "приключения",
+    "драма",
+    "комедия",
+    "романтика",
+    "школа",
+    "исэкай",
+    "сёнен",
+    "сэйнэн",
+    "триллер",
+    "психологическое",
+    "сверхъестественное",
+    "фантастика",
+    "детектив",
+    "спорт",
+    "ужасы",
+    "повседневность",
+];
+
+/// Category and status ids, read off the wire rather than from documentation.
+const FILM: i64 = 2;
+const AIRING: i64 = 2;
+const ANNOUNCED: i64 = 3;
+
+/// One of the ways the catalogue can be sliced, in the order the chips offer
+/// them.
+///
+/// The labels live on the Slint side with the rest of the translations, so this
+/// is only the request each one stands for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Section {
+    /// What other people have open right now, which is its own endpoint.
+    Watching,
+    Updates,
+    Popular,
+    Airing,
+    Announced,
+    Films,
+    Top,
+}
+
+impl Section {
+    const ALL: [Self; 7] = [
+        Self::Watching,
+        Self::Updates,
+        Self::Popular,
+        Self::Airing,
+        Self::Announced,
+        Self::Films,
+        Self::Top,
+    ];
+
+    fn at(index: usize) -> Self {
+        Self::ALL.get(index).copied().unwrap_or(Self::Watching)
+    }
+
+    fn index_of(self) -> usize {
+        Self::ALL.iter().position(|it| *it == self).unwrap_or(0)
+    }
+
+    /// The catalogue request behind a section, or `None` for the one that is
+    /// not a catalogue request at all.
+    fn filter(self) -> Option<Filter> {
+        Some(match self {
+            Self::Watching => return None,
+            Self::Updates => Filter::sorted_by(FilterSort::LastUpdate),
+            Self::Popular => Filter::sorted_by(FilterSort::Popularity),
+            Self::Airing => Filter::sorted_by(FilterSort::Popularity).status(AIRING),
+            Self::Announced => Filter::sorted_by(FilterSort::Year).status(ANNOUNCED),
+            Self::Films => Filter::sorted_by(FilterSort::Popularity).category(FILM),
+            Self::Top => Filter::sorted_by(FilterSort::Rating),
+        })
+    }
+}
+
 /// What the browsing screen is showing.
 #[derive(Default)]
 pub struct HomeState {
     /// The releases behind the cards, in the same order.
     pub releases: Vec<Release>,
     cards: Option<Rc<VecModel<ReleaseCard>>>,
+    /// Which chip is selected, and which genre narrows it.
+    section: usize,
+    /// 0 is every genre; otherwise an index into [`GENRES`] plus one.
+    genre: usize,
     /// Bumped on every new list, so a poster for a list the viewer has already
     /// moved past is dropped rather than drawn over the new one.
     generation: u64,
@@ -47,33 +133,101 @@ impl HomeState {
     }
 }
 
-/// Loads what the screen opens on.
+/// Loads the selected section, which is what the screen opens on.
 pub fn open(
     window: &MainWindow,
     state: &Rc<RefCell<HomeState>>,
     client: Rc<Client>,
     http: reqwest::Client,
 ) {
-    // Which heading to print is the Slint side's business — that is where
-    // both languages live.
+    // Which heading to print is the Slint side's business — that is where both
+    // languages live.
     window.set_searching(false);
     window.set_results_loading(true);
+    window.set_genres(slint::ModelRc::new(VecModel::from(
+        GENRES
+            .iter()
+            .map(|name| slint::SharedString::from(*name))
+            .collect::<Vec<_>>(),
+    )));
+
+    let (section, genre, generation) = {
+        let mut state = state.borrow_mut();
+        let generation = state.next_generation();
+        (Section::at(state.section), state.genre, generation)
+    };
+    window.set_section(Section::index_of(section) as i32);
+    window.set_genre(genre as i32);
 
     let weak = window.as_weak();
     let state = Rc::clone(state);
     let api = (*client).clone();
-    let generation = state.borrow_mut().next_generation();
 
-    tasks::spawn(async move { api.discover_watching(0).await }, move |page| {
+    // One section is not a catalogue query: "what people have open right now"
+    // is not something the filter can ask for, so it keeps its own endpoint.
+    let Some(mut filter) = section.filter() else {
+        tasks::spawn(async move { api.discover_watching(0).await }, move |page| {
+            let Some(window) = weak.upgrade() else { return };
+            match page {
+                Ok(page) => show(&window, &state, page.content, generation, http),
+                Err(error) => {
+                    tracing::error!(%error, "could not load the discover list");
+                    window.set_results_loading(false);
+                }
+            }
+        });
+        return;
+    };
+
+    if let Some(name) = genre.checked_sub(1).and_then(|at| GENRES.get(at)) {
+        filter = filter.genre(*name);
+    }
+
+    tasks::spawn(async move { api.filter(&filter, 0).await }, move |page| {
         let Some(window) = weak.upgrade() else { return };
         match page {
             Ok(page) => show(&window, &state, page.content, generation, http),
             Err(error) => {
-                tracing::error!(%error, "could not load the discover list");
+                tracing::error!(%error, "could not load the catalogue");
                 window.set_results_loading(false);
             }
         }
     });
+}
+
+/// Switches section, which also clears the search so the chips describe what
+/// is actually on screen.
+pub fn select_section(
+    window: &MainWindow,
+    state: &Rc<RefCell<HomeState>>,
+    client: Rc<Client>,
+    http: reqwest::Client,
+    index: usize,
+) {
+    state.borrow_mut().section = index.min(Section::ALL.len() - 1);
+    window.set_query("".into());
+    open(window, state, client, http);
+}
+
+/// Narrows the section by genre, or widens it back to all of them.
+pub fn select_genre(
+    window: &MainWindow,
+    state: &Rc<RefCell<HomeState>>,
+    client: Rc<Client>,
+    http: reqwest::Client,
+    index: usize,
+) {
+    {
+        let mut state = state.borrow_mut();
+        state.genre = index.min(GENRES.len());
+        // A genre is a catalogue filter, and "what people are watching" is not
+        // a catalogue query — so choosing one moves off that section.
+        if state.genre > 0 && Section::at(state.section) == Section::Watching {
+            state.section = 1;
+        }
+    }
+    window.set_query("".into());
+    open(window, state, client, http);
 }
 
 /// Searches, or goes back to the default list when the query is emptied.

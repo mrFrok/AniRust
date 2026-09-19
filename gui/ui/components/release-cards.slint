@@ -7,6 +7,49 @@ import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { ReleaseCard } from "../structs.slint";
 
+/// A selectable chip, for choosing a section or a genre.
+///
+/// The player has one of these too, but that one lives on video and is white on
+/// translucency; this one sits on a surface and uses the palette.
+export component Chip inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    /// A quieter size, for the long second row of genres.
+    in property <bool> small: false;
+    callback clicked;
+
+    height: root.small ? 30px : 34px;
+    width: text.preferred-width + (root.small ? Spacing.base : Spacing.comfortable);
+    border-radius: touch.pressed ? Shape.small : Shape.pill;
+    border-width: root.selected ? 0px : 1px;
+    border-color: MaterialPalette.outline-variant;
+    background: root.selected
+        ? MaterialPalette.primary-container
+        : (touch.has-hover ? MaterialPalette.surface-container-high : transparent);
+    animate border-radius { duration: Motion.spring-duration; easing: Motion.spring; }
+    animate background { duration: Motion.standard-duration; easing: Motion.standard; }
+
+    text := Text {
+        text: root.label;
+        color: root.selected
+            ? MaterialPalette.on-primary-container
+            : MaterialPalette.on-surface-variant;
+        font-size: root.small ? Typography.label-medium-size : Typography.label-large-size;
+        font-weight: root.selected
+            ? Typography.label-large-weight-em
+            : Typography.label-large-weight;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%;
+        height: 100%;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
 /// One poster with its title underneath.
 export component PosterCard inherits Rectangle {
     in property <ReleaseCard> card;

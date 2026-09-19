@@ -211,6 +211,36 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
         }
     });
 
+    window.on_select_section({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            home::select_section(
+                &window,
+                &app.home,
+                Rc::clone(&app.client),
+                app.http.clone(),
+                index.max(0) as usize,
+            );
+        }
+    });
+
+    window.on_select_genre({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            home::select_genre(
+                &window,
+                &app.home,
+                Rc::clone(&app.client),
+                app.http.clone(),
+                index.max(0) as usize,
+            );
+        }
+    });
+
     let app = Rc::clone(app);
     window.on_open_release(move |index| {
         let Some(window) = weak.upgrade() else { return };
