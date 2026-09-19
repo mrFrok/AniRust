@@ -221,7 +221,8 @@ fn populate_home(ui: &MainWindow) {
             .map(|name| slint::SharedString::from(*name))
             .collect::<Vec<_>>(),
     )));
-    ui.set_section(2);
+    ui.set_destination(1);
+    ui.set_tab(1);
     ui.set_genre(5);
 }
 

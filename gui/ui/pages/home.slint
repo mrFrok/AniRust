@@ -2,10 +2,14 @@
 //
 // Finding something to watch.
 //
-// A search field and a wall of posters, which is what this kind of catalogue
-// is for. The wall is a `FlexboxLayout`, which wraps to the next row on its own
-// — the cards never have to know how many fit across, and nothing has to read
-// the width it is being given to work it out.
+// One page behind every destination on the rail: a search field, a row of tabs,
+// an optional row of genres, and a wall of posters. What the tabs are called
+// and what they fetch is the window's business — this only says which is
+// selected.
+//
+// The wall is a `FlexboxLayout`, which wraps to the next row on its own: the
+// cards never have to know how many fit across, and nothing has to read the
+// width it is being given to work it out.
 
 import { ScrollView } from "std-widgets.slint";
 import { MaterialPalette } from "../globals/material-palette.slint";
@@ -13,21 +17,24 @@ import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { ReleaseCard } from "../structs.slint";
-import { PosterCard, Chip } from "../components/release-cards.slint";
+import { PosterCard, Chip, Tab } from "../components/release-cards.slint";
 
 export component HomePage inherits Rectangle {
     in property <[ReleaseCard]> results;
-    /// Whether the grid is showing search results or a catalogue section.
+    /// Whether the grid is showing search results rather than a tab.
     in property <bool> searching: false;
     in property <bool> loading: false;
     in-out property <string> query;
-    /// Which catalogue section is selected, as an index into `sections`.
-    in property <int> section: 0;
+    /// The tabs of the current destination, and which is selected.
+    in property <[string]> tabs: [];
+    in property <int> tab: 0;
     /// Genre names the catalogue knows, supplied by Rust because they are data
     /// rather than interface text. Index 0 of the chip row is "all", which is
-    /// not one of them.
+    /// not one of them. Empty everywhere but the catalogue.
     in property <[string]> genres: [];
     in property <int> genre: 0;
+    /// Shown instead of the grid when there is a reason it is empty.
+    in property <string> notice;
     in property <bool> signed-in: false;
     in property <string> account-name;
 
@@ -35,7 +42,7 @@ export component HomePage inherits Rectangle {
     callback open-release(int);
     callback sign-in();
     callback sign-out();
-    callback select-section(int);
+    callback select-tab(int);
     /// 0 means every genre.
     callback select-genre(int);
 
@@ -49,18 +56,6 @@ export component HomePage inherits Rectangle {
     max-height: 100000px;
     horizontal-stretch: 1;
     vertical-stretch: 1;
-
-    /// The sections, in the order they are offered. Rust maps an index to a
-    /// request; the names live here, with the rest of the translations.
-    property <[string]> sections: [
-        Tr.section-watching,
-        Tr.section-updates,
-        Tr.section-popular,
-        Tr.section-airing,
-        Tr.section-announced,
-        Tr.section-films,
-        Tr.section-top,
-    ];
 
     property <length> card-width: 160px;
     property <length> card-height: 280px;
@@ -178,67 +173,63 @@ export component HomePage inherits Rectangle {
             }
         }
 
-        // ---- what to show ------------------------------------------------
+        // ---- tabs --------------------------------------------------------
         //
-        // Hidden while searching: the chips choose a section of the catalogue,
-        // and a search is not one of them.
-        if !root.searching: ScrollView {
-            height: 44px;
-            horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
-            vertical-scrollbar-policy: ScrollBarPolicy.always-off;
-            content-width: sections-row.preferred-width;
+        // Hidden while searching: the tabs name a part of the catalogue, and a
+        // search is not one of them.
+        if !root.searching && root.tabs.length > 0: Rectangle {
+            height: 48px;
+            background: transparent;
 
-            sections-row := HorizontalLayout {
-                x: Spacing.base;
-                spacing: Spacing.small;
+            HorizontalLayout {
+                padding-left: Spacing.base;
+                padding-right: Spacing.base;
+                spacing: Spacing.comfortable;
                 alignment: start;
 
-                for name[index] in root.sections: Chip {
+                for name[index] in root.tabs: Tab {
                     label: name;
-                    selected: index == root.section;
-                    clicked => { root.select-section(index); }
+                    selected: index == root.tab;
+                    clicked => { root.select-tab(index); }
                 }
             }
         }
 
-        if !root.searching && root.genres.length > 0: ScrollView {
-            height: 40px;
-            horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
-            vertical-scrollbar-policy: ScrollBarPolicy.always-off;
-            content-width: genres-row.preferred-width;
+        // Wrapped rather than scrolled sideways: nineteen chips do not fit on
+        // one line of any window, and a row that runs off the edge hides half
+        // the filter.
+        if !root.searching && root.genres.length > 0: FlexboxLayout {
+            padding-left: Spacing.base;
+            padding-right: Spacing.base;
+            flex-wrap: wrap;
+            alignment: start;
+            spacing: Spacing.small;
+            padding-bottom: Spacing.small;
 
-            genres-row := HorizontalLayout {
-                x: Spacing.base;
-                spacing: Spacing.small;
-                alignment: start;
+            Chip {
+                label: Tr.all-genres;
+                small: true;
+                selected: root.genre == 0;
+                clicked => { root.select-genre(0); }
+            }
 
-                Chip {
-                    label: Tr.all-genres;
-                    small: true;
-                    selected: root.genre == 0;
-                    clicked => { root.select-genre(0); }
-                }
-
-                for name[index] in root.genres: Chip {
-                    label: name;
-                    small: true;
-                    selected: index + 1 == root.genre;
-                    clicked => { root.select-genre(index + 1); }
-                }
+            for name[index] in root.genres: Chip {
+                label: name;
+                small: true;
+                selected: index + 1 == root.genre;
+                clicked => { root.select-genre(index + 1); }
             }
         }
 
         // ---- results -----------------------------------------------------
-        HorizontalLayout {
+        if root.searching || root.loading: HorizontalLayout {
             padding-left: Spacing.base;
             padding-right: Spacing.base;
             padding-top: Spacing.small;
             spacing: Spacing.small;
 
             Text {
-                text: root.searching
-                    ? Tr.search-results
-                    : root.sections[root.section];
+                text: root.searching ? Tr.search-results : "";
                 color: MaterialPalette.on-surface;
                 font-size: Typography.title-medium-size;
                 font-weight: Typography.title-medium-weight-em;
@@ -254,11 +245,14 @@ export component HomePage inherits Rectangle {
         }
 
         if !root.loading && root.results.length == 0: Text {
-            text: Tr.nothing-found;
+            text: root.notice != ""
+                ? root.notice
+                : (root.searching ? Tr.nothing-found : Tr.nothing-here);
             color: MaterialPalette.on-surface-variant;
             font-size: Typography.body-large-size;
             horizontal-alignment: center;
             vertical-alignment: center;
+            wrap: word-wrap;
             vertical-stretch: 1;
         }
 
@@ -267,9 +261,10 @@ export component HomePage inherits Rectangle {
             content-height: wall.preferred-height;
 
             wall := FlexboxLayout {
-                x: Spacing.base;
                 y: root.gutter;
-                width: parent.width - 2 * Spacing.base;
+                width: 100%;
+                padding-left: Spacing.base;
+                padding-right: Spacing.base;
                 flex-wrap: wrap;
                 alignment: start;
                 spacing: root.gutter;

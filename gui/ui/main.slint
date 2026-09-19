@@ -7,6 +7,7 @@ import { PlayerPage } from "pages/player.slint";
 import { ReleasePage } from "pages/release.slint";
 import { HomePage } from "pages/home.slint";
 import { SignInSheet } from "components/sign-in.slint";
+import { NavRail } from "components/nav-rail.slint";
 import { PickerOption, EpisodeItem, ReleaseCard } from "structs.slint";
 
 export component MainWindow inherits Window {
@@ -155,13 +156,20 @@ export component MainWindow inherits Window {
     in property <bool> results-loading: false;
     in-out property <string> query;
 
-    in property <int> section: 0;
+    /// Which destination the rail has open: 0 home, 1 browse, 2 saved,
+    /// 3 downloads, 4 profile.
+    in-out property <int> destination: 0;
+    /// Which of the destination's tabs is selected.
+    in property <int> tab: 0;
     in property <[string]> genres: [];
     in property <int> genre: 0;
+    /// Shown instead of the grid when there is a reason it is empty.
+    in property <string> notice;
 
     callback search(string);
     callback open-release(int);
-    callback select-section(int);
+    callback select-destination(int);
+    callback select-tab(int);
     callback select-genre(int);
 
     // ---- account ---------------------------------------------------------
@@ -177,29 +185,64 @@ export component MainWindow inherits Window {
     callback submit-sign-in();
     callback sign-out();
 
-    home := HomePage {
+    browsing := HorizontalLayout {
         width: 100%;
         height: 100%;
         visible: root.screen == "home";
 
-        results: root.results;
-        searching: root.searching;
-        loading: root.results-loading;
-        query <=> root.query;
+        NavRail {
+            current: root.destination;
+            labels: [
+                Tr.nav-home,
+                Tr.nav-catalogue,
+                Tr.nav-bookmarks,
+                Tr.nav-downloads,
+                Tr.nav-profile,
+            ];
+            selected(i) => { root.select-destination(i); }
+        }
 
-        signed-in: root.signed-in;
-        account-name: root.account-name;
+        home := HomePage {
+            horizontal-stretch: 1;
 
-        section: root.section;
-        genres: root.genres;
-        genre: root.genre;
+            results: root.results;
+            searching: root.searching;
+            loading: root.results-loading;
+            query <=> root.query;
 
-        search(q) => { root.search(q); }
-        open-release(i) => { root.open-release(i); }
-        select-section(i) => { root.select-section(i); }
-        select-genre(i) => { root.select-genre(i); }
-        sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
-        sign-out => { root.sign-out(); }
+            signed-in: root.signed-in;
+            account-name: root.account-name;
+
+            // What each destination is divided into. The names live here with
+            // the rest of the translations; which one is selected, and what it
+            // fetches, is Rust's business.
+            tabs: root.destination == 0
+                ? [Tr.tab-latest, Tr.tab-airing, Tr.tab-finished]
+                : root.destination == 1
+                    ? [Tr.section-popular, Tr.section-top, Tr.section-films, Tr.section-announced]
+                    : root.destination == 2
+                        ? [
+                            Tr.list-watching,
+                            Tr.list-planned,
+                            Tr.list-watched,
+                            Tr.list-hold,
+                            Tr.list-dropped,
+                            Tr.list-history,
+                            Tr.list-favourites,
+                        ]
+                        : [];
+            tab: root.tab;
+            genres: root.genres;
+            genre: root.genre;
+            notice: root.notice;
+
+            search(q) => { root.search(q); }
+            open-release(i) => { root.open-release(i); }
+            select-tab(i) => { root.select-tab(i); }
+            select-genre(i) => { root.select-genre(i); }
+            sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
+            sign-out => { root.sign-out(); }
+        }
     }
 
     release := ReleasePage {

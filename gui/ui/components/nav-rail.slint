@@ -1,0 +1,118 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The navigation rail.
+//
+// The official client puts these five on a bar along the bottom, where a thumb
+// reaches them. A desktop window is wide rather than tall and has no thumb, so
+// the same five run down the left edge — the arrangement every desktop
+// application of this shape uses, and the one that costs the grid the least
+// room.
+
+import { MaterialPalette } from "../globals/material-palette.slint";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing, Motion } from "../globals/shape.slint";
+
+component RailButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> selected: false;
+    callback clicked;
+
+    height: 60px;
+    background: transparent;
+
+    // The pill sits behind the icon only, as in Material's own rail: a
+    // selected item reads from the shape, and the label stays quiet.
+    Rectangle {
+        y: 4px;
+        width: 56px;
+        height: 32px;
+        x: (parent.width - self.width) / 2;
+        border-radius: Shape.pill;
+        background: root.selected
+            ? MaterialPalette.secondary-container
+            : (touch.has-hover ? MaterialPalette.surface-container-highest : transparent);
+        animate background { duration: Motion.standard-duration; easing: Motion.standard; }
+
+        Image {
+            source: root.icon;
+            colorize: root.selected
+                ? MaterialPalette.on-secondary-container
+                : MaterialPalette.on-surface-variant;
+            width: 22px;
+            height: 22px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+        }
+    }
+
+    Text {
+        text: root.label;
+        color: root.selected
+            ? MaterialPalette.on-surface
+            : MaterialPalette.on-surface-variant;
+        font-size: Typography.label-small-size;
+        font-weight: root.selected
+            ? Typography.label-large-weight-em
+            : Typography.label-large-weight;
+        horizontal-alignment: center;
+        y: 40px;
+        width: 100%;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component NavRail inherits Rectangle {
+    /// Which destination is open, as an index into the buttons below.
+    in property <int> current: 0;
+    in property <[string]> labels;
+    callback selected(int);
+
+    width: 80px;
+    background: MaterialPalette.surface-container;
+
+    VerticalLayout {
+        padding-top: Spacing.base;
+        spacing: Spacing.tight;
+        alignment: start;
+
+        RailButton {
+            icon: @image-url("../icons/home.svg");
+            label: root.labels[0];
+            selected: root.current == 0;
+            clicked => { root.selected(0); }
+        }
+
+        RailButton {
+            icon: @image-url("../icons/compass.svg");
+            label: root.labels[1];
+            selected: root.current == 1;
+            clicked => { root.selected(1); }
+        }
+
+        RailButton {
+            icon: @image-url("../icons/bookmark.svg");
+            label: root.labels[2];
+            selected: root.current == 2;
+            clicked => { root.selected(2); }
+        }
+
+        RailButton {
+            icon: @image-url("../icons/download.svg");
+            label: root.labels[3];
+            selected: root.current == 3;
+            clicked => { root.selected(3); }
+        }
+
+        RailButton {
+            icon: @image-url("../icons/person.svg");
+            label: root.labels[4];
+            selected: root.current == 4;
+            clicked => { root.selected(4); }
+        }
+    }
+}
