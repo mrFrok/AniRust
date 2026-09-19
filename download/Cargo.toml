@@ -1,0 +1,18 @@
+[package]
+name = "anirust-download"
+description = "Saving an episode to disk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+anirust-extract.workspace = true
+futures.workspace = true
+reqwest.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "process", "rt", "sync"] }
+tracing.workspace = true
+url.workspace = true

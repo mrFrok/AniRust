@@ -185,9 +185,14 @@ export component PlayerPage inherits Rectangle {
         }
     }
 
+    // Woken by the pointer's position rather than by `moved`, which Slint only
+    // reports while a button is held: with the chrome hiding itself properly,
+    // that left no way to bring it back short of clicking, and clicking pauses.
+    changed mouse-at => { root.wake(); }
+    property <length> mouse-at: hover.mouse-x + hover.mouse-y;
+
     hover := TouchArea {
         mouse-cursor: root.chrome-visible ? MouseCursor.default : MouseCursor.none;
-        moved => { root.wake(); }
         clicked => {
             // A click inside a sheet must not also toggle playback, and a
             // locked overlay must not react at all.

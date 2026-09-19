@@ -238,6 +238,7 @@ name = "anirust-cli"
 version = "0.1.0"
 dependencies = [
  "anirust-api",
+ "anirust-download",
  "anirust-extract",
  "anirust-player",
  "anyhow",
@@ -249,6 +250,19 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "anirust-download"
+version = "0.1.0"
+dependencies = [
+ "anirust-extract",
+ "futures",
+ "reqwest",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "url",
 ]
 
 [[package]]
@@ -5742,6 +5756,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

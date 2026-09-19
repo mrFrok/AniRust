@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 anirust-api.workspace = true
 anirust-extract.workspace = true
+anirust-download.workspace = true
 anirust-player.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, features = ["derive"] }

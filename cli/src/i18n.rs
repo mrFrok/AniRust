@@ -176,6 +176,10 @@ catalog! {
         en: "source: {name} ({id})",
         ru: "источник: {name} ({id})",
     }
+    downloading(path: &str) {
+        en: "saving to {path}",
+        ru: "сохраняю в {path}",
+    }
     note_flag_says_direct() {
         en: "note: the API marked this episode as a direct link, but the host needs an \
              extractor - resolving through it anyway",

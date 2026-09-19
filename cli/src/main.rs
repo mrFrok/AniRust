@@ -166,6 +166,26 @@ enum Command {
         #[command(flatten)]
         output: StreamOutput,
     },
+    /// Save an episode to a file.
+    ///
+    /// HLS streams are fetched several segments at a time and remuxed with
+    /// ffmpeg; direct links are written straight to disk.
+    Download {
+        release_id: i64,
+        #[arg(default_value_t = 1)]
+        position: i32,
+        #[arg(long)]
+        dubber: Option<i64>,
+        #[arg(long)]
+        source: Option<i64>,
+        /// Where to write it. Defaults to a name built from the release.
+        #[arg(long, short)]
+        out: Option<std::path::PathBuf>,
+        /// Highest rendition to take, as a height. The best available is used
+        /// when this is left out or nothing is that small.
+        #[arg(long)]
+        quality: Option<u32>,
+    },
 }
 
 /// How to print a resolved stream. Shared by `resolve` and `stream`.
@@ -497,8 +517,98 @@ async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
             let stream = resolve_episode(&episode, lang).await?;
             print_stream(&stream, output, cli.json, lang)?;
         }
+
+        Command::Download {
+            release_id,
+            position,
+            dubber,
+            source,
+            out,
+            quality,
+        } => {
+            let wanted = Wanted {
+                release_id: *release_id,
+                position: *position,
+                dubber: *dubber,
+                source: *source,
+                out: out.clone(),
+                quality: *quality,
+            };
+            download(client, &wanted, lang).await?;
+        }
     }
 
+    Ok(())
+}
+
+/// Which episode to save, and how.
+struct Wanted {
+    release_id: i64,
+    position: i32,
+    dubber: Option<i64>,
+    source: Option<i64>,
+    out: Option<std::path::PathBuf>,
+    quality: Option<u32>,
+}
+
+/// Resolves an episode and writes it to a file.
+async fn download(client: &Client, wanted: &Wanted, lang: Lang) -> Result<()> {
+    let Wanted {
+        release_id,
+        position,
+        dubber,
+        source,
+        out,
+        quality,
+    } = wanted;
+    let (release_id, position) = (*release_id, *position);
+    use std::io::Write;
+
+    // Looked up before anything is fetched: a missing ffmpeg is worth knowing
+    // about now rather than after several hundred megabytes.
+    let ffmpeg = anirust_download::Ffmpeg::find()?;
+
+    let episode = pick_episode(client, release_id, *dubber, *source, position, lang).await?;
+    let mut stream = resolve_episode(&episode, lang).await?;
+
+    // The downloader takes the first rendition, so asking for a lower one is a
+    // matter of putting it first.
+    if let Some(height) = *quality
+        && let Some(chosen) = stream.at_most(height).cloned()
+    {
+        stream.variants.retain(|v| v.url != chosen.url);
+        stream.variants.insert(0, chosen);
+    }
+
+    let destination = match out {
+        Some(path) => path.clone(),
+        None => {
+            let release = client.release(release_id, false).await?;
+            std::path::PathBuf::from(anirust_download::file_name(release.title(), position, ""))
+        }
+    };
+
+    eprintln!("{}", lang.downloading(&destination.display().to_string()));
+
+    let downloader = anirust_download::Download::new(reqwest::Client::new(), ffmpeg);
+    let mut last = 0;
+    downloader
+        .save(&stream, &destination, |progress| {
+            // Redrawn in place rather than a line per segment: several hundred
+            // lines of progress is not progress.
+            if let Some(fraction) = progress.fraction() {
+                let percent = (fraction * 100.0) as u32;
+                if percent != last {
+                    last = percent;
+                    eprint!("\r  {percent:3}%");
+                    let _ = std::io::stderr().flush();
+                }
+            }
+        })
+        .await?;
+    eprintln!();
+
+    println!("{}", destination.display());
     Ok(())
 }
 
