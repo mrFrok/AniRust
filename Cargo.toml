@@ -69,7 +69,10 @@ clap = { version = "4.6", features = ["derive", "env"] }
 
 # Platform
 dirs = "7"
-keyring = { version = "4", features = ["apple-native", "windows-native", "sync-secret-service"] }
+# The `v1` feature is the one that brings the platform stores: Secret
+# Service on Linux, Keychain on macOS, the Credential Manager on Windows.
+# Version 4 renamed every feature, and the old names no longer exist.
+keyring = { version = "4", features = ["v1"] }
 
 [profile.release]
 lto = "thin"

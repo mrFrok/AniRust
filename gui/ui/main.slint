@@ -6,6 +6,7 @@ import { Tr } from "globals/tr.slint";
 import { PlayerPage } from "pages/player.slint";
 import { ReleasePage } from "pages/release.slint";
 import { HomePage } from "pages/home.slint";
+import { SignInSheet } from "components/sign-in.slint";
 import { PickerOption, EpisodeItem, ReleaseCard } from "structs.slint";
 
 export component MainWindow inherits Window {
@@ -143,6 +144,19 @@ export component MainWindow inherits Window {
     callback search(string);
     callback open-release(int);
 
+    // ---- account ---------------------------------------------------------
+    in property <bool> signed-in: false;
+    in property <string> account-name;
+    in-out property <bool> show-sign-in: false;
+    in-out property <string> login;
+    in-out property <string> password;
+    in property <bool> sign-in-busy: false;
+    /// Named by Rust: "", "unknown-login", "wrong-password" or "failed".
+    in-out property <string> sign-in-error;
+
+    callback submit-sign-in();
+    callback sign-out();
+
     home := HomePage {
         width: 100%;
         height: 100%;
@@ -154,8 +168,13 @@ export component MainWindow inherits Window {
         columns: root.columns;
         query <=> root.query;
 
+        signed-in: root.signed-in;
+        account-name: root.account-name;
+
         search(q) => { root.search(q); }
         open-release(i) => { root.open-release(i); }
+        sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
+        sign-out => { root.sign-out(); }
     }
 
     release := ReleasePage {
@@ -241,10 +260,22 @@ export component MainWindow inherits Window {
         }
     }
 
+    if root.show-sign-in: SignInSheet {
+        width: 100%;
+        height: 100%;
+        login <=> root.login;
+        password <=> root.password;
+        busy: root.sign-in-busy;
+        error: root.sign-in-error;
+
+        submit => { root.submit-sign-in(); }
+        dismiss => { root.show-sign-in = false; root.password = ""; }
+    }
+
     forward-focus: keys;
     keys := FocusScope {
         key-pressed(event) => {
-            if (!root.playing) { return reject; }
+            if (root.show-sign-in || !root.playing) { return reject; }
             if (event.text == " ") { root.toggle-pause(); return accept; }
             if (event.text == Key.LeftArrow) { root.seek-relative(-10); return accept; }
             if (event.text == Key.RightArrow) { root.seek-relative(10); return accept; }

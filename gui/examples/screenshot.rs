@@ -53,11 +53,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ui = MainWindow::new()?;
     populate(&ui);
     populate_home(&ui);
-    ui.set_screen(if state == "home" {
+    ui.set_screen(if state.starts_with("home") || state == "sign-in" {
         "home".into()
     } else {
         "release".into()
     });
+    if state == "home-signed-in" {
+        ui.set_signed_in(true);
+        ui.set_account_name("mrfrok".into());
+    }
+    if state == "sign-in" {
+        ui.set_show_sign_in(true);
+        ui.set_login("mrfrok".into());
+        ui.set_password("hunter2".into());
+        ui.set_sign_in_error("wrong-password".into());
+    }
     window.set_size(PhysicalSize::new(width, height));
 
     let mut pixels = vec![slint::Rgb8Pixel { r: 0, g: 0, b: 0 }; (width * height) as usize];

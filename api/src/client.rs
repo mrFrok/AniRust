@@ -2,6 +2,7 @@
 
 use std::borrow::Cow;
 use std::fmt;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -128,7 +129,7 @@ impl ClientBuilder {
         Ok(Client {
             http,
             base_urls,
-            token: self.token,
+            token: Arc::new(RwLock::new(self.token)),
             max_retries: self.max_retries,
         })
     }
@@ -142,11 +143,15 @@ impl ClientBuilder {
 ///
 /// Cloning is cheap — the underlying `reqwest::Client` shares its connection
 /// pool.
+///
+/// Clones share the token as well as the pool. Signing in happens once and has
+/// to reach every request the application is going to make, including the ones
+/// held by tasks that were handed a clone before anyone had signed in.
 #[derive(Clone)]
 pub struct Client {
     http: reqwest::Client,
     base_urls: Vec<url::Url>,
-    token: Option<String>,
+    token: Arc<RwLock<Option<String>>>,
     max_retries: u32,
 }
 
@@ -155,7 +160,7 @@ impl fmt::Debug for Client {
         f.debug_struct("Client")
             .field("base_urls", &self.base_urls)
             // Never render the token.
-            .field("authenticated", &self.token.is_some())
+            .field("authenticated", &self.is_authenticated())
             .field("max_retries", &self.max_retries)
             .finish()
     }
@@ -174,20 +179,37 @@ impl Client {
 
     #[must_use]
     pub fn is_authenticated(&self) -> bool {
-        self.token.is_some()
+        self.read_token().is_some()
     }
 
     #[must_use]
-    pub fn token(&self) -> Option<&str> {
-        self.token.as_deref()
+    pub fn token(&self) -> Option<String> {
+        self.read_token()
     }
 
-    pub fn set_token(&mut self, token: Option<String>) {
-        self.token = token;
+    /// Signs the client in, or out with `None`.
+    ///
+    /// Takes `&self` because every clone shares one token: a session that only
+    /// reached the clone it was set on would be a session that works for
+    /// whichever request happened to hold the right copy.
+    pub fn set_token(&self, token: Option<String>) {
+        match self.token.write() {
+            Ok(mut slot) => *slot = token,
+            // Only reachable if a thread panicked mid-write, which cannot
+            // happen here: nothing runs under this lock but an assignment.
+            Err(poisoned) => *poisoned.into_inner() = token,
+        }
     }
 
-    pub(crate) fn require_token(&self) -> Result<&str> {
-        self.token.as_deref().ok_or(Error::Unauthenticated)
+    fn read_token(&self) -> Option<String> {
+        match self.token.read() {
+            Ok(slot) => slot.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    pub(crate) fn require_token(&self) -> Result<()> {
+        self.read_token().map(|_| ()).ok_or(Error::Unauthenticated)
     }
 
     /// Starts a request. `path` is relative and must not begin with `/`, so it
@@ -257,7 +279,7 @@ impl Client {
         if spec.with_token {
             // The endpoint has already established the token exists; an
             // anonymous client reaching here would simply omit it.
-            if let Some(token) = &self.token {
+            if let Some(token) = self.read_token() {
                 req = req.query(&[("token", token)]);
             }
         }

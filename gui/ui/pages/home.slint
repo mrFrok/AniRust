@@ -24,9 +24,13 @@ export component HomePage inherits Rectangle {
     /// How many cards fit across, counted by the window.
     in property <int> columns: 5;
     in-out property <string> query;
+    in property <bool> signed-in: false;
+    in property <string> account-name;
 
     callback search(string);
     callback open-release(int);
+    callback sign-in();
+    callback sign-out();
 
     background: MaterialPalette.surface;
 
@@ -109,6 +113,40 @@ export component HomePage inherits Rectangle {
                                 height: 100%;
                                 accepted => { root.search(self.text); }
                             }
+                        }
+                    }
+                }
+
+                // Signed in, the name is the control: hovering it offers the
+                // one action there is. A menu for a single item is a menu
+                // nobody wants.
+                account := Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    height: Spacing.touch-target;
+                    width: account-label.preferred-width + 2 * Spacing.base;
+                    border-radius: Shape.pill;
+                    background: account-touch.has-hover
+                        ? MaterialPalette.surface-container-highest
+                        : transparent;
+                    border-width: 1px;
+                    border-color: MaterialPalette.outline-variant;
+
+                    account-label := Text {
+                        text: root.signed-in
+                            ? (account-touch.has-hover ? Tr.sign-out : root.account-name)
+                            : Tr.sign-in;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.label-large-size;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: 100%;
+                        height: 100%;
+                    }
+
+                    account-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            if (root.signed-in) { root.sign-out(); } else { root.sign-in(); }
                         }
                     }
                 }

@@ -13,6 +13,7 @@
 mod home;
 mod progress;
 mod release;
+mod session;
 mod tasks;
 mod video;
 
@@ -29,6 +30,7 @@ use anirust_player::{MediaSource, PlaybackState, Player, PlayerConfig, UpscalePr
 
 use crate::home::HomeState;
 use crate::release::ReleaseState;
+use crate::session::Session;
 use crate::video::VideoBridge;
 
 slint::include_modules!();
@@ -75,8 +77,10 @@ fn main() -> Result<()> {
     let settings = Rc::new(Settings::default());
 
     let home = Rc::new(RefCell::new(HomeState::default()));
+    let account = Rc::new(RefCell::new(Session::default()));
 
     wire_home(&window, &home, &state, &client, &http);
+    wire_account(&window, &account, &client);
     wire_release(&window, &state, &client, &registry, &bridge, &playing);
     let advance = wire_player(
         &window, &state, &client, &registry, &bridge, &playing, &settings,
@@ -87,8 +91,13 @@ fn main() -> Result<()> {
         &settings,
         &bridge,
         &state,
+        &client,
         advance,
     );
+
+    // Before anything is fetched: a restored session changes what the server
+    // answers with, down to which episodes are marked watched.
+    session::restore(&window, &account, &client);
 
     // A release id on the command line opens straight into it; otherwise the
     // client starts where a client should, on something to choose from.
@@ -132,6 +141,34 @@ fn player_config() -> PlayerConfig {
 /// The stream currently loaded, kept so the quality menu and the skip button
 /// can act on what is playing rather than on what was resolved first.
 type Playing = Rc<RefCell<Option<ResolvedStream>>>;
+
+// ---------------------------------------------------------------------------
+// Account
+// ---------------------------------------------------------------------------
+
+fn wire_account(window: &MainWindow, account: &Rc<RefCell<Session>>, client: &Rc<Client>) {
+    let weak = window.as_weak();
+    let signing_in = Rc::clone(account);
+    let api = Rc::clone(client);
+    window.on_submit_sign_in(move || {
+        let Some(window) = weak.upgrade() else { return };
+        session::sign_in(
+            &window,
+            &signing_in,
+            Rc::clone(&api),
+            window.get_login().trim().to_string(),
+            window.get_password().to_string(),
+        );
+    });
+
+    let weak = window.as_weak();
+    let signing_out = Rc::clone(account);
+    let api = Rc::clone(client);
+    window.on_sign_out(move || {
+        let Some(window) = weak.upgrade() else { return };
+        session::sign_out(&window, &signing_out, &api);
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Browsing
@@ -279,6 +316,10 @@ fn play(
     >::new())));
     window.set_has_skip(false);
     window.set_playing(true);
+
+    // "Continue watching" on every other client the account is signed in to is
+    // built from this.
+    record_in_history(state, client, position);
 
     let weak = window.as_weak();
     let api = (**client).clone();
@@ -476,6 +517,36 @@ async fn resolve_url(registry: &Registry, url: String) -> Result<ResolvedStream>
         }],
         ..Default::default()
     })
+}
+
+/// Adds an episode to the account's history.
+///
+/// Silent when signed out, which is most of the time: an anonymous client has
+/// nowhere to put this, and the local store already covers the same ground for
+/// this machine.
+fn record_in_history(state: &Rc<RefCell<ReleaseState>>, client: &Rc<Client>, position: i32) {
+    if !client.is_authenticated() {
+        return;
+    }
+
+    let (release_id, source_id) = {
+        let state = state.borrow();
+        (
+            state.release_id,
+            state.selected_source().map(|source| source.id),
+        )
+    };
+    let Some(source_id) = source_id else { return };
+
+    let api = (**client).clone();
+    tasks::spawn(
+        async move { api.history_add(release_id, source_id, position).await },
+        move |result| {
+            if let Err(error) = result {
+                tracing::warn!(%error, position, "could not add to history");
+            }
+        },
+    );
 }
 
 /// Tells the transport whether there is an episode either side of this one.
@@ -732,12 +803,14 @@ fn drive_status(
     settings: &Rc<Settings>,
     bridge: &Rc<VideoBridge>,
     state: &Rc<RefCell<ReleaseState>>,
+    client: &Rc<Client>,
     advance: Rc<dyn Fn()>,
 ) {
     let weak = window.as_weak();
     let settings = Rc::clone(settings);
     let bridge = Rc::clone(bridge);
     let state = Rc::clone(state);
+    let client = Rc::clone(client);
     // Edge-triggered: mpv stays in `Ended` until something else is loaded, and
     // an episode should only be followed by the next one once.
     let was_ended = Cell::new(false);
@@ -802,7 +875,7 @@ fn drive_status(
             // frame; a quarter-second of staleness costs nothing here.
             bridge.set_advancing(playback.is_active());
 
-            remember(&state, &window, position, duration, &ticks);
+            remember(&state, &client, &window, position, duration, &ticks);
 
             // Following on to the next episode is what a viewer who watched
             // one to the end was going to ask for anyway.
@@ -833,6 +906,7 @@ fn drive_status(
 /// doing it again on its own timer would be the same question twice.
 fn remember(
     state: &Rc<RefCell<ReleaseState>>,
+    client: &Rc<Client>,
     window: &MainWindow,
     position: Duration,
     duration: Option<Duration>,
@@ -851,12 +925,37 @@ fn remember(
         return;
     }
 
-    let state = state.borrow();
-    let mut store = state.progress.borrow_mut();
-    if store.record(state.release_id, episode, position, duration) {
-        tracing::info!(episode, "episode finished");
+    let (release_id, source_id, finished) = {
+        let state = state.borrow();
+        let mut store = state.progress.borrow_mut();
+        let finished = store.record(state.release_id, episode, position, duration);
+        store.flush();
+        (
+            state.release_id,
+            state.selected_source().map(|source| source.id),
+            finished,
+        )
+    };
+
+    if !finished {
+        return;
     }
-    store.flush();
+    tracing::info!(episode, "episode finished");
+
+    // The account is told once, at the moment it becomes true. The API has no
+    // endpoint for a position, so this is the whole of what can be synced.
+    let (Some(source_id), true) = (source_id, client.is_authenticated()) else {
+        return;
+    };
+
+    let api = (**client).clone();
+    tasks::spawn(
+        async move { api.mark_watched(release_id, source_id, episode).await },
+        move |result| match result {
+            Ok(()) => tracing::info!(episode, "marked watched on the account"),
+            Err(error) => tracing::warn!(%error, episode, "could not mark the episode watched"),
+        },
+    );
 }
 
 // ---------------------------------------------------------------------------
