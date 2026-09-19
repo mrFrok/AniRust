@@ -26,7 +26,9 @@ use slint::ComponentHandle;
 
 use anirust_api::{Client, EpisodeSort};
 use anirust_extract::{Registry, ResolvedStream};
-use anirust_player::{MediaSource, PlaybackState, Player, PlayerConfig, UpscalePreset};
+use anirust_player::{
+    MediaSource, PlaybackState, Player, PlayerConfig, Track, TrackKind, UpscalePreset,
+};
 
 use crate::home::HomeState;
 use crate::release::ReleaseState;
@@ -357,7 +359,14 @@ fn play(window: &MainWindow, app: &Rc<App>, position: i32) {
             }
 
             match resolved {
-                Ok(stream) => start(&window, &app.bridge, &app.playing, stream, resume),
+                Ok(stream) => start(
+                    &window,
+                    &app.bridge,
+                    &app.playing,
+                    &app.settings,
+                    stream,
+                    resume,
+                ),
                 Err(error) => {
                     tracing::error!(%error, position, "could not resolve the episode");
                     // Nothing to show, so the picture area goes back to the
@@ -477,6 +486,7 @@ fn start(
     window: &MainWindow,
     bridge: &Rc<VideoBridge>,
     playing: &Playing,
+    settings: &Rc<Settings>,
     stream: ResolvedStream,
     resume: Option<Duration>,
 ) {
@@ -518,6 +528,8 @@ fn start(
     }
 
     *playing.borrow_mut() = Some(stream);
+    // A different file: whatever the menus list now belongs to the last one.
+    settings.tracks_stale.set(true);
 }
 
 /// Turns one episode URL into a stream, through an extractor when a host
@@ -591,6 +603,19 @@ struct Settings {
     interpolation: Cell<bool>,
     quality: Cell<usize>,
     decoder: Cell<usize>,
+    /// mpv track ids behind the subtitle and audio menus.
+    ///
+    /// The menus are lists of labels, but mpv selects by id, and ids are
+    /// neither contiguous nor equal to a position in the list. `None` in the
+    /// subtitle list is the "off" entry.
+    subtitles: RefCell<Vec<Option<i64>>>,
+    audio: RefCell<Vec<Option<i64>>>,
+    /// Set when a different file is loaded.
+    ///
+    /// The menus are otherwise rebuilt only when the stream count changes, and
+    /// two consecutive episodes routinely have the same count with different
+    /// languages in it.
+    tracks_stale: Cell<bool>,
 }
 
 impl Default for Settings {
@@ -601,6 +626,9 @@ impl Default for Settings {
             interpolation: Cell::new(false),
             quality: Cell::new(0),
             decoder: Cell::new(0),
+            subtitles: RefCell::new(Vec::new()),
+            audio: RefCell::new(Vec::new()),
+            tracks_stale: Cell::new(true),
         }
     }
 }
@@ -714,6 +742,28 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 
         if let Err(error) = switch.play(source) {
             tracing::warn!(%error, height = variant.height, "quality change failed");
+            return;
+        }
+        chosen.tracks_stale.set(true);
+    });
+
+    let chosen = Rc::clone(settings);
+    window.on_set_subtitle_track(move |index| {
+        let Some(&id) = chosen.subtitles.borrow().get(index.max(0) as usize) else {
+            return;
+        };
+        if let Err(error) = player.set_subtitle_track(id) {
+            tracing::warn!(%error, ?id, "subtitle change failed");
+        }
+    });
+
+    let chosen = Rc::clone(settings);
+    window.on_set_audio_track(move |index| {
+        let Some(&Some(id)) = chosen.audio.borrow().get(index.max(0) as usize) else {
+            return;
+        };
+        if let Err(error) = player.set_audio_track(Some(id)) {
+            tracing::warn!(%error, id, "audio change failed");
         }
     });
 
@@ -813,6 +863,10 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
     // Positions are written every few seconds rather than four times a second,
     // which would rewrite the file for nothing.
     let ticks = Cell::new(0u32);
+    // Track menus are rebuilt only when the file's stream count changes:
+    // building one reads seven properties per track, and the answer is the same
+    // for the whole episode.
+    let known_tracks = Cell::new(usize::MAX);
 
     let timer = slint::Timer::default();
     timer.start(
@@ -884,6 +938,8 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
                 was_ended.set(false);
             }
 
+            show_tracks(&window, player, &settings, &known_tracks);
+
             window.set_speed_label(format_speed(settings.speed.get()).into());
             window.set_upscale(settings.upscale.get() as i32);
             window.set_interpolation(settings.interpolation.get());
@@ -894,6 +950,92 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
     // The window needs this for its whole life; dropping the timer would stop
     // the clock.
     std::mem::forget(timer);
+}
+
+/// Keeps the subtitle and audio menus in step with the file.
+///
+/// The lists themselves change only when a new file loads; which entry is
+/// selected can change at any time, including from mpv's own defaults, so that
+/// is read every tick.
+fn show_tracks(
+    window: &MainWindow,
+    player: &'static Player,
+    settings: &Rc<Settings>,
+    known: &Cell<usize>,
+) {
+    let count = player.track_count();
+    if settings.tracks_stale.replace(false) | (count != known.replace(count)) {
+        let subtitles = menu_for(player, TrackKind::Subtitle, true);
+        let audio = menu_for(player, TrackKind::Audio, false);
+
+        window.set_subtitle_tracks(labels(&subtitles, window));
+        window.set_audio_tracks(labels(&audio, window));
+
+        *settings.subtitles.borrow_mut() = subtitles.iter().map(|(id, _)| *id).collect();
+        *settings.audio.borrow_mut() = audio.iter().map(|(id, _)| *id).collect();
+    }
+
+    window.set_subtitle_track(index_of(
+        &settings.subtitles.borrow(),
+        player.current_track(TrackKind::Subtitle),
+    ));
+    window.set_audio_track(index_of(
+        &settings.audio.borrow(),
+        player.current_track(TrackKind::Audio),
+    ));
+}
+
+/// The entries of one menu: an mpv id, and what to call it.
+///
+/// Subtitles get an "off" entry first, because turning them off is the most
+/// common thing anyone does to them.
+fn menu_for(
+    player: &'static Player,
+    kind: TrackKind,
+    offer_off: bool,
+) -> Vec<(Option<i64>, String)> {
+    let mut entries: Vec<(Option<i64>, String)> = Vec::new();
+    if offer_off {
+        entries.push((None, String::new()));
+    }
+    entries.extend(
+        player
+            .tracks_of(kind)
+            .into_iter()
+            .map(|track: Track| (Some(track.id), track.label())),
+    );
+    entries
+}
+
+/// Menu labels, with the empty one standing for "off" in whichever language
+/// the window is in.
+fn labels(
+    entries: &[(Option<i64>, String)],
+    window: &MainWindow,
+) -> slint::ModelRc<slint::SharedString> {
+    let off: slint::SharedString = if window.get_lang() == "ru" {
+        "Выкл".into()
+    } else {
+        "Off".into()
+    };
+
+    slint::ModelRc::new(slint::VecModel::from(
+        entries
+            .iter()
+            .map(|(id, label)| match id {
+                Some(_) => slint::SharedString::from(label.as_str()),
+                None => off.clone(),
+            })
+            .collect::<Vec<_>>(),
+    ))
+}
+
+/// Where a selected id sits in a menu, or 0 when it is not in it.
+fn index_of(entries: &[Option<i64>], selected: Option<i64>) -> i32 {
+    entries
+        .iter()
+        .position(|entry| *entry == selected)
+        .unwrap_or(0) as i32
 }
 
 /// Writes the current position to the store, every few seconds.

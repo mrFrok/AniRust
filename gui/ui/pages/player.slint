@@ -44,6 +44,12 @@ export component PlayerPage inherits Rectangle {
     in property <int> quality: 0;
     /// 0 automatic, 1 hardware, 2 software.
     in property <int> decoder: 0;
+    /// Subtitle tracks the file carries, with "off" already first in the list.
+    in property <[string]> subtitle-tracks: [];
+    in property <int> subtitle-track: 0;
+    /// Audio tracks. A file with one is not a choice, so the section hides.
+    in property <[string]> audio-tracks: [];
+    in property <int> audio-track: 0;
     in property <bool> fullscreen: false;
     /// Filling the window, with the release screen stepped aside.
     in property <bool> theatre: false;
@@ -61,6 +67,8 @@ export component PlayerPage inherits Rectangle {
     callback set-upscale(int);
     callback set-quality(int);
     callback set-decoder(int);
+    callback set-subtitle-track(int);
+    callback set-audio-track(int);
     callback toggle-interpolation();
     callback toggle-fullscreen();
     /// Fill the window, or give the release screen its place back.
@@ -542,6 +550,44 @@ export component PlayerPage inherits Rectangle {
                             label: name;
                             selected: index == root.quality;
                             clicked => { root.set-quality(index); }
+                        }
+                    }
+
+                    // Only worth a section when there is a choice. A single
+                    // audio track is not one, and "off" alone is not either.
+                    if root.audio-tracks.length > 1: Text {
+                        text: Tr.audio-track;
+                        color: #FFFFFF;
+                        font-size: Typography.title-medium-size;
+                        font-weight: Typography.title-medium-weight-em;
+                    }
+
+                    if root.audio-tracks.length > 1: HorizontalLayout {
+                        spacing: Spacing.small;
+                        alignment: start;
+
+                        for name[index] in root.audio-tracks: SettingChip {
+                            label: name;
+                            selected: index == root.audio-track;
+                            clicked => { root.set-audio-track(index); }
+                        }
+                    }
+
+                    if root.subtitle-tracks.length > 1: Text {
+                        text: Tr.subtitles;
+                        color: #FFFFFF;
+                        font-size: Typography.title-medium-size;
+                        font-weight: Typography.title-medium-weight-em;
+                    }
+
+                    if root.subtitle-tracks.length > 1: HorizontalLayout {
+                        spacing: Spacing.small;
+                        alignment: start;
+
+                        for name[index] in root.subtitle-tracks: SettingChip {
+                            label: name;
+                            selected: index == root.subtitle-track;
+                            clicked => { root.set-subtitle-track(index); }
                         }
                     }
 

@@ -516,6 +516,28 @@ impl Player {
             .collect()
     }
 
+    /// How many streams the file has, at the cost of one property read.
+    ///
+    /// A menu only has to be rebuilt when this changes, and rebuilding it means
+    /// reading seven properties per track — worth avoiding on a status poll.
+    #[must_use]
+    pub fn track_count(&self) -> usize {
+        self.mpv
+            .get_property::<i64>("track-list/count")
+            .map(|count| usize::try_from(count).unwrap_or(0))
+            .unwrap_or(0)
+    }
+
+    /// Id of the selected track of a kind, read straight from the selector
+    /// rather than by walking the list.
+    ///
+    /// `None` means that kind is switched off, which for subtitles is the
+    /// usual state.
+    #[must_use]
+    pub fn current_track(&self, kind: TrackKind) -> Option<i64> {
+        self.mpv.get_property::<i64>(kind.selector()).ok()
+    }
+
     /// The selected track of a kind, if any.
     #[must_use]
     pub fn selected_track(&self, kind: TrackKind) -> Option<Track> {

@@ -83,6 +83,10 @@ export component MainWindow inherits Window {
     in property <[string]> qualities: [];
     in property <int> quality: 0;
     in property <int> decoder: 0;
+    in property <[string]> subtitle-tracks: [];
+    in property <int> subtitle-track: 0;
+    in property <[string]> audio-tracks: [];
+    in property <int> audio-track: 0;
     in property <bool> fullscreen: false;
     in property <bool> has-skip: false;
     in property <bool> has-previous: false;
@@ -108,6 +112,8 @@ export component MainWindow inherits Window {
     callback set-upscale(int);
     callback set-quality(int);
     callback set-decoder(int);
+    callback set-subtitle-track(int);
+    callback set-audio-track(int);
     callback toggle-interpolation();
     callback toggle-fullscreen();
     /// The player was closed. Playback stops: a stream decoding behind a screen
@@ -240,6 +246,10 @@ export component MainWindow inherits Window {
             qualities: root.qualities;
             quality: root.quality;
             decoder: root.decoder;
+            subtitle-tracks: root.subtitle-tracks;
+            subtitle-track: root.subtitle-track;
+            audio-tracks: root.audio-tracks;
+            audio-track: root.audio-track;
             fullscreen: root.fullscreen;
             theatre: root.theatre;
             has-skip: root.has-skip;
@@ -256,6 +266,8 @@ export component MainWindow inherits Window {
             set-upscale(v) => { root.set-upscale(v); }
             set-quality(v) => { root.set-quality(v); }
             set-decoder(v) => { root.set-decoder(v); }
+            set-subtitle-track(v) => { root.set-subtitle-track(v); }
+            set-audio-track(v) => { root.set-audio-track(v); }
             toggle-fullscreen => { root.toggle-fullscreen(); }
             toggle-interpolation => { root.toggle-interpolation(); }
             toggle-theatre => { root.theatre = !root.theatre; }
