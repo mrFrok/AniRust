@@ -62,6 +62,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_signed_in(true);
         ui.set_account_name("mrfrok".into());
     }
+    if state == "failed" {
+        ui.set_episode_failed(true);
+    }
     if state == "sign-in" {
         ui.set_show_sign_in(true);
         ui.set_login("mrfrok".into());

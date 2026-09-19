@@ -81,7 +81,9 @@ fn main() -> Result<()> {
 
     wire_home(&window, &home, &state, &client, &http);
     wire_account(&window, &account, &client);
-    wire_release(&window, &state, &client, &registry, &bridge, &playing);
+    wire_release(
+        &window, &state, &home, &client, &registry, &bridge, &playing, &http,
+    );
     let advance = wire_player(
         &window, &state, &client, &registry, &bridge, &playing, &settings,
     );
@@ -223,10 +225,12 @@ fn wire_home(
 fn wire_release(
     window: &MainWindow,
     state: &Rc<RefCell<ReleaseState>>,
+    home: &Rc<RefCell<HomeState>>,
     client: &Rc<Client>,
     registry: &Rc<Registry>,
     bridge: &Rc<VideoBridge>,
     playing: &Playing,
+    http: &reqwest::Client,
 ) {
     let weak = window.as_weak();
     let chosen = Rc::clone(state);
@@ -258,9 +262,18 @@ fn wire_release(
     });
 
     let weak = window.as_weak();
+    let browsing = Rc::clone(home);
+    let api = Rc::clone(client);
+    let net = http.clone();
     window.on_go_back(move || {
         let Some(window) = weak.upgrade() else { return };
         window.set_screen("home".into());
+        // Opened straight into a release from the command line, the browsing
+        // screen behind it was never filled. Going back to an empty grid would
+        // be a dead end.
+        if browsing.borrow().releases.is_empty() {
+            home::open(&window, &browsing, Rc::clone(&api), net.clone());
+        }
     });
 }
 
@@ -315,6 +328,7 @@ fn play(
         slint::SharedString,
     >::new())));
     window.set_has_skip(false);
+    window.set_episode_failed(false);
     window.set_playing(true);
 
     // "Continue watching" on every other client the account is signed in to is
@@ -344,10 +358,12 @@ fn play(
                 Err(error) => {
                     tracing::error!(%error, position, "could not resolve the episode");
                     // Nothing to show, so the picture area goes back to the
-                    // release rather than sitting black for ever.
+                    // release — saying why, rather than looking like the click
+                    // was ignored.
                     window.set_state("idle".into());
                     window.set_playing(false);
                     window.set_current_episode(0);
+                    window.set_episode_failed(true);
                 }
             }
         },
@@ -465,6 +481,7 @@ fn start(
         tracing::error!("resolved a stream with no renditions");
         window.set_state("idle".into());
         window.set_playing(false);
+        window.set_episode_failed(true);
         return;
     };
     tracing::info!(url = %best.url, height = best.height, "resolved");
@@ -493,6 +510,7 @@ fn start(
         tracing::error!(%error, "could not start playback");
         window.set_state("idle".into());
         window.set_playing(false);
+        window.set_episode_failed(true);
         return;
     }
 

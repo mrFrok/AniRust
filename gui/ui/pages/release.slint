@@ -54,6 +54,9 @@ export component ReleasePage inherits Rectangle {
     in property <bool> playing: false;
     /// The player fills the window and everything else steps aside.
     in property <bool> theatre: false;
+    /// Set when an episode could not be resolved, so the screen says so rather
+    /// than quietly going back to the invitation to try again.
+    in property <bool> failed: false;
 
     // ---- to Rust ---------------------------------------------------------
     callback select-dubber(int);
@@ -177,6 +180,17 @@ export component ReleasePage inherits Rectangle {
                                 duration: Motion.enter-duration;
                                 easing: Motion.enter;
                             }
+                        }
+
+                        if root.failed: Text {
+                            text: Tr.episode-failed;
+                            color: #FFFFFFD9;
+                            font-size: Typography.body-medium-size;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                            width: min(parent.width - 2 * Spacing.loose, 460px);
+                            x: (parent.width - self.width) / 2;
+                            y: start.y - self.height - Spacing.base;
                         }
 
                         start := Rectangle {

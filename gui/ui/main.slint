@@ -53,6 +53,8 @@ export component MainWindow inherits Window {
     in property <int> source: 0;
     in property <[EpisodeItem]> episodes: [];
     in property <int> resume-episode: 0;
+    /// The last attempt to start an episode failed.
+    in property <bool> episode-failed: false;
 
     callback select-dubber(int);
     callback select-source(int);
@@ -203,6 +205,7 @@ export component MainWindow inherits Window {
         source: root.source;
         episodes: root.episodes;
         resume-episode: root.resume-episode;
+        failed: root.episode-failed;
         current-episode: root.current-episode;
         current-index: root.current-index;
         playing: root.playing;
