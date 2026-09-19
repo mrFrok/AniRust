@@ -91,6 +91,8 @@ export component MainWindow inherits Window {
     in property <bool> has-skip: false;
     in property <bool> has-previous: false;
     in property <bool> has-next: false;
+    /// A brief readout of what a key press just changed.
+    in property <string> hint;
     /// The episode in the player, so the list can mark it and the transport can
     /// step to its neighbours.
     in-out property <int> current-episode: 0;
@@ -116,6 +118,15 @@ export component MainWindow inherits Window {
     callback set-audio-track(int);
     callback toggle-interpolation();
     callback toggle-fullscreen();
+    callback toggle-muted();
+    /// Loudness, by a step up or down.
+    callback adjust-volume(int);
+    /// Playback rate, by one notch along the speed menu.
+    callback adjust-speed(int);
+    /// One frame forward or back, which pauses as a side effect.
+    callback step-frame(bool);
+    /// Subtitles on or off, keeping whichever track was last chosen.
+    callback toggle-captions();
     /// The player was closed. Playback stops: a stream decoding behind a screen
     /// nobody is looking at costs bandwidth for nothing.
     callback close-player();
@@ -255,6 +266,7 @@ export component MainWindow inherits Window {
             has-skip: root.has-skip;
             has-previous: root.has-previous;
             has-next: root.has-next;
+            hint: root.hint;
 
             toggle-pause => { root.toggle-pause(); }
             seek-fraction(f) => { root.seek-fraction(f); }
@@ -288,19 +300,68 @@ export component MainWindow inherits Window {
     }
 
     forward-focus: keys;
+
+    // The bindings a viewer already has in their fingers, from the player
+    // everyone has used. Deviating from them would be a novelty nobody asked
+    // for; the three that have no counterpart there — skipping an opening,
+    // upscaling, interpolation — take letters YouTube leaves free.
     keys := FocusScope {
         key-pressed(event) => {
             if (root.show-sign-in || !root.playing) { return reject; }
-            if (event.text == " ") { root.toggle-pause(); return accept; }
-            if (event.text == Key.LeftArrow) { root.seek-relative(-10); return accept; }
-            if (event.text == Key.RightArrow) { root.seek-relative(10); return accept; }
-            if (event.text == Key.Escape && root.theatre) { root.theatre = false; return accept; }
-            if (event.text == "s") { root.skip-opening(); return accept; }
+
+            // ---- transport ----
+            if (event.text == " " || event.text == "k") { root.toggle-pause(); return accept; }
+            if (event.text == "j") { root.seek-relative(-10); return accept; }
+            if (event.text == "l") { root.seek-relative(10); return accept; }
+            if (event.text == Key.LeftArrow) { root.seek-relative(-5); return accept; }
+            if (event.text == Key.RightArrow) { root.seek-relative(5); return accept; }
+            if (event.text == Key.Home) { root.seek-fraction(0); return accept; }
+            if (event.text == Key.End) { root.seek-fraction(1); return accept; }
+
+            // Digits jump to tenths of the episode, as they do everywhere.
+            if (event.text >= "0" && event.text <= "9") {
+                root.seek-fraction(digit(event.text) / 10);
+                return accept;
+            }
+
+            // ---- episodes ----
+            if (event.text == "p" && event.modifiers.shift) { root.previous-episode(); return accept; }
+            if (event.text == "n" && event.modifiers.shift) { root.next-episode(); return accept; }
+
+            // ---- sound ----
+            if (event.text == "m") { root.toggle-muted(); return accept; }
+            if (event.text == Key.UpArrow) { root.adjust-volume(5); return accept; }
+            if (event.text == Key.DownArrow) { root.adjust-volume(-5); return accept; }
+
+            // ---- rate, and stepping while paused ----
+            if (event.text == "<") { root.adjust-speed(-1); return accept; }
+            if (event.text == ">") { root.adjust-speed(1); return accept; }
+            if (event.text == ",") { root.step-frame(false); return accept; }
+            if (event.text == ".") { root.step-frame(true); return accept; }
+
+            // ---- the screen ----
+            if (event.text == "f") { root.toggle-fullscreen(); return accept; }
             if (event.text == "t") { root.theatre = !root.theatre; return accept; }
+            if (event.text == Key.Escape) {
+                if (root.fullscreen) { root.toggle-fullscreen(); return accept; }
+                if (root.theatre) { root.theatre = false; return accept; }
+                return reject;
+            }
+
+            // ---- ours ----
+            if (event.text == "c") { root.toggle-captions(); return accept; }
+            if (event.text == "s") { root.skip-opening(); return accept; }
             if (event.text == "u") { root.set-upscale(Math.mod(root.upscale + 1, 4)); return accept; }
             if (event.text == "i") { root.toggle-interpolation(); return accept; }
-            if (event.text == "f") { root.toggle-fullscreen(); return accept; }
             reject
         }
+    }
+
+    /// A digit's value. Slint has no string-to-number, and ten comparisons
+    /// beat ten separate key clauses.
+    pure function digit(text: string) -> int {
+        text == "1" ? 1 : text == "2" ? 2 : text == "3" ? 3 : text == "4" ? 4
+            : text == "5" ? 5 : text == "6" ? 6 : text == "7" ? 7 : text == "8" ? 8
+            : text == "9" ? 9 : 0
     }
 }

@@ -490,6 +490,39 @@ impl Player {
         Ok(())
     }
 
+    /// Loudness as a percentage, where 100 is unattenuated.
+    #[must_use]
+    pub fn volume(&self) -> i64 {
+        self.mpv.get_property::<i64>("volume").unwrap_or(100)
+    }
+
+    #[must_use]
+    pub fn is_muted(&self) -> bool {
+        self.mpv.get_property::<bool>("mute").unwrap_or(false)
+    }
+
+    /// Silences or unsilences, returning the state it settled on.
+    pub fn toggle_muted(&self) -> Result<bool> {
+        let next = !self.is_muted();
+        self.set_muted(next)?;
+        Ok(next)
+    }
+
+    /// Moves one frame forward or back.
+    ///
+    /// mpv pauses when stepping, which is what makes the step visible at all —
+    /// so this is a pause as well as a step, exactly as it is everywhere else
+    /// that offers it.
+    pub fn step_frame(&self, forward: bool) -> Result<()> {
+        let command = if forward {
+            "frame-step"
+        } else {
+            "frame-back-step"
+        };
+        self.mpv.command(command, &[])?;
+        Ok(())
+    }
+
     pub fn set_muted(&self, muted: bool) -> Result<()> {
         self.mpv.set_property("mute", muted)?;
         Ok(())

@@ -610,6 +610,8 @@ struct Settings {
     /// subtitle list is the "off" entry.
     subtitles: RefCell<Vec<Option<i64>>>,
     audio: RefCell<Vec<Option<i64>>>,
+    /// The subtitle track to restore when captions are switched back on.
+    last_subtitle: Cell<Option<i64>>,
     /// Set when a different file is loaded.
     ///
     /// The menus are otherwise rebuilt only when the stream count changes, and
@@ -628,6 +630,7 @@ impl Default for Settings {
             decoder: Cell::new(0),
             subtitles: RefCell::new(Vec::new()),
             audio: RefCell::new(Vec::new()),
+            last_subtitle: Cell::new(None),
             tracks_stale: Cell::new(true),
         }
     }
@@ -643,6 +646,25 @@ const PRESETS: [UpscalePreset; 4] = [
 /// mpv `hwdec` values behind the decoder choice, in the order the sheet lists
 /// them: automatic, hardware, software.
 const DECODERS: [&str; 3] = [anirust_player::DEFAULT_HWDEC, "nvdec,vaapi", "no"];
+
+/// The rates the speed menu offers, which are also the notches `<` and `>`
+/// step between.
+const SPEEDS: [f64; 7] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+
+/// Puts a line on screen for a moment.
+///
+/// The counter is not decoration: Slint hides this on a `changed` handler, so
+/// pressing the same key twice has to look like a change or the second press
+/// would leave the first one's timer to expire on it.
+fn show_hint(window: &MainWindow, text: String) {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NONCE: AtomicU32 = AtomicU32::new(0);
+
+    let nonce = NONCE.fetch_add(1, Ordering::Relaxed);
+    // A zero-width space carries the counter without printing it.
+    let padding = "\u{200b}".repeat((nonce % 4) as usize + 1);
+    window.set_hint(format!("{text}{padding}").into());
+}
 
 fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     let player = app.bridge.player();
@@ -774,6 +796,101 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         if let Err(error) = player.set_hwdec(DECODERS[index]) {
             tracing::warn!(%error, value = DECODERS[index], "decoder change failed");
         }
+    });
+
+    // ---- the keys that change something with no control of its own -------
+
+    let weak = window.as_weak();
+    window.on_toggle_muted(move || {
+        let Some(window) = weak.upgrade() else { return };
+        match player.toggle_muted() {
+            Ok(muted) => show_hint(
+                &window,
+                if muted {
+                    "🔇".to_owned()
+                } else {
+                    format!("🔊 {}%", player.volume())
+                },
+            ),
+            Err(error) => tracing::warn!(%error, "mute failed"),
+        }
+    });
+
+    let weak = window.as_weak();
+    window.on_adjust_volume(move |step| {
+        let Some(window) = weak.upgrade() else { return };
+        let volume = (player.volume() + i64::from(step)).clamp(0, 150);
+        if let Err(error) = player.set_volume(volume) {
+            tracing::warn!(%error, volume, "volume change failed");
+            return;
+        }
+        // Reaching for the volume means wanting to hear it.
+        let _ = player.set_muted(false);
+        show_hint(&window, format!("🔊 {volume}%"));
+    });
+
+    let chosen = Rc::clone(settings);
+    let weak = window.as_weak();
+    window.on_adjust_speed(move |step| {
+        let Some(window) = weak.upgrade() else { return };
+        let next = SPEEDS
+            .iter()
+            .position(|rate| (*rate - chosen.speed.get()).abs() < f64::EPSILON)
+            .map_or(SPEEDS.len() / 2, |at| {
+                at.saturating_add_signed(step as isize)
+                    .min(SPEEDS.len() - 1)
+            });
+        let speed = SPEEDS[next];
+
+        chosen.speed.set(speed);
+        if let Err(error) = player.set_speed(speed) {
+            tracing::warn!(%error, speed, "speed change failed");
+            return;
+        }
+        show_hint(&window, format_speed(speed));
+    });
+
+    window.on_step_frame(move |forward| {
+        if let Err(error) = player.step_frame(forward) {
+            tracing::warn!(%error, forward, "frame step failed");
+        }
+    });
+
+    // Off and back on, keeping whichever track was last chosen rather than
+    // always landing on the first one.
+    let chosen = Rc::clone(settings);
+    let weak = window.as_weak();
+    window.on_toggle_captions(move || {
+        let Some(window) = weak.upgrade() else { return };
+        let tracks = chosen.subtitles.borrow();
+        if tracks.len() < 2 {
+            show_hint(&window, "CC —".to_owned());
+            return;
+        }
+
+        let showing = player.current_track(TrackKind::Subtitle).is_some();
+        let wanted = if showing {
+            None
+        } else {
+            chosen
+                .last_subtitle
+                .get()
+                .or_else(|| tracks.iter().flatten().copied().next())
+        };
+        if showing {
+            chosen
+                .last_subtitle
+                .set(player.current_track(TrackKind::Subtitle));
+        }
+
+        if let Err(error) = player.set_subtitle_track(wanted) {
+            tracing::warn!(%error, "caption toggle failed");
+            return;
+        }
+        show_hint(
+            &window,
+            if wanted.is_some() { "CC" } else { "CC off" }.to_owned(),
+        );
     });
 
     let weak = window.as_weak();

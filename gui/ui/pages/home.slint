@@ -83,11 +83,20 @@ export component HomePage inherits Rectangle {
                         padding-right: Spacing.base;
                         spacing: Spacing.small;
 
-                        Image {
-                            source: @image-url("../icons/search.svg");
-                            colorize: MaterialPalette.on-surface-variant;
+                        // In its own box, because a fixed-size image in a
+                        // row sits at the top of it rather than on the row's
+                        // centre line.
+                        Rectangle {
                             width: 18px;
-                            height: 18px;
+                            background: transparent;
+
+                            Image {
+                                source: @image-url("../icons/search.svg");
+                                colorize: MaterialPalette.on-surface-variant;
+                                width: 18px;
+                                height: 18px;
+                                y: (parent.height - self.height) / 2;
+                            }
                         }
 
                         Rectangle {

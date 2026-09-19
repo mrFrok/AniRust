@@ -39,6 +39,10 @@ export component PlayerPage inherits Rectangle {
     /// transport can say when it is at an end rather than doing nothing.
     in property <bool> has-previous: false;
     in property <bool> has-next: false;
+    /// A line about what just changed — volume, rate, muting. Shown briefly and
+    /// then dropped: a key that alters something invisible has to say so, and a
+    /// label that stays would be clutter.
+    in property <string> hint;
     /// Available renditions, highest first, as "1080p" and the like.
     in property <[string]> qualities: [];
     in property <int> quality: 0;
@@ -128,14 +132,62 @@ export component PlayerPage inherits Rectangle {
         height: 100%;
     }
 
+    // The chrome hides itself once the picture is running, whether or not the
+    // pointer ever moved over it. Waiting for a `moved` meant that someone who
+    // pressed play and then sat still kept the controls on screen for the whole
+    // episode.
+    changed state => { root.wake(); }
+    changed paused => { root.wake(); }
+
+    function wake() {
+        if (root.locked) { return; }
+        root.chrome-visible = true;
+        linger.running = false;
+        linger.running = true;
+    }
+
+    // Hidden on a timer rather than by whoever wrote the hint: several keys
+    // write here, and none of them should have to remember to tidy up. Rust
+    // appends a counter to the text so that pressing the same key twice is a
+    // change and starts the timer again.
+    property <bool> hint-showing: false;
+    changed hint => {
+        root.hint-showing = root.hint != "";
+        hint-linger.running = false;
+        hint-linger.running = root.hint-showing;
+    }
+
+    hint-linger := Timer {
+        interval: 1200ms;
+        running: false;
+        triggered => { root.hint-showing = false; self.running = false; }
+    }
+
+    hint-box := Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: parent.height / 5;
+        width: hint-text.preferred-width + 2 * Spacing.comfortable;
+        height: 48px;
+        border-radius: Shape.medium;
+        background: #000000B3;
+        opacity: root.hint-showing ? 1.0 : 0.0;
+        visible: self.opacity > 0.01;
+        animate opacity { duration: Motion.standard-duration; easing: Motion.standard; }
+
+        hint-text := Text {
+            text: root.hint;
+            color: #FFFFFF;
+            font-size: Typography.title-medium-size;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: 100%;
+            height: 100%;
+        }
+    }
+
     hover := TouchArea {
         mouse-cursor: root.chrome-visible ? MouseCursor.default : MouseCursor.none;
-        moved => {
-            if (root.locked) { return; }
-            root.chrome-visible = true;
-            linger.running = false;
-            linger.running = true;
-        }
+        moved => { root.wake(); }
         clicked => {
             // A click inside a sheet must not also toggle playback, and a
             // locked overlay must not react at all.
@@ -148,7 +200,13 @@ export component PlayerPage inherits Rectangle {
         interval: Motion.overlay-linger;
         running: false;
         triggered => {
-            if (!root.chrome-pinned) { root.chrome-visible = false; }
+            if (root.chrome-pinned) {
+                // Something is still holding the chrome up — a sheet, or a
+                // picture that is not running. Come back and ask again rather
+                // than leaving it visible for ever.
+                return;
+            }
+            root.chrome-visible = false;
             self.running = false;
         }
     }

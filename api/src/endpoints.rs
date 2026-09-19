@@ -81,11 +81,17 @@ impl<T> From<PageablePayload<T>> for Page<T> {
     }
 }
 
+/// Answer to `auth/signIn`.
+///
+/// `profileToken` is camelCase on the wire while almost everything else in this
+/// API is snake_case: the entity models carry explicit property names, and this
+/// response class does not — so its field goes out under its own spelling. Both
+/// are accepted, because that difference is theirs to change.
 #[derive(Deserialize)]
 struct SignInPayload {
     #[serde(default)]
     profile: Option<Profile>,
-    #[serde(default)]
+    #[serde(default, alias = "profileToken")]
     profile_token: Option<ProfileToken>,
 }
 
@@ -353,10 +359,18 @@ impl Client {
                 profile_token: Some(token),
             }) => Ok((profile, token)),
             // Success code but an incomplete payload — treat as a failure
-            // rather than fabricating an empty session.
-            Ok(_) => Err(SignInError::Api(Error::Api {
-                code: ApiCode::Failed,
-            })),
+            // rather than fabricating an empty session. Saying which half is
+            // missing is what turns the next report of this into a fix.
+            Ok(payload) => {
+                tracing::warn!(
+                    profile = payload.profile.is_some(),
+                    token = payload.profile_token.is_some(),
+                    "signed in but the answer was incomplete"
+                );
+                Err(SignInError::Api(Error::Api {
+                    code: ApiCode::Failed,
+                }))
+            }
             Err(Error::Api { code }) => Err(match code.raw() {
                 SIGN_IN_INVALID_LOGIN => SignInError::UnknownLogin,
                 SIGN_IN_INVALID_PASSWORD => SignInError::WrongPassword,
