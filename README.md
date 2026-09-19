@@ -17,13 +17,20 @@ progress synchronised with an Anixart account.
 
 ## Status
 
-Early development. Done:
+Usable. Browse or search, open a release, pick a voice-over and an episode, and
+watch it — with the picture on the release screen rather than on a screen of its
+own, so choosing the next episode never means leaving what you are watching.
 
-- `api/` — typed API client (search, releases, the episode chain, account,
-  lists, history, favourites);
-- `extract/` — resolves embedded player pages to direct streams: **Kodik**
-  (96% of the catalogue), **AniLibria** and **Sibnet**;
-- `cli/` — a probe for driving the live API.
+Working:
+
+- **Browsing** — what other people are watching, and search by title.
+- **Playback** — Kodik, AniLibria and Sibnet resolved to direct streams;
+  hardware decoding; quality, speed, subtitle and audio track selection;
+  Anime4K upscaling and frame interpolation; skip the opening.
+- **Continuing** — where an episode was left off is remembered, the list opens
+  there, and an episode that ends is followed by the next one.
+- **An account** — signing in syncs watched episodes and history; the token
+  goes to the platform's secret store.
 
 Not covered: SovetRomantica, whose host is unreachable from the network this
 was developed on, so its protocol could not be observed — and guessing it would
@@ -31,15 +38,31 @@ mean reading someone else's implementation. Allvideo, StudioMir, Myvi, VKVideo,
 OK, RuTube and MailRu are listed by the official client but did not appear in
 the sampled catalogue.
 
-Next, by phase: the mpv player → the Slint GUI.
+Still to come: the account's own lists and history as screens, and packaged
+builds.
 
 ## Building
 
-Needs Rust 1.90+ and, for the player, `libmpv` >= 2.
+Needs Rust 1.90+ and, for the player, `libmpv` >= 2. On Debian and Ubuntu that
+is `libmpv-dev`; on Arch, `mpv`.
 
 ```sh
 cargo build --release
+./target/release/anirust            # browse
+./target/release/anirust 2999       # straight into a release
 ```
+
+### Looking at the interface without a display
+
+Layout mistakes are cheap to make and hard to spot by description. The interface
+renders to a PNG with the software renderer, no window server involved:
+
+```sh
+cargo run -p anirust-gui --example screenshot -- out.png 1440 900 release
+```
+
+The last argument is one of `home`, `release`, `playing`, `theatre`, `sign-in`
+or `failed`; a width below 900 gives the stacked layout.
 
 ## The probe
 
@@ -79,11 +102,19 @@ extractor.
 ```
 api/       typed Anixart client (reqwest + serde)
 extract/   the Extractor trait and per-host implementations
-player/    libmpv wrapper rendering into a Slint GL texture   [phase 3]
-core/      session, cache, playback orchestration             [phase 4]
-gui/       the Slint application                              [phase 4]
+player/    libmpv wrapper rendering into a Slint GL texture
+gui/       the Slint application
 cli/       the debugging probe
 ```
+
+mpv renders into a framebuffer the GUI owns, and Slint borrows that as a
+texture — no frame is ever copied through the CPU. Two details cost a long
+evening each and are worth knowing before touching `gui/src/video.rs`: the
+window has to be repainted from `AfterRendering` rather than on a timer, or
+mpv's estimate of the display rate is wrong and interpolation tears the picture
+apart; and mpv's default `rgba16f` intermediate buffers are unusable in the
+OpenGL ES context Slint provides, which shows up as bands of torn colour
+rather than as an error.
 
 Getting from a release to something playable takes three calls, then usually an
 extractor:
