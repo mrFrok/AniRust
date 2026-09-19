@@ -32,6 +32,17 @@ export struct ReleaseCard {
     poster-loaded: bool,
 }
 
+/// One entry in the download queue.
+export struct DownloadItem {
+    title: string,
+    dubber: string,
+    /// One of: queued, running, done, failed.
+    status: string,
+    progress: float,
+    /// Where it was written, or why it was not.
+    detail: string,
+}
+
 /// One episode in the list.
 export struct EpisodeItem {
     position: int,

@@ -8,7 +8,8 @@ import { ReleasePage } from "pages/release.slint";
 import { HomePage } from "pages/home.slint";
 import { SignInSheet } from "components/sign-in.slint";
 import { NavRail } from "components/nav-rail.slint";
-import { PickerOption, EpisodeItem, ReleaseCard } from "structs.slint";
+import { DownloadsPage } from "pages/downloads.slint";
+import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -60,6 +61,7 @@ export component MainWindow inherits Window {
     callback select-dubber(int);
     callback select-source(int);
     callback play-episode(int);
+    callback download-episode(int);
     callback go-back();
 
     // ---- player ----------------------------------------------------------
@@ -165,6 +167,9 @@ export component MainWindow inherits Window {
     in property <int> genre: 0;
     /// Shown instead of the grid when there is a reason it is empty.
     in property <string> notice;
+    in property <[DownloadItem]> downloads: [];
+
+    callback clear-finished-downloads();
 
     callback search(string);
     callback open-release(int);
@@ -202,7 +207,14 @@ export component MainWindow inherits Window {
             selected(i) => { root.select-destination(i); }
         }
 
-        home := HomePage {
+        // The downloads destination is a queue rather than a grid of
+        // posters, so it is its own page beside the browsing one.
+        if root.destination == 3: DownloadsPage {
+            items: root.downloads;
+            clear-finished => { root.clear-finished-downloads(); }
+        }
+
+        if root.destination != 3: HomePage {
             horizontal-stretch: 1;
 
             results: root.results;
@@ -280,6 +292,7 @@ export component MainWindow inherits Window {
         select-dubber(i) => { root.select-dubber(i); }
         select-source(i) => { root.select-source(i); }
         play-episode(p) => { root.play-episode(p); }
+        download-episode(p) => { root.download-episode(p); }
         go-back => { root.go-back(); }
 
         // The player is declared here and placed by the release screen, so the

@@ -53,14 +53,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ui = MainWindow::new()?;
     populate(&ui);
     populate_home(&ui);
-    ui.set_screen(if state.starts_with("home") || state == "sign-in" {
-        "home".into()
-    } else {
-        "release".into()
-    });
+    ui.set_screen(
+        if state.starts_with("home") || state == "sign-in" || state == "downloads" {
+            "home".into()
+        } else {
+            "release".into()
+        },
+    );
     if state == "home-signed-in" {
         ui.set_signed_in(true);
         ui.set_account_name("mrfrok".into());
+    }
+    if state == "downloads" {
+        ui.set_destination(3);
+        ui.set_downloads(slint::ModelRc::new(slint::VecModel::from(vec![
+            DownloadItem {
+                title: "Демоны старшей школы — 3".into(),
+                dubber: "AniLibria".into(),
+                status: "done".into(),
+                progress: 1.0,
+                detail: "/home/you/Видео/AniRust/Демоны старшей школы - 03 [AniLibria].mp4".into(),
+            },
+            DownloadItem {
+                title: "Демоны старшей школы — 4".into(),
+                dubber: "AniLibria".into(),
+                status: "running".into(),
+                progress: 0.42,
+                detail: "".into(),
+            },
+            DownloadItem {
+                title: "Демоны старшей школы — 5".into(),
+                dubber: "AniLibria".into(),
+                status: "queued".into(),
+                progress: 0.0,
+                detail: "".into(),
+            },
+        ])));
     }
     if state == "failed" {
         ui.set_episode_failed(true);

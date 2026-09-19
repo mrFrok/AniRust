@@ -62,6 +62,7 @@ export component ReleasePage inherits Rectangle {
     callback select-dubber(int);
     callback select-source(int);
     callback play-episode(int);
+    callback download-episode(int);
     callback go-back();
 
     background: MaterialPalette.surface;
@@ -266,6 +267,7 @@ export component ReleasePage inherits Rectangle {
                     select-dubber(i) => { root.select-dubber(i); }
                     select-source(i) => { root.select-source(i); }
                     play-episode(p) => { root.play-episode(p); }
+                download-episode(p) => { root.download-episode(p); }
                 }
 
                 // ---- the release itself ----------------------------------
@@ -362,6 +364,7 @@ export component ReleasePage inherits Rectangle {
                 select-dubber(i) => { root.select-dubber(i); }
                 select-source(i) => { root.select-source(i); }
                 play-episode(p) => { root.play-episode(p); }
+                download-episode(p) => { root.download-episode(p); }
             }
         }
     }

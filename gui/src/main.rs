@@ -10,6 +10,7 @@
 //! Nothing here blocks the event loop. Every lookup and every extractor run
 //! goes through [`tasks`] and comes back on the UI thread.
 
+mod downloads;
 mod home;
 mod progress;
 mod release;
@@ -79,6 +80,7 @@ fn main() -> Result<()> {
             progress::Store::load(),
         ))))),
         home: Rc::new(RefCell::new(HomeState::default())),
+        queue: Rc::new(RefCell::new(downloads::Queue::default())),
         account: Rc::new(RefCell::new(Session::default())),
         playing: Rc::new(RefCell::new(None)),
         settings: Rc::new(Settings::default()),
@@ -126,6 +128,7 @@ struct App {
     bridge: Rc<VideoBridge>,
     release: Rc<RefCell<ReleaseState>>,
     home: Rc<RefCell<HomeState>>,
+    queue: Rc<RefCell<downloads::Queue>>,
     account: Rc<RefCell<Session>>,
     /// The stream currently loaded, so the quality menu and the skip button
     /// act on what is playing rather than on what was resolved first.
@@ -208,6 +211,15 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
                 app.http.clone(),
                 query.to_string(),
             );
+        }
+    });
+
+    window.on_clear_finished_downloads({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            downloads::clear_finished(&window, &app.queue);
         }
     });
 
@@ -320,6 +332,34 @@ fn wire_release(window: &MainWindow, app: &Rc<App>) {
         move |position| {
             let Some(window) = weak.upgrade() else { return };
             play(&window, &app, position);
+        }
+    });
+
+    window.on_download_episode({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |position| {
+            let Some(window) = weak.upgrade() else { return };
+            let job = {
+                let state = app.release.borrow();
+                let Some(episode) = state.episode_at(position) else {
+                    return;
+                };
+                downloads::Job {
+                    release: state
+                        .release
+                        .as_ref()
+                        .map(|r| r.title().to_owned())
+                        .unwrap_or_default(),
+                    position,
+                    dubber: state
+                        .selected_dubber()
+                        .map(|d| d.name.clone())
+                        .unwrap_or_default(),
+                    url: episode.url.clone(),
+                }
+            };
+            downloads::enqueue(&window, &app.queue, &app.registry, &app.http, job);
         }
     });
 

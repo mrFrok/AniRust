@@ -169,6 +169,7 @@ export component EpisodeRow inherits Rectangle {
     in property <EpisodeItem> episode;
     in property <bool> playing: false;
     callback clicked;
+    callback download();
 
     height: 48px;
     border-radius: Shape.medium;
@@ -224,6 +225,30 @@ export component EpisodeRow inherits Rectangle {
             }
         }
 
+        // Appears under the pointer rather than sitting on every row: a
+        // column of identical buttons would compete with the numbers, and
+        // keeping one episode is not the usual thing to want.
+        if touch.has-hover: Rectangle {
+            width: 32px;
+            background: transparent;
+
+            Image {
+                source: @image-url("../icons/download.svg");
+                colorize: download-touch.has-hover
+                    ? MaterialPalette.primary
+                    : MaterialPalette.on-surface-variant;
+                width: 18px;
+                height: 18px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+
+            download-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.download(); }
+            }
+        }
+
         // A tick rather than a label: the list is scanned, not read.
         if root.episode.watched: Text {
             text: "✓";
@@ -259,6 +284,7 @@ export component EpisodePicker inherits VerticalLayout {
     callback select-dubber(int);
     callback select-source(int);
     callback play-episode(int);
+    callback download-episode(int);
 
     spacing: Spacing.medium;
 
@@ -358,6 +384,7 @@ export component EpisodePicker inherits VerticalLayout {
                 episode: item;
                 playing: item.position == root.current;
                 clicked => { root.play-episode(item.position); }
+                download => { root.download-episode(item.position); }
             }
         }
     }

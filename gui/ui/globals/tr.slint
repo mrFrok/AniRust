@@ -128,6 +128,15 @@ export global Tr {
         ? "Войдите, чтобы увидеть свои списки."
         : "Sign in to see your lists.";
     out property <string> nothing-here: lang == "ru" ? "Здесь пока пусто" : "Nothing here yet";
+    out property <string> no-downloads: lang == "ru"
+        ? "Скачанных серий пока нет. Кнопка загрузки есть в списке серий."
+        : "Nothing downloaded yet. The button is in the episode list.";
+    out property <string> clear-finished: lang == "ru" ? "Убрать завершённые" : "Clear finished";
+    out property <string> dl-queued: lang == "ru" ? "В очереди" : "Queued";
+    out property <string> dl-running: lang == "ru" ? "Скачивается" : "Downloading";
+    out property <string> dl-done: lang == "ru" ? "Готово" : "Done";
+    out property <string> dl-failed: lang == "ru" ? "Ошибка" : "Failed";
+    out property <string> download-episode: lang == "ru" ? "Скачать серию" : "Download episode";
 
     // ---- account ---------------------------------------------------------
     out property <string> sign-in: lang == "ru" ? "Войти" : "Sign in";

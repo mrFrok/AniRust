@@ -286,6 +286,7 @@ name = "anirust-gui"
 version = "0.1.0"
 dependencies = [
  "anirust-api",
+ "anirust-download",
  "anirust-extract",
  "anirust-player",
  "anyhow",

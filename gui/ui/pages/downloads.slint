@@ -1,0 +1,157 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// What has been saved, and what is still coming.
+
+import { ScrollView } from "std-widgets.slint";
+import { MaterialPalette } from "../globals/material-palette.slint";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing, Motion } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+import { DownloadItem } from "../structs.slint";
+
+component QueueRow inherits Rectangle {
+    in property <DownloadItem> item;
+
+    height: 72px;
+    border-radius: Shape.medium;
+    background: MaterialPalette.surface-container;
+
+    VerticalLayout {
+        padding: Spacing.medium;
+        spacing: Spacing.tight;
+
+        HorizontalLayout {
+            spacing: Spacing.small;
+
+            Text {
+                text: root.item.title;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.body-large-size;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+
+            Text {
+                text: root.item.status == "queued" ? Tr.dl-queued
+                    : root.item.status == "running" ? Tr.dl-running
+                    : root.item.status == "done" ? Tr.dl-done
+                    : Tr.dl-failed;
+                color: root.item.status == "failed"
+                    ? MaterialPalette.error
+                    : (root.item.status == "done"
+                        ? MaterialPalette.primary
+                        : MaterialPalette.on-surface-variant);
+                font-size: Typography.label-medium-size;
+                vertical-alignment: center;
+            }
+        }
+
+        // The bar doubles as the detail line's background while running, and
+        // steps out of the way once there is nothing left to watch.
+        if root.item.status == "running": Rectangle {
+            height: 4px;
+            border-radius: 2px;
+            background: MaterialPalette.surface-container-highest;
+
+            Rectangle {
+                x: 0;
+                width: parent.width * root.item.progress;
+                height: 100%;
+                border-radius: 2px;
+                background: MaterialPalette.primary;
+                animate width { duration: Motion.standard-duration; easing: Motion.standard; }
+            }
+        }
+
+        if root.item.status != "running": Text {
+            text: root.item.detail != "" ? root.item.detail : root.item.dubber;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.label-small-size;
+            overflow: elide;
+        }
+    }
+}
+
+export component DownloadsPage inherits Rectangle {
+    in property <[DownloadItem]> items: [];
+    callback clear-finished();
+
+    background: MaterialPalette.surface;
+
+    min-width: 0px;
+    min-height: 0px;
+    preferred-width: 0px;
+    preferred-height: 0px;
+    max-width: 100000px;
+    max-height: 100000px;
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
+
+    VerticalLayout {
+        padding: Spacing.base;
+        spacing: Spacing.medium;
+
+        HorizontalLayout {
+            spacing: Spacing.small;
+
+            Text {
+                text: Tr.nav-downloads;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.title-large-size;
+                font-weight: Typography.title-large-weight-em;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+
+            if root.items.length > 0: Rectangle {
+                height: 36px;
+                width: clear-label.preferred-width + Spacing.comfortable;
+                border-radius: Shape.pill;
+                border-width: 1px;
+                border-color: MaterialPalette.outline-variant;
+                background: clear-touch.has-hover
+                    ? MaterialPalette.surface-container-high
+                    : transparent;
+
+                clear-label := Text {
+                    text: Tr.clear-finished;
+                    color: MaterialPalette.on-surface-variant;
+                    font-size: Typography.label-large-size;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: 100%;
+                    height: 100%;
+                }
+
+                clear-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.clear-finished(); }
+                }
+            }
+        }
+
+        if root.items.length == 0: Text {
+            text: Tr.no-downloads;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.body-large-size;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            vertical-stretch: 1;
+        }
+
+        if root.items.length > 0: ScrollView {
+            vertical-stretch: 1;
+            content-height: queue.preferred-height;
+
+            queue := VerticalLayout {
+                spacing: Spacing.small;
+                alignment: start;
+
+                for item in root.items: QueueRow {
+                    item: item;
+                }
+            }
+        }
+    }
+}
