@@ -68,51 +68,67 @@ fn main() -> Result<()> {
         .context("attaching video to the window")?;
 
     let http = reqwest_client();
-    let client = Rc::new(Client::new().context("creating the API client")?);
-    let registry = Rc::new(Registry::new(http.clone()));
-    let state = Rc::new(RefCell::new(ReleaseState::new(Rc::new(RefCell::new(
-        progress::Store::load(),
-    )))));
-    let playing = Rc::new(RefCell::new(None::<ResolvedStream>));
-    let settings = Rc::new(Settings::default());
+    let app = Rc::new(App {
+        client: Rc::new(Client::new().context("creating the API client")?),
+        registry: Rc::new(Registry::new(http.clone())),
+        http,
+        bridge,
+        release: Rc::new(RefCell::new(ReleaseState::new(Rc::new(RefCell::new(
+            progress::Store::load(),
+        ))))),
+        home: Rc::new(RefCell::new(HomeState::default())),
+        account: Rc::new(RefCell::new(Session::default())),
+        playing: Rc::new(RefCell::new(None)),
+        settings: Rc::new(Settings::default()),
+    });
 
-    let home = Rc::new(RefCell::new(HomeState::default()));
-    let account = Rc::new(RefCell::new(Session::default()));
-
-    wire_home(&window, &home, &state, &client, &http);
-    wire_account(&window, &account, &client);
-    wire_release(
-        &window, &state, &home, &client, &registry, &bridge, &playing, &http,
-    );
-    let advance = wire_player(
-        &window, &state, &client, &registry, &bridge, &playing, &settings,
-    );
-    drive_status(
-        &window,
-        bridge.player(),
-        &settings,
-        &bridge,
-        &state,
-        &client,
-        advance,
-    );
+    wire_home(&window, &app);
+    wire_account(&window, &app);
+    wire_release(&window, &app);
+    let advance = wire_player(&window, &app);
+    drive_status(&window, &app, advance);
 
     // Before anything is fetched: a restored session changes what the server
     // answers with, down to which episodes are marked watched.
-    session::restore(&window, &account, &client);
+    session::restore(&window, &app.account, &app.client);
 
     // A release id on the command line opens straight into it; otherwise the
     // client starts where a client should, on something to choose from.
     match opening {
         Some(release_id) => {
             window.set_screen("release".into());
-            release::load(&window, &state, client, http, release_id);
+            release::load(
+                &window,
+                &app.release,
+                Rc::clone(&app.client),
+                app.http.clone(),
+                release_id,
+            );
         }
-        None => home::open(&window, &home, client, http),
+        None => home::open(&window, &app.home, Rc::clone(&app.client), app.http.clone()),
     }
 
     window.run().context("running the event loop")?;
     Ok(())
+}
+
+/// Everything the screens share.
+///
+/// Held behind one `Rc` because every callback wants some subset of it, and
+/// threading eight handles through each one was turning every signature into a
+/// list of its dependencies rather than a description of what it does.
+struct App {
+    client: Rc<Client>,
+    http: reqwest::Client,
+    registry: Rc<Registry>,
+    bridge: Rc<VideoBridge>,
+    release: Rc<RefCell<ReleaseState>>,
+    home: Rc<RefCell<HomeState>>,
+    account: Rc<RefCell<Session>>,
+    /// The stream currently loaded, so the quality menu and the skip button
+    /// act on what is playing rather than on what was resolved first.
+    playing: Playing,
+    settings: Rc<Settings>,
 }
 
 /// Bring-up knobs, so a picture problem can be bisected without a rebuild.
@@ -148,27 +164,27 @@ type Playing = Rc<RefCell<Option<ResolvedStream>>>;
 // Account
 // ---------------------------------------------------------------------------
 
-fn wire_account(window: &MainWindow, account: &Rc<RefCell<Session>>, client: &Rc<Client>) {
+fn wire_account(window: &MainWindow, app: &Rc<App>) {
     let weak = window.as_weak();
-    let signing_in = Rc::clone(account);
-    let api = Rc::clone(client);
-    window.on_submit_sign_in(move || {
-        let Some(window) = weak.upgrade() else { return };
-        session::sign_in(
-            &window,
-            &signing_in,
-            Rc::clone(&api),
-            window.get_login().trim().to_string(),
-            window.get_password().to_string(),
-        );
+    let app = Rc::clone(app);
+    window.on_submit_sign_in({
+        let app = Rc::clone(&app);
+        let weak = weak.clone();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            session::sign_in(
+                &window,
+                &app.account,
+                Rc::clone(&app.client),
+                window.get_login().trim().to_string(),
+                window.get_password().to_string(),
+            );
+        }
     });
 
-    let weak = window.as_weak();
-    let signing_out = Rc::clone(account);
-    let api = Rc::clone(client);
     window.on_sign_out(move || {
         let Some(window) = weak.upgrade() else { return };
-        session::sign_out(&window, &signing_out, &api);
+        session::sign_out(&window, &app.account, &app.client);
     });
 }
 
@@ -176,36 +192,28 @@ fn wire_account(window: &MainWindow, account: &Rc<RefCell<Session>>, client: &Rc
 // Browsing
 // ---------------------------------------------------------------------------
 
-fn wire_home(
-    window: &MainWindow,
-    home: &Rc<RefCell<HomeState>>,
-    state: &Rc<RefCell<ReleaseState>>,
-    client: &Rc<Client>,
-    http: &reqwest::Client,
-) {
+fn wire_home(window: &MainWindow, app: &Rc<App>) {
     let weak = window.as_weak();
-    let searching = Rc::clone(home);
-    let api = Rc::clone(client);
-    let net = http.clone();
-    window.on_search(move |query| {
-        let Some(window) = weak.upgrade() else { return };
-        home::search(
-            &window,
-            &searching,
-            Rc::clone(&api),
-            net.clone(),
-            query.to_string(),
-        );
+    window.on_search({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |query| {
+            let Some(window) = weak.upgrade() else { return };
+            home::search(
+                &window,
+                &app.home,
+                Rc::clone(&app.client),
+                app.http.clone(),
+                query.to_string(),
+            );
+        }
     });
 
-    let weak = window.as_weak();
-    let browsing = Rc::clone(home);
-    let opening = Rc::clone(state);
-    let api = Rc::clone(client);
-    let net = http.clone();
+    let app = Rc::clone(app);
     window.on_open_release(move |index| {
         let Some(window) = weak.upgrade() else { return };
-        let Some(release_id) = browsing
+        let Some(release_id) = app
+            .home
             .borrow()
             .release_at(index.max(0) as usize)
             .map(|release| release.id)
@@ -214,7 +222,13 @@ fn wire_home(
         };
 
         window.set_screen("release".into());
-        release::load(&window, &opening, Rc::clone(&api), net.clone(), release_id);
+        release::load(
+            &window,
+            &app.release,
+            Rc::clone(&app.client),
+            app.http.clone(),
+            release_id,
+        );
     });
 }
 
@@ -222,57 +236,55 @@ fn wire_home(
 // Release screen
 // ---------------------------------------------------------------------------
 
-fn wire_release(
-    window: &MainWindow,
-    state: &Rc<RefCell<ReleaseState>>,
-    home: &Rc<RefCell<HomeState>>,
-    client: &Rc<Client>,
-    registry: &Rc<Registry>,
-    bridge: &Rc<VideoBridge>,
-    playing: &Playing,
-    http: &reqwest::Client,
-) {
+fn wire_release(window: &MainWindow, app: &Rc<App>) {
     let weak = window.as_weak();
-    let chosen = Rc::clone(state);
-    let api = Rc::clone(client);
-    window.on_select_dubber(move |index| {
-        let Some(window) = weak.upgrade() else { return };
-        release::select_dubber(&window, &chosen, Rc::clone(&api), index.max(0) as usize);
+
+    window.on_select_dubber({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            release::select_dubber(
+                &window,
+                &app.release,
+                Rc::clone(&app.client),
+                index.max(0) as usize,
+            );
+        }
     });
 
-    let weak = window.as_weak();
-    let chosen = Rc::clone(state);
-    let api = Rc::clone(client);
-    window.on_select_source(move |index| {
-        let Some(window) = weak.upgrade() else { return };
-        release::select_source(&window, &chosen, Rc::clone(&api), index.max(0) as usize);
+    window.on_select_source({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            release::select_source(
+                &window,
+                &app.release,
+                Rc::clone(&app.client),
+                index.max(0) as usize,
+            );
+        }
     });
 
-    let weak = window.as_weak();
-    let chosen = Rc::clone(state);
-    let resolver = Rc::clone(registry);
-    let bridge = Rc::clone(bridge);
-    let playing = Rc::clone(playing);
-    let api = Rc::clone(client);
-    window.on_play_episode(move |position| {
-        let Some(window) = weak.upgrade() else { return };
-        play(
-            &window, &chosen, &api, &resolver, &bridge, &playing, position,
-        );
+    window.on_play_episode({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |position| {
+            let Some(window) = weak.upgrade() else { return };
+            play(&window, &app, position);
+        }
     });
 
-    let weak = window.as_weak();
-    let browsing = Rc::clone(home);
-    let api = Rc::clone(client);
-    let net = http.clone();
+    let app = Rc::clone(app);
     window.on_go_back(move || {
         let Some(window) = weak.upgrade() else { return };
         window.set_screen("home".into());
         // Opened straight into a release from the command line, the browsing
         // screen behind it was never filled. Going back to an empty grid would
         // be a dead end.
-        if browsing.borrow().releases.is_empty() {
-            home::open(&window, &browsing, Rc::clone(&api), net.clone());
+        if app.home.borrow().releases.is_empty() {
+            home::open(&window, &app.home, Rc::clone(&app.client), app.http.clone());
         }
     });
 }
@@ -283,17 +295,9 @@ fn wire_release(
 /// One host failing is routine rather than exceptional — Kodik answers `500`
 /// for stretches at a time and carries most of the catalogue — so giving up on
 /// the first failure would present a temporary outage as a broken client.
-fn play(
-    window: &MainWindow,
-    state: &Rc<RefCell<ReleaseState>>,
-    client: &Rc<Client>,
-    registry: &Rc<Registry>,
-    bridge: &Rc<VideoBridge>,
-    playing: &Playing,
-    position: i32,
-) {
+fn play(window: &MainWindow, app: &Rc<App>, position: i32) {
     let (attempt, dubber, resume, index) = {
-        let state = state.borrow();
+        let state = app.release.borrow();
         let Some(episode) = state.episode_at(position) else {
             tracing::warn!(position, "no such episode in this source");
             return;
@@ -316,7 +320,7 @@ fn play(
         Some(name) => format!("{position} - {name}").into(),
         None => position.to_string().into(),
     });
-    show_neighbours(window, state, position);
+    show_neighbours(window, &app.release, position);
 
     // The picture area is handed over before the stream resolves: resolution
     // goes through a CDN that can take tens of seconds just to accept a
@@ -333,13 +337,12 @@ fn play(
 
     // "Continue watching" on every other client the account is signed in to is
     // built from this.
-    record_in_history(state, client, position);
+    record_in_history(&app.release, &app.client, position);
 
     let weak = window.as_weak();
-    let api = (**client).clone();
-    let resolver = (**registry).clone();
-    let bridge = Rc::clone(bridge);
-    let playing = Rc::clone(playing);
+    let api = (*app.client).clone();
+    let resolver = (*app.registry).clone();
+    let app = Rc::clone(app);
 
     tasks::spawn(
         async move { attempt.resolve(&api, &resolver).await },
@@ -354,7 +357,7 @@ fn play(
             }
 
             match resolved {
-                Ok(stream) => start(&window, &bridge, &playing, stream, resume),
+                Ok(stream) => start(&window, &app.bridge, &app.playing, stream, resume),
                 Err(error) => {
                     tracing::error!(%error, position, "could not resolve the episode");
                     // Nothing to show, so the picture area goes back to the
@@ -613,16 +616,11 @@ const PRESETS: [UpscalePreset; 4] = [
 /// them: automatic, hardware, software.
 const DECODERS: [&str; 3] = [anirust_player::DEFAULT_HWDEC, "nvdec,vaapi", "no"];
 
-fn wire_player(
-    window: &MainWindow,
-    state: &Rc<RefCell<ReleaseState>>,
-    client: &Rc<Client>,
-    registry: &Rc<Registry>,
-    bridge: &Rc<VideoBridge>,
-    playing: &Playing,
-    settings: &Rc<Settings>,
-) -> Rc<dyn Fn()> {
-    let player = bridge.player();
+fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
+    let player = app.bridge.player();
+    let settings = &app.settings;
+    let playing = &app.playing;
+    let bridge = &app.bridge;
 
     window.on_toggle_pause(move || {
         if let Err(error) = player.toggle_pause() {
@@ -658,7 +656,7 @@ fn wire_player(
         }
     });
 
-    let advance = wire_stepping(window, state, client, registry, bridge, playing);
+    let advance = wire_stepping(window, app);
 
     let chosen = Rc::clone(settings);
     window.on_set_speed(move |speed| {
@@ -763,27 +761,16 @@ fn wire_player(
 ///
 /// Both do the same thing with a different neighbour, so they are built from
 /// one closure rather than written twice.
-fn wire_stepping(
-    window: &MainWindow,
-    state: &Rc<RefCell<ReleaseState>>,
-    client: &Rc<Client>,
-    registry: &Rc<Registry>,
-    bridge: &Rc<VideoBridge>,
-    playing: &Playing,
-) -> Rc<dyn Fn()> {
+fn wire_stepping(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     let stepper = |forward: bool| {
         let weak = window.as_weak();
-        let state = Rc::clone(state);
-        let client = Rc::clone(client);
-        let registry = Rc::clone(registry);
-        let bridge = Rc::clone(bridge);
-        let playing = Rc::clone(playing);
+        let app = Rc::clone(app);
 
         move || {
             let Some(window) = weak.upgrade() else { return };
             let current = window.get_current_episode();
             let neighbour = {
-                let state = state.borrow();
+                let state = app.release.borrow();
                 if forward {
                     state.next_after(current)
                 } else {
@@ -792,9 +779,7 @@ fn wire_stepping(
             };
 
             match neighbour {
-                Some(position) => play(
-                    &window, &state, &client, &registry, &bridge, &playing, position,
-                ),
+                Some(position) => play(&window, &app, position),
                 None => tracing::debug!(current, forward, "no episode that way"),
             }
         }
@@ -815,20 +800,13 @@ fn wire_stepping(
 /// Fast enough that a clock and a progress bar look alive, slow enough that it
 /// costs nothing next to rendering. The video itself is not driven from here —
 /// that runs at display rate in the video bridge.
-fn drive_status(
-    window: &MainWindow,
-    player: &'static Player,
-    settings: &Rc<Settings>,
-    bridge: &Rc<VideoBridge>,
-    state: &Rc<RefCell<ReleaseState>>,
-    client: &Rc<Client>,
-    advance: Rc<dyn Fn()>,
-) {
+fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
+    let player = app.bridge.player();
     let weak = window.as_weak();
-    let settings = Rc::clone(settings);
-    let bridge = Rc::clone(bridge);
-    let state = Rc::clone(state);
-    let client = Rc::clone(client);
+    let settings = Rc::clone(&app.settings);
+    let bridge = Rc::clone(&app.bridge);
+    let state = Rc::clone(&app.release);
+    let client = Rc::clone(&app.client);
     // Edge-triggered: mpv stays in `Ended` until something else is loaded, and
     // an episode should only be followed by the next one once.
     let was_ended = Cell::new(false);
