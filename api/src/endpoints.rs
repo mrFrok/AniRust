@@ -398,10 +398,16 @@ impl Client {
         }
     }
 
-    /// The signed-in user's own profile.
-    pub async fn my_profile(&self) -> Result<Profile> {
-        self.require_token()?;
-        let payload: ProfilePayload = self.send(self.get("profile/info").with_token()).await?;
+    /// One user's profile.
+    ///
+    /// `GET profile/{id}`. This is also how the client learns its own name:
+    /// `profile/info` sounds like the endpoint for that and is not — it answers
+    /// with counters and privilege flags and no profile at all, so asking it
+    /// yields a successful response with every field empty.
+    pub async fn profile(&self, id: i64) -> Result<Profile> {
+        let payload: ProfilePayload = self
+            .send(self.get(format!("profile/{id}")).with_token())
+            .await?;
         Ok(payload.profile)
     }
 

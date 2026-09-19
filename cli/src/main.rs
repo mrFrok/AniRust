@@ -96,8 +96,11 @@ enum Command {
         #[arg(long, env = "ANIRUST_PASSWORD", hide_env_values = true)]
         password: Option<String>,
     },
-    /// The signed-in user's profile.
-    Me,
+    /// A profile. Defaults to whoever `ANIRUST_PROFILE` names.
+    Me {
+        #[arg(env = "ANIRUST_PROFILE")]
+        id: i64,
+    },
     /// One of the signed-in user's lists.
     List {
         #[arg(value_enum)]
@@ -439,8 +442,8 @@ async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
             }
         }
 
-        Command::Me => {
-            let p = client.my_profile().await?;
+        Command::Me { id } => {
+            let p = client.profile(*id).await?;
             if cli.json {
                 print_json(&p)?;
             } else {

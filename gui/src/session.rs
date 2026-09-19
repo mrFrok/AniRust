@@ -31,6 +31,7 @@ const ENTRY: &str = "anixart-token";
 #[derive(Default)]
 pub struct Session {
     pub login: String,
+    pub id: i64,
     pub authenticated: bool,
 }
 
@@ -40,10 +41,16 @@ pub struct Session {
 /// request that uses it, and asking up front would delay the screen for a
 /// question nothing is waiting on.
 pub fn restore(window: &MainWindow, session: &Rc<RefCell<Session>>, client: &Client) {
-    let Some(token) = stored_token() else { return };
+    let Some((id, token)) = stored_session() else {
+        return;
+    };
 
     client.set_token(Some(token));
-    session.borrow_mut().authenticated = true;
+    {
+        let mut session = session.borrow_mut();
+        session.authenticated = true;
+        session.id = id;
+    }
     window.set_signed_in(true);
 
     // The name is worth a request: the header says who is signed in, and a
@@ -53,7 +60,7 @@ pub fn restore(window: &MainWindow, session: &Rc<RefCell<Session>>, client: &Cli
     let api = client.clone();
     let mine = client.clone();
 
-    tasks::spawn(async move { mine.my_profile().await }, move |profile| {
+    tasks::spawn(async move { mine.profile(id).await }, move |profile| {
         let Some(window) = weak.upgrade() else { return };
         match profile {
             Ok(profile) => {
@@ -102,7 +109,7 @@ pub fn sign_in(
             match result {
                 Ok((profile, token)) => {
                     client.set_token(Some(token.token.clone()));
-                    remember(&token.token);
+                    remember(token.id, &token.token);
 
                     let name = if profile.login.is_empty() {
                         login
@@ -116,6 +123,7 @@ pub fn sign_in(
 
                     let mut session = session.borrow_mut();
                     session.login = name;
+                    session.id = token.id;
                     session.authenticated = true;
                 }
                 Err(error) => {
@@ -163,21 +171,28 @@ fn entry() -> Option<keyring::Entry> {
     }
 }
 
-fn stored_token() -> Option<String> {
-    match entry()?.get_password() {
-        Ok(token) if !token.is_empty() => Some(token),
-        Ok(_) => None,
-        Err(keyring::Error::NoEntry) => None,
+/// The saved account id and token.
+///
+/// Stored as one secret with the id in front of it: the account's own name
+/// comes from `profile/{id}`, so a token on its own would restore a session
+/// that could not say whose it is.
+fn stored_session() -> Option<(i64, String)> {
+    let secret = match entry()?.get_password() {
+        Ok(secret) if !secret.is_empty() => secret,
+        Ok(_) | Err(keyring::Error::NoEntry) => return None,
         Err(error) => {
             tracing::info!(%error, "could not read the saved session");
-            None
+            return None;
         }
-    }
+    };
+
+    let (id, token) = secret.split_once(':')?;
+    Some((id.parse().ok()?, token.to_owned()))
 }
 
-fn remember(token: &str) {
+fn remember(id: i64, token: &str) {
     let Some(entry) = entry() else { return };
-    if let Err(error) = entry.set_password(token) {
+    if let Err(error) = entry.set_password(&format!("{id}:{token}")) {
         tracing::warn!(%error, "could not save the session; it ends with this run");
     }
 }
