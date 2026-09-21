@@ -16,14 +16,20 @@
 //! cargo run -p anirust-gui --example screenshot -- out.png [width height] [state]
 //! ```
 //!
-//! `state` is `home`, `release` (default), `playing`, or `theatre`. Narrow is
-//! a width, not a state: pass one below 900.
+//! `state` is `home`, `home-signed-in`, `release` (default), `playing`,
+//! `theatre`, `downloads`, `sign-in`, `failed`, `saved`, `loading`,
+//! `refreshing`, `empty` or `nothing`. Narrow is a width, not a state: pass
+//! one below 900.
+//!
+//! `home-hover-account` parks the pointer on the account button, which is the
+//! only way to see what it offers: the action it performs is in a tooltip,
+//! and a tooltip is drawn for a pointer that is not there in a screenshot.
 
 use std::rc::Rc;
 
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
-use slint::platform::{Platform, WindowAdapter};
-use slint::{PhysicalSize, PlatformError};
+use slint::platform::{Platform, WindowAdapter, WindowEvent};
+use slint::{LogicalPosition, PhysicalSize, PlatformError};
 
 slint::include_modules!();
 
@@ -54,13 +60,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     populate(&ui);
     populate_home(&ui);
     ui.set_screen(
-        if state.starts_with("home") || state == "sign-in" || state == "downloads" {
+        if state.starts_with("home")
+            || state == "sign-in"
+            || state == "downloads"
+            || state == "saved"
+            || state == "loading"
+            || state == "empty"
+            || state == "refreshing"
+        {
             "home".into()
         } else {
             "release".into()
         },
     );
-    if state == "home-signed-in" {
+    if state.starts_with("home-signed-in") || state == "home-hover-account" {
         ui.set_signed_in(true);
         ui.set_account_name("mrfrok".into());
     }
@@ -93,6 +106,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if state == "failed" {
         ui.set_episode_failed(true);
     }
+    // Nothing to start: no episodes behind the voice-over that was chosen.
+    if state == "nothing" {
+        ui.set_episodes(slint::ModelRc::new(
+            slint::VecModel::<EpisodeItem>::default(),
+        ));
+        ui.set_resume_episode(0);
+    }
+    // The destination with the most tabs, which is where a bar that divides
+    // its width between them is worth looking at.
+    if state == "saved" {
+        ui.set_destination(2);
+        ui.set_tab(5);
+    }
+    // A tab switched: the last tab's cards stay up while the new ones are
+    // fetched, which is the only case where loading is said over a full grid.
+    if state == "refreshing" {
+        ui.set_results_loading(true);
+    }
+    // Waiting for the first page of results, and having asked for something
+    // there is none of: the two empty states of the browsing screen.
+    if state == "loading" || state == "empty" {
+        ui.set_results(slint::ModelRc::new(
+            slint::VecModel::<ReleaseCard>::default(),
+        ));
+        ui.set_results_loading(state == "loading");
+    }
+    if state == "empty" {
+        ui.set_searching(true);
+    }
     if state == "sign-in" {
         ui.set_show_sign_in(true);
         ui.set_login("mrfrok".into());
@@ -116,6 +158,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     draw(&window);
     if state == "playing" || state == "theatre" {
         start_playing(&ui, state == "theatre");
+    }
+    // A pointer put where the account button is, so the tooltip that says what
+    // clicking it does is drawn. Measured from the right edge, which is where
+    // the button sits whatever the window is.
+    if state == "home-hover-account" {
+        window.dispatch_event(WindowEvent::PointerMoved {
+            position: LogicalPosition::new(width as f32 - 62.0, 36.0),
+        });
     }
     draw(&window);
     draw(&window);
