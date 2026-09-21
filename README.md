@@ -30,8 +30,9 @@ Working:
 - **Continuing** — where an episode was left off is remembered, the list opens
   there, and an episode that ends is followed by the next one.
 - **An account** — signing in syncs watched episodes and history; the token
-  goes to the platform's secret store. The profile screen shows what is in
-  each list and opens it when the count is clicked.
+  goes to the platform's secret store. The profile screen shows the account
+  itself: what is in each list as a ring, what it has had to say, and what was
+  watched lately — each of them a way into the list or the release behind it.
 - **Appearance** — light, dark, AMOLED, or whatever the desktop is set to,
   chosen on the profile screen and kept in `~/.config/anirust/settings.json`.
 
@@ -66,8 +67,8 @@ cargo run -p anirust-gui --example screenshot -- out.png 1440 900 release
 The last argument is one of `home`, `home-signed-in`, `home-hover-account`,
 `release`, `playing`, `theatre`, `downloads`, `sign-in`, `failed`, `saved`,
 `loading`, `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`,
-`profile-light`, `light` or `amoled`; a width below 900 gives the stacked
-layout. The states past the obvious ones are the ones worth having:
+`profile-light`, `profile-en`, `home-downloading`, `light` or `amoled`; a
+width below 900 gives the stacked layout. The states past the obvious ones are the ones worth having:
 each is a screen that is easy to leave untested and easy to get wrong —
 nothing loaded yet, nothing found, nothing to play.
 
