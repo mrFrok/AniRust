@@ -31,6 +31,8 @@ Working:
   there, and an episode that ends is followed by the next one.
 - **An account** — signing in syncs watched episodes and history; the token
   goes to the platform's secret store.
+- **Appearance** — light, dark, AMOLED, or whatever the desktop is set to,
+  chosen on the profile screen and kept in `~/.config/anirust/settings.json`.
 
 Not covered: SovetRomantica, whose host is unreachable from the network this
 was developed on, so its protocol could not be observed — and guessing it would
@@ -38,8 +40,7 @@ mean reading someone else's implementation. Allvideo, StudioMir, Myvi, VKVideo,
 OK, RuTube and MailRu are listed by the official client but did not appear in
 the sampled catalogue.
 
-Still to come: a profile screen — the rail's fifth destination is still a
-dead end — and packaged builds.
+Still to come: packaged builds.
 
 ## Building
 
@@ -63,10 +64,15 @@ cargo run -p anirust-gui --example screenshot -- out.png 1440 900 release
 
 The last argument is one of `home`, `home-signed-in`, `home-hover-account`,
 `release`, `playing`, `theatre`, `downloads`, `sign-in`, `failed`, `saved`,
-`loading`, `refreshing`, `empty` or `nothing`; a width below 900 gives the
-stacked layout. The states past the obvious ones are the ones worth having:
+`loading`, `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`,
+`light` or `amoled`; a width below 900 gives the stacked layout. The states past the obvious ones are the ones worth having:
 each is a screen that is easy to leave untested and easy to get wrong —
 nothing loaded yet, nothing found, nothing to play.
+
+One difference from the running application is worth knowing before a bug is
+chased that is not there: the software renderer clips to a rectangle and
+ignores `border-radius`, so anything inside a rounded box with `clip: true`
+has square corners in a PNG and rounded ones on screen.
 
 ## The probe
 
