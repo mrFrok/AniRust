@@ -41,7 +41,7 @@ slint::include_modules!();
 
 /// Where the profile sits on the rail. Named because two places have to agree
 /// about it: the rail's own order, and what arriving there has to fetch.
-const PROFILE_DESTINATION: i32 = 4;
+const PROFILE_DESTINATION: i32 = 3;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()

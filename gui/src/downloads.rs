@@ -254,6 +254,15 @@ pub fn show(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
         .collect();
 
     window.set_downloads(slint::ModelRc::new(VecModel::from(items)));
+
+    // What the badge on the toolbar counts: a queue nobody can see from the
+    // screen they are on still has to be able to say it is working.
+    let working = queue
+        .entries
+        .iter()
+        .filter(|entry| matches!(entry.status, Status::Queued | Status::Running))
+        .count();
+    window.set_downloads_working(i32::try_from(working).unwrap_or(i32::MAX));
 }
 
 /// Forgets finished and failed jobs, leaving what is still to come.

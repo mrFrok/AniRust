@@ -410,6 +410,10 @@ pub struct Profile {
     pub id: i64,
     #[serde(deserialize_with = "nullable")]
     pub login: String,
+    /// Observed as a full URL, unlike [`Release::poster`], which is a storage
+    /// id. Only ever seen populated for accounts that have set one, so a
+    /// client that finds something else here should say so rather than
+    /// quietly show nothing — see the GUI's own note where it is fetched.
     #[serde(deserialize_with = "nullable")]
     pub avatar: String,
     #[serde(deserialize_with = "nullable")]

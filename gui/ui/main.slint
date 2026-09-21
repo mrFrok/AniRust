@@ -172,8 +172,14 @@ export component MainWindow inherits Window {
     in property <bool> results-loading: false;
     in-out property <string> query;
 
-    /// Which destination the rail has open: 0 home, 1 browse, 2 saved,
-    /// 3 downloads, 4 profile.
+    /// Which destination is open: 0 home, 1 browse, 2 saved, 3 profile,
+    /// 4 downloads.
+    ///
+    /// The rail carries the first four, which are the four the client this one
+    /// follows has. The queue is the fifth and is reached from the toolbar,
+    /// because it is this client's own addition rather than one of theirs —
+    /// and because it is somewhere you go when something is downloading, not
+    /// somewhere you browse.
     ///
     /// Pushed onto the rail rather than bound to it: the rail writes its own
     /// `current-index` on a click, and a property written to keeps no binding.
@@ -187,6 +193,9 @@ export component MainWindow inherits Window {
     /// Shown instead of the grid when there is a reason it is empty.
     in property <string> notice;
     in property <[DownloadItem]> downloads: [];
+    /// How many of them are still queued or running, which is what the
+    /// toolbar's badge counts.
+    in property <int> downloads-working: 0;
 
     callback clear-finished-downloads();
 
@@ -237,7 +246,6 @@ export component MainWindow inherits Window {
                 { icon: @image-url("icons/home.svg"), text: Tr.nav-home },
                 { icon: @image-url("icons/compass.svg"), text: Tr.nav-catalogue },
                 { icon: @image-url("icons/bookmark.svg"), text: Tr.nav-bookmarks },
-                { icon: @image-url("icons/download.svg"), text: Tr.nav-downloads },
                 { icon: @image-url("icons/person.svg"), text: Tr.nav-profile },
             ];
 
@@ -248,12 +256,12 @@ export component MainWindow inherits Window {
         // Two destinations are not a grid of posters, so they are their own
         // pages beside the browsing one: the download queue, and the screen
         // about the application rather than about what to watch.
-        if root.destination == 3: DownloadsPage {
+        if root.destination == 4: DownloadsPage {
             items: root.downloads;
             clear-finished => { root.clear-finished-downloads(); }
         }
 
-        if root.destination == 4: ProfilePage {
+        if root.destination == 3: ProfilePage {
             signed-in: root.signed-in;
             account: root.account;
             avatar: root.avatar;
@@ -268,7 +276,7 @@ export component MainWindow inherits Window {
             open-recent(i) => { root.open-recent(i); }
         }
 
-        if root.destination != 3 && root.destination != 4: HomePage {
+        if root.destination < 3: HomePage {
             horizontal-stretch: 1;
 
             results: root.results;
@@ -306,8 +314,10 @@ export component MainWindow inherits Window {
             genres: root.genres;
             genre: root.genre;
             notice: root.notice;
+            downloads-working: root.downloads-working;
 
             search(q) => { root.search(q); }
+            open-downloads => { root.select-destination(4); }
             open-release(i) => { root.open-release(i); }
             select-tab(i) => { root.select-tab(i); }
             select-genre(i) => { root.select-genre(i); }

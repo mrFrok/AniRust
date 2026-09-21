@@ -73,12 +73,16 @@ pub enum Destination {
 }
 
 impl Destination {
+    /// The order the rail puts them in, and the order Rust and the interface
+    /// both count by. Downloads is last and off the end of the rail: the
+    /// client this one follows has no such destination, and a queue is
+    /// reached from the toolbar instead.
     const ALL: [Self; 5] = [
         Self::Home,
         Self::Browse,
         Self::Saved,
-        Self::Downloads,
         Self::Profile,
+        Self::Downloads,
     ];
 
     fn at(index: usize) -> Self {

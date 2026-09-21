@@ -24,7 +24,7 @@
 //! `state` is `home`, `home-signed-in`, `release` (default), `playing`,
 //! `theatre`, `downloads`, `sign-in`, `failed`, `saved`, `loading`,
 //! `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`,
-//! `profile-light`, `light` or `amoled`. Narrow is a width, not a state: pass
+//! `profile-light`, `home-downloading`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
 //! `home-hover-account` parks the pointer on the account button, which is the
@@ -87,7 +87,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_account_name("mrfrok".into());
     }
     if state == "downloads" {
-        ui.set_destination(3);
+        ui.set_destination(4);
+        ui.set_downloads_working(2);
         ui.set_downloads(slint::ModelRc::new(slint::VecModel::from(vec![
             DownloadItem {
                 title: "Демоны старшей школы — 3".into(),
@@ -128,6 +129,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_destination(2);
         ui.set_tab(5);
     }
+    // Something in the queue, so the badge on the toolbar has a number in it.
+    if state == "home-downloading" {
+        ui.set_downloads_working(3);
+    }
     // Both languages count differently, and the profile screen is where the
     // counting words are: three forms in Russian, two in English.
     if state.ends_with("-en") {
@@ -143,7 +148,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // The screen about the application rather than about what to watch.
     if state.starts_with("profile") {
-        ui.set_destination(4);
+        ui.set_destination(3);
         // `profile` alone is the screen with nobody on it; every other spelling
         // of it has an account behind it.
         ui.set_signed_in(state != "profile");
@@ -151,7 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_appearance_choice(3);
         ui.set_account(Account {
             login: "mrfrok".into(),
-            status: "смотрю по одной серии в день, честно".into(),
+            status: "статус, который аккаунт написал о себе".into(),
             registered: "2019-05-12".into(),
             verified: true,
             watching: 12,
@@ -164,6 +169,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             collections: 3,
             friends: 26,
         });
+        ui.set_avatar(stand_in_avatar());
+        ui.set_avatar_loaded(true);
         ui.set_recent(slint::ModelRc::new(slint::VecModel::from(vec![
             recent("Реинкарнация безработного 3", 13, 64),
             recent("Re:Zero. Жизнь с нуля 4", 17, 2_890),
@@ -378,6 +385,29 @@ fn anirust_gui_genres() -> [&'static str; 8] {
         "школа",
         "исэкай",
     ]
+}
+
+/// A picture standing in for the account's own.
+///
+/// Drawn here rather than fetched: there is no network in a screenshot, and a
+/// screen that always shows the placeholder says nothing about how it looks
+/// with a picture in it. It is deliberately a flat gradient — nobody should
+/// mistake it for proof that the real one loads.
+fn stand_in_avatar() -> slint::Image {
+    const SIZE: u32 = 128;
+    let mut buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(SIZE, SIZE);
+    let width = buffer.width();
+    for (index, pixel) in buffer.make_mut_slice().iter_mut().enumerate() {
+        let x = (index as u32 % width) as f32 / SIZE as f32;
+        let y = (index as u32 / width) as f32 / SIZE as f32;
+        *pixel = slint::Rgba8Pixel {
+            r: (120.0 + 90.0 * x) as u8,
+            g: (70.0 + 40.0 * y) as u8,
+            b: (190.0 + 50.0 * (1.0 - x)) as u8,
+            a: 255,
+        };
+    }
+    slint::Image::from_rgba8(buffer)
 }
 
 fn recent(title: &str, episode: i32, minutes_ago: i32) -> HistoryItem {

@@ -274,8 +274,17 @@ fn show_profile(window: &MainWindow, profile: &Profile, http: reqwest::Client) {
         friends: count(profile.friend_count),
     });
 
+    // The account's own picture. The field is a URL where it has been seen at
+    // all; if it ever turns out to be a storage id, as the poster field is,
+    // this is the line that says so — building a URL from a guess at the host
+    // would be inventing the protocol instead of reading it.
     window.set_avatar_loaded(false);
-    tasks::fetch_into(window, http, profile.avatar.clone(), |window, image| {
+    let avatar = profile.avatar.clone();
+    if !avatar.is_empty() && !avatar.starts_with("http") {
+        tracing::warn!(%avatar, "the avatar is not a URL; the picture cannot be fetched");
+        return;
+    }
+    tasks::fetch_into(window, http, avatar, |window, image| {
         window.set_avatar(image);
         window.set_avatar_loaded(true);
     });

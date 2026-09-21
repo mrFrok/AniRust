@@ -12,7 +12,7 @@
 // width it is being given to work it out.
 
 import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, SecondaryTabBar, FilterChip, NavigationItem, OutlineButton, CircularProgressIndicator } from "@material";
+import { MaterialPalette, SecondaryTabBar, FilterChip, NavigationItem, OutlineButton, CircularProgressIndicator, IconButton, Badge } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -56,7 +56,11 @@ export component HomePage inherits Rectangle {
     in property <string> notice;
     in property <bool> signed-in: false;
     in property <string> account-name;
+    /// How many downloads are still going, for the badge on the button that
+    /// opens the queue. Zero hides it: a badge that always shows is a decal.
+    in property <int> downloads-working: 0;
 
+    callback open-downloads();
     callback search(string);
     callback open-release(int);
     callback sign-in();
@@ -156,6 +160,33 @@ export component HomePage inherits Rectangle {
                                 height: 100%;
                                 accepted => { root.search(self.text); }
                             }
+                        }
+                    }
+                }
+
+                // The download queue is this client's own addition, so it is
+                // not one of the rail's destinations — it lives here, where it
+                // is out of the way until it has something to say, and says it
+                // with a badge.
+                VerticalLayout {
+                    alignment: center;
+
+                    Rectangle {
+                        width: 40px;
+                        height: 40px;
+
+                        IconButton {
+                            width: 100%;
+                            height: 100%;
+                            icon: @image-url("../icons/download.svg");
+                            tooltip: Tr.nav-downloads;
+                            clicked => { root.open-downloads(); }
+                        }
+
+                        if root.downloads-working > 0: Badge {
+                            x: parent.width - self.width + 4px;
+                            y: -2px;
+                            text: root.downloads-working;
                         }
                     }
                 }
