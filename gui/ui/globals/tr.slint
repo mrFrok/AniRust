@@ -145,6 +145,43 @@ export global Tr {
     out property <string> verified: lang == "ru" ? "Подтверждён" : "Verified";
     out property <string> lists: lang == "ru" ? "Списки" : "Lists";
     out property <string> activity: lang == "ru" ? "Активность" : "Activity";
+    out property <string> releases-total: lang == "ru" ? "всего" : "in all";
+    out property <string> recently-watched: lang == "ru" ? "Просмотрено недавно" : "Watched recently";
+    out property <string> nothing-watched: lang == "ru"
+        ? "Пока ничего не просмотрено."
+        : "Nothing watched yet.";
+
+    /// Which episode, worded as each language words it.
+    public pure function episode-of(number: int) -> string {
+        root.lang == "ru" ? number + " серия" : "Episode " + number
+    }
+
+    /// How long ago, from a number of minutes.
+    ///
+    /// The counting words are here rather than in Rust because this is
+    /// language, and Russian needs three forms of every one of them where
+    /// English needs two. A number crosses the boundary; a sentence does not.
+    public pure function ago(minutes: int) -> string {
+        minutes < 1 ? (root.lang == "ru" ? "только что" : "just now")
+        : minutes < 60 ? root.since(minutes, "минуту", "минуты", "минут", "minute")
+        : minutes < 1440 ? root.since(floor(minutes / 60), "час", "часа", "часов", "hour")
+        : root.since(floor(minutes / 1440), "день", "дня", "дней", "day")
+    }
+
+    /// "5 минут назад", "2 hours ago".
+    pure function since(count: int, one: string, few: string, many: string, english: string) -> string {
+        root.lang == "ru"
+            ? count + " " + root.plural(count, one, few, many) + " назад"
+            : count + " " + english + (count == 1 ? "" : "s") + " ago"
+    }
+
+    /// The form Russian puts after a number.
+    pure function plural(count: int, one: string, few: string, many: string) -> string {
+        Math.mod(count, 100) >= 11 && Math.mod(count, 100) <= 14 ? many
+        : Math.mod(count, 10) == 1 ? one
+        : Math.mod(count, 10) >= 2 && Math.mod(count, 10) <= 4 ? few
+        : many
+    }
     out property <string> votes: lang == "ru" ? "Оценки" : "Ratings";
     out property <string> comments: lang == "ru" ? "Комментарии" : "Comments";
     out property <string> collections: lang == "ru" ? "Коллекции" : "Collections";

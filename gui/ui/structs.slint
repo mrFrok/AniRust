@@ -81,3 +81,18 @@ export struct Account {
     collections: int,
     friends: int,
 }
+
+/// One release on the profile screen's list of what was watched lately.
+///
+/// Carries no id for the same reason a card does not: which release it is
+/// comes from its place in the list.
+export struct HistoryItem {
+    title: string,
+    /// The episode the account left off on, or 0 when the server does not say.
+    episode: int,
+    poster: image,
+    poster-loaded: bool,
+    /// How long ago it was watched, in minutes. The wording is the interface's
+    /// business, and Russian needs three forms of every counting word.
+    minutes-ago: int,
+}

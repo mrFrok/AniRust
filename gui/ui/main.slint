@@ -9,7 +9,7 @@ import { HomePage } from "pages/home.slint";
 import { SignInSheet } from "components/sign-in.slint";
 import { DownloadsPage } from "pages/downloads.slint";
 import { ProfilePage } from "pages/profile.slint";
-import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account } from "structs.slint";
+import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -205,6 +205,9 @@ export component MainWindow inherits Window {
     in property <bool> avatar-loaded: false;
     /// One of the account's own lists, by its place in the bookmarks tabs.
     callback open-list(int);
+    /// What the account watched lately, and opening one of them.
+    in property <[HistoryItem]> recent: [];
+    callback open-recent(int);
     in-out property <bool> show-sign-in: false;
     in-out property <string> login;
     in-out property <string> password;
@@ -256,11 +259,13 @@ export component MainWindow inherits Window {
             avatar: root.avatar;
             avatar-loaded: root.avatar-loaded;
             appearance: root.appearance-choice;
+            recent: root.recent;
 
             sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
             sign-out => { root.sign-out(); }
             select-appearance(i) => { root.select-appearance(i); }
             open-list(i) => { root.open-list(i); }
+            open-recent(i) => { root.open-recent(i); }
         }
 
         if root.destination != 3 && root.destination != 4: HomePage {

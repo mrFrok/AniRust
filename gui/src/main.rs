@@ -39,6 +39,10 @@ use crate::video::VideoBridge;
 
 slint::include_modules!();
 
+/// Where the profile sits on the rail. Named because two places have to agree
+/// about it: the rail's own order, and what arriving there has to fetch.
+const PROFILE_DESTINATION: i32 = 4;
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -275,6 +279,16 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
                 app.http.clone(),
                 index.max(0) as usize,
             );
+            // The profile is not a grid, so nothing above fetches anything for
+            // it. What it shows goes stale as soon as an episode is watched.
+            if index == PROFILE_DESTINATION {
+                session::load_recent(
+                    &window,
+                    &app.account,
+                    Rc::clone(&app.client),
+                    app.http.clone(),
+                );
+            }
         }
     });
 
@@ -289,6 +303,31 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
                 Rc::clone(&app.client),
                 app.http.clone(),
                 index.max(0) as usize,
+            );
+        }
+    });
+
+    window.on_open_recent({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            let Some(release_id) = app
+                .account
+                .borrow()
+                .recent_at(index.max(0) as usize)
+                .map(|release| release.id)
+            else {
+                return;
+            };
+
+            window.set_screen("release".into());
+            release::load(
+                &window,
+                &app.release,
+                Rc::clone(&app.client),
+                app.http.clone(),
+                release_id,
             );
         }
     });

@@ -17,9 +17,10 @@ use std::rc::Rc;
 
 use slint::ComponentHandle;
 
-use anirust_api::{Client, Profile, SignInError};
+use anirust_api::{Client, Profile, Release, SignInError};
+use slint::{Model, VecModel};
 
-use crate::{Account, MainWindow, tasks};
+use crate::{Account, HistoryItem, MainWindow, tasks};
 
 /// What the secret store files this under.
 const SERVICE: &str = "dev.anirust.client";
@@ -33,7 +34,24 @@ pub struct Session {
     pub login: String,
     pub id: i64,
     pub authenticated: bool,
+    /// The releases behind the profile screen's recent list, so clicking one
+    /// opens the release it stands for.
+    pub recent: Vec<Release>,
 }
+
+impl Session {
+    /// The release one row of the recent list stands for.
+    #[must_use]
+    pub fn recent_at(&self, index: usize) -> Option<&Release> {
+        self.recent.get(index)
+    }
+}
+
+/// How many of the account's last releases the profile screen shows.
+///
+/// Enough to answer "where was I" and short enough that the screen is still
+/// about the account rather than about the history, which has a tab of its own.
+const RECENT: usize = 5;
 
 /// Restores a saved session, if the secret store has one.
 ///
@@ -154,6 +172,87 @@ pub fn sign_out(window: &MainWindow, session: &Rc<RefCell<Session>>, client: &Cl
     window.set_account_name("".into());
     window.set_account(Account::default());
     window.set_avatar_loaded(false);
+    window.set_recent(slint::ModelRc::new(VecModel::<HistoryItem>::default()));
+}
+
+/// Loads what the account watched lately, for the profile screen.
+///
+/// Called when that screen is opened rather than at sign-in: it goes stale the
+/// moment an episode is watched, and the screen is the only thing that shows
+/// it.
+pub fn load_recent(
+    window: &MainWindow,
+    session: &Rc<RefCell<Session>>,
+    client: Rc<Client>,
+    http: reqwest::Client,
+) {
+    if !session.borrow().authenticated {
+        return;
+    }
+
+    let weak = window.as_weak();
+    let session = Rc::clone(session);
+    // The client itself rather than the handle to it: an `Rc` cannot cross to
+    // the worker thread, and a `Client` is a cheap clone by design.
+    let api = (*client).clone();
+
+    tasks::spawn(async move { api.history(0).await }, move |page| {
+        let Some(window) = weak.upgrade() else { return };
+        let Ok(page) = page else {
+            tracing::debug!("the history could not be loaded");
+            return;
+        };
+
+        let releases: Vec<Release> = page.content.into_iter().take(RECENT).collect();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs() as i64);
+
+        let items: Vec<HistoryItem> = releases
+            .iter()
+            .map(|release| HistoryItem {
+                title: release.title().into(),
+                episode: release
+                    .last_view_episode
+                    .as_ref()
+                    .map_or(0, |episode| episode.position),
+                poster: slint::Image::default(),
+                poster_loaded: false,
+                minutes_ago: minutes_since(release.last_view_timestamp, now),
+            })
+            .collect();
+
+        let model = Rc::new(VecModel::from(items));
+        window.set_recent(slint::ModelRc::from(Rc::clone(&model)));
+
+        let posters: Vec<String> = releases.iter().map(Release::poster_url).collect();
+        session.borrow_mut().recent = releases;
+
+        for (index, url) in posters.into_iter().enumerate() {
+            let model = Rc::clone(&model);
+            tasks::spawn(tasks::fetch_image(http.clone(), url), move |result| {
+                let Ok(buffer) = result else { return };
+                let Some(mut item) = model.row_data(index) else {
+                    return;
+                };
+                item.poster = slint::Image::from_rgba8(buffer);
+                item.poster_loaded = true;
+                model.set_row_data(index, item);
+            });
+        }
+    });
+}
+
+/// How long ago something happened, in minutes, never negative.
+///
+/// A server clock a little ahead of this one would otherwise be reported as
+/// the future, which reads as a bug rather than as the half-second it is.
+fn minutes_since(then: i64, now: i64) -> i32 {
+    if then <= 0 {
+        return 0;
+    }
+    let minutes = (now - then).max(0) / 60;
+    i32::try_from(minutes).unwrap_or(i32::MAX)
 }
 
 /// Puts a profile on the screen, picture and all.
@@ -309,6 +408,13 @@ mod tests {
     fn an_account_with_no_date_has_none_to_show() {
         assert_eq!(date(0), None);
         assert_eq!(date(-1), None);
+    }
+
+    #[test]
+    fn a_moment_in_the_future_is_not_reported_as_one() {
+        assert_eq!(minutes_since(1_000, 940), 0);
+        assert_eq!(minutes_since(1_000, 1_600), 10);
+        assert_eq!(minutes_since(0, 1_600), 0);
     }
 
     #[test]

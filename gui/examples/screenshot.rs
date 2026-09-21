@@ -128,6 +128,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_destination(2);
         ui.set_tab(5);
     }
+    // Both languages count differently, and the profile screen is where the
+    // counting words are: three forms in Russian, two in English.
+    if state.ends_with("-en") {
+        ui.set_lang("en".into());
+    }
     // The appearances that can be seen without a desktop to ask: the browsing
     // screen is the one with the most of the palette on it at once.
     if state == "light" || state == "profile-light" {
@@ -159,6 +164,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             collections: 3,
             friends: 26,
         });
+        ui.set_recent(slint::ModelRc::new(slint::VecModel::from(vec![
+            recent("Реинкарнация безработного 3", 13, 64),
+            recent("Re:Zero. Жизнь с нуля 4", 17, 2_890),
+            recent("НищеБог-же", 2, 2_896),
+            recent("Военная хроника маленькой девочки 2", 10, 6_210),
+            recent("Комендант общежития богинь", 1, 85_320),
+        ])));
     }
     // A tab switched: the last tab's cards stay up while the new ones are
     // fetched, which is the only case where loading is said over a full grid.
@@ -366,6 +378,16 @@ fn anirust_gui_genres() -> [&'static str; 8] {
         "школа",
         "исэкай",
     ]
+}
+
+fn recent(title: &str, episode: i32, minutes_ago: i32) -> HistoryItem {
+    HistoryItem {
+        title: title.into(),
+        episode,
+        poster: slint::Image::default(),
+        poster_loaded: false,
+        minutes_ago,
+    }
 }
 
 fn option(label: &str, episodes: i32, is_sub: bool) -> PickerOption {

@@ -15,7 +15,122 @@ import { MaterialPalette, ListTile, SegmentedButton, HorizontalDivider, FilledBu
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
-import { Account } from "../structs.slint";
+import { Account, HistoryItem } from "../structs.slint";
+
+/// One wedge of the ring.
+///
+/// An annulus segment, drawn the way the component set draws its progress
+/// ring: out along the outer radius, in, back along the inner one. Angles run
+/// from twelve o'clock clockwise, as a clock and every chart like this does.
+component Wedge {
+    /// Where it starts and how far it goes, each as a fraction of the circle.
+    in property <float> start;
+    in property <float> sweep;
+    in property <color> tint;
+
+    /// In viewbox units, of which the box is a hundred across.
+    property <float> outer: 50;
+    property <float> inner: 33;
+    /// A hair of a gap, so two wedges of similar colour do not read as one.
+    property <float> gap: 0.006;
+    property <float> span: max(0, root.sweep - root.gap);
+    property <float> finish: root.start + root.span;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        fill: root.tint;
+        visible: root.span > 0;
+
+        MoveTo {
+            x: 50 + root.outer * sin(root.start * 360deg);
+            y: 50 - root.outer * cos(root.start * 360deg);
+        }
+
+        ArcTo {
+            radius-x: root.outer;
+            radius-y: root.outer;
+            x: 50 + root.outer * sin(root.finish * 360deg);
+            y: 50 - root.outer * cos(root.finish * 360deg);
+            sweep: true;
+            large-arc: root.span > 0.5;
+        }
+
+        LineTo {
+            x: 50 + root.inner * sin(root.finish * 360deg);
+            y: 50 - root.inner * cos(root.finish * 360deg);
+        }
+
+        ArcTo {
+            radius-x: root.inner;
+            radius-y: root.inner;
+            x: 50 + root.inner * sin(root.start * 360deg);
+            y: 50 - root.inner * cos(root.start * 360deg);
+            sweep: false;
+            large-arc: root.span > 0.5;
+        }
+
+        LineTo {
+            x: 50 + root.outer * sin(root.start * 360deg);
+            y: 50 - root.outer * cos(root.start * 360deg);
+        }
+    }
+}
+
+/// One line of the legend: the colour, what it counts, and how many.
+///
+/// The whole row is the target rather than the number alone — a count that
+/// opens a list is worth the width of its own name to click.
+component Reading inherits Rectangle {
+    in property <string> label;
+    in property <int> value;
+    in property <color> tint;
+    callback clicked;
+
+    height: 30px;
+    border-radius: Shape.small;
+    background: touch.has-hover ? MaterialPalette.surface-container-high : transparent;
+
+    HorizontalLayout {
+        padding-left: Spacing.small;
+        padding-right: Spacing.small;
+        spacing: Spacing.small;
+
+        VerticalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 10px;
+                height: 10px;
+                border-radius: 5px;
+                background: root.tint;
+            }
+        }
+
+        Text {
+            text: root.label;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.body-medium-size;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        Text {
+            text: root.value;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.body-medium-size;
+            font-weight: Typography.body-medium-weight-em;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
 
 /// One number, with what it counts under it.
 ///
@@ -78,6 +193,23 @@ export component ProfilePage inherits Rectangle {
     callback select-appearance(int);
     /// One of the account's own lists, by its place in the bookmarks tabs.
     callback open-list(int);
+    /// What was watched lately, newest first, and opening one of them.
+    in property <[HistoryItem]> recent: [];
+    callback open-recent(int);
+
+    // One colour per list, shared by the ring and the legend beside it — the
+    // legend is only readable because the two agree. The scheme is one family
+    // of violets, so the five are pulled apart by lightness and by the two
+    // accents it does have rather than by five hues it does not.
+    property <color> watching-colour: MaterialPalette.tertiary;
+    property <color> planned-colour: MaterialPalette.secondary;
+    property <color> watched-colour: MaterialPalette.inverse-primary;
+    property <color> hold-colour: MaterialPalette.outline;
+    property <color> dropped-colour: MaterialPalette.error;
+
+    /// What the five add up to, and never zero: a ring divides by it.
+    property <int> total: max(1, root.account.watching + root.account.planned
+        + root.account.watched + root.account.hold + root.account.dropped);
 
     background: MaterialPalette.surface;
 
@@ -206,10 +338,11 @@ export component ProfilePage inherits Rectangle {
         //
         // Only with an account behind them. Five zeroes state nothing except
         // that nobody is signed in, which the line above already said.
+        //
+        // A ring beside the numbers, because the question the numbers answer
+        // is what the account's viewing looks like as a whole, and a
+        // proportion is a shape before it is a figure.
         if root.signed-in: VerticalLayout {
-            // The gap between the groups is wider than the one inside them,
-            // which is what makes them read as two groups rather than as four
-            // things stacked in a column.
             spacing: Spacing.base;
 
             VerticalLayout {
@@ -222,47 +355,131 @@ export component ProfilePage inherits Rectangle {
                     font-weight: Typography.title-medium-weight-em;
                 }
 
-                // Wrapped rather than squeezed: five cards do not fit across a
-                // window that is allowed to be 640 wide.
-                FlexboxLayout {
-                    flex-wrap: wrap;
+                // As wide as it needs to be and no wider: a legend of five
+                // short lines stretched across a desktop window puts each
+                // number half a screen from the word it belongs to.
+                HorizontalLayout {
                     alignment: start;
-                    spacing: Spacing.small;
 
-                    Stat {
-                        label: Tr.list-watching;
-                        value: root.account.watching;
-                        opens: true;
-                        clicked => { root.open-list(0); }
-                    }
+                Rectangle {
+                    width: 520px;
+                    height: 188px;
+                    border-radius: Shape.large;
+                    background: MaterialPalette.surface-container;
 
-                    Stat {
-                        label: Tr.list-planned;
-                        value: root.account.planned;
-                        opens: true;
-                        clicked => { root.open-list(1); }
-                    }
+                    HorizontalLayout {
+                        padding: Spacing.base;
+                        spacing: Spacing.base;
 
-                    Stat {
-                        label: Tr.list-watched;
-                        value: root.account.watched;
-                        opens: true;
-                        clicked => { root.open-list(2); }
-                    }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: Spacing.hair;
 
-                    Stat {
-                        label: Tr.list-hold;
-                        value: root.account.hold;
-                        opens: true;
-                        clicked => { root.open-list(3); }
-                    }
+                            Reading {
+                                label: Tr.list-watching;
+                                value: root.account.watching;
+                                tint: root.watching-colour;
+                                clicked => { root.open-list(0); }
+                            }
 
-                    Stat {
-                        label: Tr.list-dropped;
-                        value: root.account.dropped;
-                        opens: true;
-                        clicked => { root.open-list(4); }
+                            Reading {
+                                label: Tr.list-planned;
+                                value: root.account.planned;
+                                tint: root.planned-colour;
+                                clicked => { root.open-list(1); }
+                            }
+
+                            Reading {
+                                label: Tr.list-watched;
+                                value: root.account.watched;
+                                tint: root.watched-colour;
+                                clicked => { root.open-list(2); }
+                            }
+
+                            Reading {
+                                label: Tr.list-hold;
+                                value: root.account.hold;
+                                tint: root.hold-colour;
+                                clicked => { root.open-list(3); }
+                            }
+
+                            Reading {
+                                label: Tr.list-dropped;
+                                value: root.account.dropped;
+                                tint: root.dropped-colour;
+                                clicked => { root.open-list(4); }
+                            }
+                        }
+
+                        // The ring itself, and in its hole the number the five
+                        // add up to: a total is what a reader works out from a
+                        // ring otherwise, and works out wrong.
+                        Rectangle {
+                            width: 156px;
+
+                            Wedge {
+                                width: 100%;
+                                height: 100%;
+                                start: 0;
+                                sweep: root.account.watching / root.total;
+                                tint: root.watching-colour;
+                            }
+
+                            Wedge {
+                                width: 100%;
+                                height: 100%;
+                                start: root.account.watching / root.total;
+                                sweep: root.account.planned / root.total;
+                                tint: root.planned-colour;
+                            }
+
+                            Wedge {
+                                width: 100%;
+                                height: 100%;
+                                start: (root.account.watching + root.account.planned) / root.total;
+                                sweep: root.account.watched / root.total;
+                                tint: root.watched-colour;
+                            }
+
+                            Wedge {
+                                width: 100%;
+                                height: 100%;
+                                start: (root.account.watching + root.account.planned
+                                    + root.account.watched) / root.total;
+                                sweep: root.account.hold / root.total;
+                                tint: root.hold-colour;
+                            }
+
+                            Wedge {
+                                width: 100%;
+                                height: 100%;
+                                start: (root.account.watching + root.account.planned
+                                    + root.account.watched + root.account.hold) / root.total;
+                                sweep: root.account.dropped / root.total;
+                                tint: root.dropped-colour;
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+
+                                Text {
+                                    text: root.total;
+                                    color: MaterialPalette.on-surface;
+                                    font-size: Typography.headline-small-size;
+                                    horizontal-alignment: center;
+                                }
+
+                                Text {
+                                    text: Tr.releases-total;
+                                    color: MaterialPalette.on-surface-variant;
+                                    font-size: Typography.label-small-size;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                        }
                     }
+                }
                 }
             }
 
@@ -304,6 +521,89 @@ export component ProfilePage inherits Rectangle {
                         label: Tr.friends;
                         value: root.account.friends;
                     }
+                }
+            }
+        }
+
+        // ---- what was watched lately -------------------------------------
+        //
+        // The same list the history tab holds, cut to what fits here. It is on
+        // this screen because it is the answer to "where was I", and that is
+        // the question an account is opened with.
+        if root.signed-in: VerticalLayout {
+            spacing: Spacing.small;
+
+            Text {
+                text: Tr.recently-watched;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.title-medium-size;
+                font-weight: Typography.title-medium-weight-em;
+            }
+
+            if root.recent.length == 0: Text {
+                text: Tr.nothing-watched;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.body-medium-size;
+            }
+
+            for item[index] in root.recent: Rectangle {
+                height: 64px;
+                border-radius: Shape.medium;
+                background: row-touch.has-hover
+                    ? MaterialPalette.surface-container
+                    : transparent;
+
+                HorizontalLayout {
+                    padding-left: Spacing.small;
+                    padding-right: Spacing.base;
+                    spacing: Spacing.medium;
+
+                    VerticalLayout {
+                        alignment: center;
+
+                        Rectangle {
+                            width: 36px;
+                            height: 52px;
+                            border-radius: Shape.small;
+                            background: MaterialPalette.surface-container-high;
+                            clip: true;
+
+                            Image {
+                                source: item.poster;
+                                image-fit: cover;
+                                width: 100%;
+                                height: 100%;
+                                visible: item.poster-loaded;
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: Spacing.hair;
+
+                        Text {
+                            text: item.title;
+                            color: MaterialPalette.on-surface;
+                            font-size: Typography.body-large-size;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: item.episode > 0
+                                ? Tr.episode-of(item.episode) + " · " + Tr.ago(item.minutes-ago)
+                                : Tr.ago(item.minutes-ago);
+                            color: MaterialPalette.on-surface-variant;
+                            font-size: Typography.label-medium-size;
+                            overflow: elide;
+                        }
+                    }
+                }
+
+                row-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.open-recent(index); }
                 }
             }
         }
