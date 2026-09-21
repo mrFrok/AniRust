@@ -11,23 +11,38 @@
 // surfaces go to true black, which is what an OLED panel actually switches
 // off, while every other role keeps its tonal relationship.
 
-import { Palette } from "std-widgets.slint";
-import { MaterialSchemes } from "@material";
+import { MaterialSchemes, MaterialScheme } from "@material";
 
 export enum Appearance { system, light, dark, amoled }
 
 export global Scheme {
     in property <Appearance> appearance: Appearance.system;
 
-    /// Whether the dark half is the one in use.
-    out property <bool> dark:
-        root.appearance == Appearance.dark || root.appearance == Appearance.amoled ? true
-        : root.appearance == Appearance.light ? false
-        : Palette.color-scheme == ColorScheme.dark;
-
     /// Handed to `MaterialPalette.schemes` by the window.
+    ///
+    /// The library chooses a half by `Palette.color-scheme`, which is the
+    /// desktop's own answer and has to stay that way: that property arrives by
+    /// a binding, and anything written to it replaces the binding, after which
+    /// a desktop changing its mind never reaches the window again. So nothing
+    /// here writes it. Following the system is letting it choose, and every
+    /// other appearance is handed two identical halves — whichever it picks,
+    /// it picks the one that was chosen.
+    ///
+    /// The cost is the scroll bars, which come from the widget set rather than
+    /// from here and go on following the desktop. Someone running a light
+    /// desktop who asks for the dark appearance gets one light control at the
+    /// edge of the window. That is the smaller of the two prices: the other
+    /// one is a client that stops noticing the desktop until it is restarted.
     out property <MaterialSchemes> schemes:
-        root.appearance == Appearance.amoled ? root.blacken(root.violet-scheme) : root.violet-scheme;
+        root.appearance == Appearance.system ? root.violet-scheme
+        : root.appearance == Appearance.light ? root.both(root.violet-scheme.light)
+        : root.appearance == Appearance.dark ? root.both(root.violet-scheme.dark)
+        : root.both(root.blacken(root.violet-scheme).dark);
+
+    /// One scheme in both halves, for an appearance that was asked for by name.
+    pure function both(scheme: MaterialScheme) -> MaterialSchemes {
+        return { light: scheme, dark: scheme };
+    }
 
     /// The dark half with its surfaces taken to black.
     ///

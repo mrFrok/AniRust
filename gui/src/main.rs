@@ -12,6 +12,7 @@
 
 mod downloads;
 mod home;
+mod preferences;
 mod progress;
 mod release;
 mod session;
@@ -57,6 +58,7 @@ fn main() -> Result<()> {
     } else {
         "en".into()
     });
+    wire_preferences(&window, preferences::Preferences::load());
 
     let config = player_config();
     tracing::info!(hwdec = %config.hwdec, "player config");
@@ -191,6 +193,43 @@ fn wire_account(window: &MainWindow, app: &Rc<App>) {
         let Some(window) = weak.upgrade() else { return };
         session::sign_out(&window, &app.account, &app.client);
     });
+}
+
+/// Puts what was chosen last time on screen, and keeps the file level with it.
+///
+/// The window is told twice over: once as the appearance itself, which is what
+/// the colours are drawn from, and once as its position in the row the profile
+/// screen offers, which is what that row lights up. Rust owns the order of
+/// that row, so the two cannot drift apart.
+fn wire_preferences(window: &MainWindow, preferences: preferences::Preferences) {
+    let held = Rc::new(Cell::new(preferences));
+    show_appearance(window, preferences.appearance);
+
+    let weak = window.as_weak();
+    window.on_select_appearance(move |index| {
+        let Some(window) = weak.upgrade() else { return };
+        let chosen = preferences::Appearance::at(index);
+
+        let mut preferences = held.get();
+        if preferences.appearance == chosen {
+            return;
+        }
+        preferences.appearance = chosen;
+        held.set(preferences);
+
+        show_appearance(&window, chosen);
+        preferences.save();
+    });
+}
+
+fn show_appearance(window: &MainWindow, chosen: preferences::Appearance) {
+    window.set_appearance(match chosen {
+        preferences::Appearance::System => Appearance::System,
+        preferences::Appearance::Light => Appearance::Light,
+        preferences::Appearance::Dark => Appearance::Dark,
+        preferences::Appearance::Amoled => Appearance::Amoled,
+    });
+    window.set_appearance_choice(chosen.index());
 }
 
 // ---------------------------------------------------------------------------

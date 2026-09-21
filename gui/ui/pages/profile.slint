@@ -1,0 +1,127 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The account, and what the application is set to.
+//
+// The fifth destination on the rail, and the only one that is about the
+// application rather than about what to watch. It is deliberately short: a
+// client for watching something should not grow a control panel, and every
+// setting here has to earn its line.
+
+import { MaterialPalette, ListTile, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+
+export component ProfilePage inherits Rectangle {
+    in property <bool> signed-in: false;
+    in property <string> account-name;
+    /// Which appearance is chosen, as a position in the row of them. Rust owns
+    /// the list and the order; this only says which one is lit.
+    in property <int> appearance: 0;
+
+    callback sign-in();
+    callback sign-out();
+    callback select-appearance(int);
+
+    background: MaterialPalette.surface;
+
+    min-width: 0px;
+    min-height: 0px;
+    preferred-width: 0px;
+    preferred-height: 0px;
+    max-width: 100000px;
+    max-height: 100000px;
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
+
+    VerticalLayout {
+        padding: Spacing.base;
+        spacing: Spacing.base;
+        alignment: start;
+
+        Text {
+            text: Tr.nav-profile;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.title-large-size;
+            font-weight: Typography.title-large-weight-em;
+        }
+
+        // ---- the account -----------------------------------------------
+        HorizontalLayout {
+            spacing: Spacing.small;
+
+            // Its height is stated because the avatar inside keeps itself
+            // round by taking its width from its height, and a layout that
+            // has to measure one from the other measures in a circle.
+            ListTile {
+                horizontal-stretch: 1;
+                height: 72px;
+                text: root.signed-in ? root.account-name : Tr.signed-out;
+                supporting-text: root.signed-in ? Tr.signed-in-as : Tr.sign-in-why;
+                avatar-icon: @image-url("../icons/person.svg");
+                avatar-background: MaterialPalette.primary-container;
+                avatar-foreground: MaterialPalette.on-primary-container;
+            }
+
+            VerticalLayout {
+                alignment: center;
+
+                // Signing in is the offer; signing out is the retreat from it.
+                // Material spells that difference with the button, which is
+                // why the two are not the same one with a different word in.
+                if !root.signed-in: FilledButton {
+                    text: Tr.sign-in;
+                    clicked => { root.sign-in(); }
+                }
+
+                if root.signed-in: OutlineButton {
+                    text: Tr.sign-out;
+                    clicked => { root.sign-out(); }
+                }
+            }
+        }
+
+        HorizontalDivider {}
+
+        // ---- how it looks ----------------------------------------------
+        VerticalLayout {
+            spacing: Spacing.small;
+
+            Text {
+                text: Tr.appearance;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.title-medium-size;
+                font-weight: Typography.title-medium-weight-em;
+            }
+
+            Text {
+                text: Tr.appearance-why;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                alignment: start;
+
+                choice := SegmentedButton {
+                    items: [
+                        { text: Tr.appearance-system },
+                        { text: Tr.appearance-light },
+                        { text: Tr.appearance-dark },
+                        { text: Tr.appearance-amoled },
+                    ];
+
+                    // Pushed, not bound: the control writes its own index on a
+                    // click, and what is actually in force is whatever Rust
+                    // wrote to the settings file.
+                    property <int> wanted: root.appearance;
+                    init => { self.current-index = root.appearance; }
+                    changed wanted => { self.current-index = self.wanted; }
+
+                    index-changed(i) => { root.select-appearance(i); }
+                }
+            }
+        }
+    }
+}

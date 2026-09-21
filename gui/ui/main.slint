@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { Palette } from "std-widgets.slint";
 import { MaterialPalette, MaterialSchemes, NavigationRail } from "@material";
 import { Scheme, Appearance } from "globals/scheme.slint";
 import { Tr } from "globals/tr.slint";
@@ -9,6 +8,7 @@ import { ReleasePage } from "pages/release.slint";
 import { HomePage } from "pages/home.slint";
 import { SignInSheet } from "components/sign-in.slint";
 import { DownloadsPage } from "pages/downloads.slint";
+import { ProfilePage } from "pages/profile.slint";
 import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem } from "structs.slint";
 
 export component MainWindow inherits Window {
@@ -31,7 +31,6 @@ export component MainWindow inherits Window {
         Tr.lang = root.lang;
         Scheme.appearance = root.appearance;
         MaterialPalette.schemes = root.schemes;
-        Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light;
         root.measure();
     }
     changed lang => { Tr.lang = root.lang; }
@@ -41,15 +40,13 @@ export component MainWindow inherits Window {
     in property <Appearance> appearance: Appearance.dark;
     changed appearance => { Scheme.appearance = root.appearance; }
 
-    // The two halves of the theme, mirrored here so they can be pushed.
+    // The scheme, mirrored here so it can be pushed.
     //
-    // Both are `in` properties belonging to a global, which no binding may
-    // reach; a mirror with a `changed` handler is the way to keep them level
-    // with the scheme as it changes underneath.
+    // `MaterialPalette.schemes` is an `in` property belonging to a global,
+    // which no binding may reach; a mirror with a `changed` handler is the way
+    // to keep it level with the appearance as that changes underneath.
     property <MaterialSchemes> schemes: Scheme.schemes;
     changed schemes => { MaterialPalette.schemes = self.schemes; }
-    property <bool> dark: Scheme.dark;
-    changed dark => { Palette.color-scheme = self.dark ? ColorScheme.dark : ColorScheme.light; }
 
     // ---- release ---------------------------------------------------------
     in property <string> release-title;
@@ -212,6 +209,11 @@ export component MainWindow inherits Window {
     callback submit-sign-in();
     callback sign-out();
 
+    /// Which appearance is chosen, as a position in the row the profile
+    /// screen offers. Rust owns that order, and writes it to the settings.
+    in property <int> appearance-choice: 0;
+    callback select-appearance(int);
+
     browsing := HorizontalLayout {
         width: 100%;
         height: 100%;
@@ -234,14 +236,25 @@ export component MainWindow inherits Window {
             index-changed(i) => { root.select-destination(i); }
         }
 
-        // The downloads destination is a queue rather than a grid of
-        // posters, so it is its own page beside the browsing one.
+        // Two destinations are not a grid of posters, so they are their own
+        // pages beside the browsing one: the download queue, and the screen
+        // about the application rather than about what to watch.
         if root.destination == 3: DownloadsPage {
             items: root.downloads;
             clear-finished => { root.clear-finished-downloads(); }
         }
 
-        if root.destination != 3: HomePage {
+        if root.destination == 4: ProfilePage {
+            signed-in: root.signed-in;
+            account-name: root.account-name;
+            appearance: root.appearance-choice;
+
+            sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
+            sign-out => { root.sign-out(); }
+            select-appearance(i) => { root.select-appearance(i); }
+        }
+
+        if root.destination != 3 && root.destination != 4: HomePage {
             horizontal-stretch: 1;
 
             results: root.results;
