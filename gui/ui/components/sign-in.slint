@@ -6,86 +6,10 @@
 // in is something done in passing, and coming back to where you were is the
 // whole point of doing it that way.
 
-import { MaterialPalette } from "../globals/material-palette.slint";
+import { MaterialPalette, TextField, FilledButton, TextButton } from "@material";
 import { Typography } from "../globals/typography.slint";
-import { Shape, Spacing, Motion } from "../globals/shape.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
-
-/// A single-line field with a label above it.
-component Field inherits VerticalLayout {
-    in property <string> label;
-    in property <bool> password: false;
-    in-out property <string> text;
-    callback accepted;
-
-    spacing: Spacing.tight;
-
-    Text {
-        text: root.label;
-        color: MaterialPalette.on-surface-variant;
-        font-size: Typography.label-medium-size;
-    }
-
-    Rectangle {
-        height: Spacing.touch-target;
-        border-radius: Shape.medium;
-        background: MaterialPalette.surface-container-highest;
-        border-width: input.has-focus ? 2px : 1px;
-        border-color: input.has-focus
-            ? MaterialPalette.primary
-            : MaterialPalette.outline-variant;
-
-        input := TextInput {
-            text <=> root.text;
-            color: MaterialPalette.on-surface;
-            font-size: Typography.body-large-size;
-            vertical-alignment: center;
-            single-line: true;
-            // Slint has no password input; this is the substitute, and it is
-            // the one thing here worth saying out loud.
-            input-type: root.password ? InputType.password : InputType.text;
-            x: Spacing.base;
-            width: parent.width - 2 * Spacing.base;
-            height: 100%;
-            accepted => { root.accepted(); }
-        }
-    }
-}
-
-/// A filled or outlined button, depending on how much it is asking for.
-component SheetButton inherits Rectangle {
-    in property <string> label;
-    in property <bool> primary: false;
-    in property <bool> enabled: true;
-    callback clicked;
-
-    height: Spacing.touch-target;
-    width: text.preferred-width + 2 * Spacing.comfortable;
-    border-radius: touch.pressed ? Shape.medium : Shape.pill;
-    background: root.primary
-        ? (root.enabled ? MaterialPalette.primary : MaterialPalette.surface-container-highest)
-        : (touch.has-hover ? MaterialPalette.surface-container-highest : transparent);
-    border-width: root.primary ? 0px : 1px;
-    border-color: MaterialPalette.outline-variant;
-    animate border-radius { duration: Motion.spring-duration; easing: Motion.spring; }
-
-    text := Text {
-        text: root.label;
-        color: root.primary && root.enabled
-            ? MaterialPalette.on-primary
-            : MaterialPalette.on-surface;
-        font-size: Typography.label-large-size;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        width: 100%;
-        height: 100%;
-    }
-
-    touch := TouchArea {
-        mouse-cursor: root.enabled ? pointer : default;
-        clicked => { if (root.enabled) { root.clicked(); } }
-    }
-}
 
 export component SignInSheet inherits Rectangle {
     in-out property <string> login;
@@ -112,7 +36,7 @@ export component SignInSheet inherits Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         border-radius: Shape.extra-large;
-        background: MaterialPalette.surface-container;
+        background: MaterialPalette.surface-container-high;
         drop-shadow-blur: 32px;
         drop-shadow-color: #00000080;
 
@@ -142,23 +66,28 @@ export component SignInSheet inherits Rectangle {
                 wrap: word-wrap;
             }
 
-            Field {
+            // A rejected login and a rejected password are faults of one
+            // field each, so each is reported under the field it belongs to.
+            // Only a failure that belongs to neither gets a line of its own.
+            TextField {
                 label: Tr.login-field;
                 text <=> root.login;
-                accepted => { root.submit(); }
+                has-error: root.error == "unknown-login";
+                supporting-text: root.error == "unknown-login" ? Tr.unknown-login : "";
+                accepted(text) => { root.submit(); }
             }
 
-            Field {
+            TextField {
                 label: Tr.password-field;
-                password: true;
+                input-type: InputType.password;
                 text <=> root.password;
-                accepted => { root.submit(); }
+                has-error: root.error == "wrong-password";
+                supporting-text: root.error == "wrong-password" ? Tr.wrong-password : "";
+                accepted(text) => { root.submit(); }
             }
 
-            if root.error != "": Text {
-                text: root.error == "unknown-login" ? Tr.unknown-login
-                    : root.error == "wrong-password" ? Tr.wrong-password
-                    : Tr.sign-in-failed;
+            if root.error != "" && root.error != "unknown-login" && root.error != "wrong-password": Text {
+                text: Tr.sign-in-failed;
                 color: MaterialPalette.error;
                 font-size: Typography.body-medium-size;
                 wrap: word-wrap;
@@ -168,14 +97,13 @@ export component SignInSheet inherits Rectangle {
                 spacing: Spacing.small;
                 alignment: end;
 
-                SheetButton {
-                    label: Tr.cancel;
+                TextButton {
+                    text: Tr.cancel;
                     clicked => { root.dismiss(); }
                 }
 
-                SheetButton {
-                    label: root.busy ? Tr.loading : Tr.sign-in;
-                    primary: true;
+                FilledButton {
+                    text: root.busy ? Tr.loading : Tr.sign-in;
                     enabled: !root.busy && root.login != "" && root.password != "";
                     clicked => { root.submit(); }
                 }

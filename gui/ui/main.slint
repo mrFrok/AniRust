@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { Palette } from "std-widgets.slint";
-import { MaterialPalette } from "globals/material-palette.slint";
+import { MaterialPalette, MaterialSchemes, NavigationRail } from "@material";
+import { Scheme, Appearance } from "globals/scheme.slint";
 import { Tr } from "globals/tr.slint";
 import { PlayerPage } from "pages/player.slint";
 import { ReleasePage } from "pages/release.slint";
 import { HomePage } from "pages/home.slint";
 import { SignInSheet } from "components/sign-in.slint";
-import { NavRail } from "components/nav-rail.slint";
 import { DownloadsPage } from "pages/downloads.slint";
 import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem } from "structs.slint";
 
@@ -22,17 +22,34 @@ export component MainWindow inherits Window {
     // window sizing itself from that layout would be reading its own output.
     max-width: 100000px;
     max-height: 100000px;
-    background: #000000;
+    background: MaterialPalette.background;
 
     // Language, pushed from Rust and mirrored into the global so every string
     // on screen re-evaluates the moment it changes.
     in property <string> lang: "en";
     init => {
         Tr.lang = root.lang;
-        Palette.color-scheme = ColorScheme.dark;
+        Scheme.appearance = root.appearance;
+        MaterialPalette.schemes = root.schemes;
+        Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light;
         root.measure();
     }
     changed lang => { Tr.lang = root.lang; }
+
+    // Which colour scheme is in force. Dark is the default: a room being used
+    // to watch something is not a lit one.
+    in property <Appearance> appearance: Appearance.dark;
+    changed appearance => { Scheme.appearance = root.appearance; }
+
+    // The two halves of the theme, mirrored here so they can be pushed.
+    //
+    // Both are `in` properties belonging to a global, which no binding may
+    // reach; a mirror with a `changed` handler is the way to keep them level
+    // with the scheme as it changes underneath.
+    property <MaterialSchemes> schemes: Scheme.schemes;
+    changed schemes => { MaterialPalette.schemes = self.schemes; }
+    property <bool> dark: Scheme.dark;
+    changed dark => { Palette.color-scheme = self.dark ? ColorScheme.dark : ColorScheme.light; }
 
     // ---- release ---------------------------------------------------------
     in property <string> release-title;
@@ -160,7 +177,12 @@ export component MainWindow inherits Window {
 
     /// Which destination the rail has open: 0 home, 1 browse, 2 saved,
     /// 3 downloads, 4 profile.
+    ///
+    /// Pushed onto the rail rather than bound to it: the rail writes its own
+    /// `current-index` on a click, and a property written to keeps no binding.
+    /// Rust moving the destination on its own still has to land on the rail.
     in-out property <int> destination: 0;
+    changed destination => { rail.current-index = root.destination; }
     /// Which of the destination's tabs is selected.
     in property <int> tab: 0;
     in property <[string]> genres: [];
@@ -195,16 +217,21 @@ export component MainWindow inherits Window {
         height: 100%;
         visible: root.screen == "home";
 
-        NavRail {
-            current: root.destination;
-            labels: [
-                Tr.nav-home,
-                Tr.nav-catalogue,
-                Tr.nav-bookmarks,
-                Tr.nav-downloads,
-                Tr.nav-profile,
+        // The official client puts these five on a bar along the bottom, where
+        // a thumb reaches them. A desktop window is wide rather than tall and
+        // has no thumb, so the same five run down the left edge.
+        rail := NavigationRail {
+            alignment: start;
+            items: [
+                { icon: @image-url("icons/home.svg"), text: Tr.nav-home },
+                { icon: @image-url("icons/compass.svg"), text: Tr.nav-catalogue },
+                { icon: @image-url("icons/bookmark.svg"), text: Tr.nav-bookmarks },
+                { icon: @image-url("icons/download.svg"), text: Tr.nav-downloads },
+                { icon: @image-url("icons/person.svg"), text: Tr.nav-profile },
             ];
-            selected(i) => { root.select-destination(i); }
+
+            init => { self.current-index = root.destination; }
+            index-changed(i) => { root.select-destination(i); }
         }
 
         // The downloads destination is a queue rather than a grid of
@@ -229,18 +256,23 @@ export component MainWindow inherits Window {
             // the rest of the translations; which one is selected, and what it
             // fetches, is Rust's business.
             tabs: root.destination == 0
-                ? [Tr.tab-latest, Tr.tab-airing, Tr.tab-finished]
+                ? [{ text: Tr.tab-latest }, { text: Tr.tab-airing }, { text: Tr.tab-finished }]
                 : root.destination == 1
-                    ? [Tr.section-popular, Tr.section-top, Tr.section-films, Tr.section-announced]
+                    ? [
+                        { text: Tr.section-popular },
+                        { text: Tr.section-top },
+                        { text: Tr.section-films },
+                        { text: Tr.section-announced },
+                    ]
                     : root.destination == 2
                         ? [
-                            Tr.list-watching,
-                            Tr.list-planned,
-                            Tr.list-watched,
-                            Tr.list-hold,
-                            Tr.list-dropped,
-                            Tr.list-history,
-                            Tr.list-favourites,
+                            { text: Tr.list-watching },
+                            { text: Tr.list-planned },
+                            { text: Tr.list-watched },
+                            { text: Tr.list-hold },
+                            { text: Tr.list-dropped },
+                            { text: Tr.list-history },
+                            { text: Tr.list-favourites },
                         ]
                         : [];
             tab: root.tab;

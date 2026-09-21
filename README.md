@@ -153,4 +153,8 @@ deliberate constraint, and it is honoured literally:
 
 Slint is used under its GPLv3 option, the one intended for open-source
 applications. mpv (`GPL-2.0-or-later AND LGPL-2.1-or-later`) is linked
-dynamically. The Anime4K shaders are MIT, taken from upstream.
+dynamically. The Anime4K shaders are MIT, taken from upstream. So is the
+Material 3 component set in `gui/material-1.18.0/`, vendored from
+`ui-libraries/material` of slint-ui/slint at the tag matching the `slint`
+dependency — it has no crates.io package, and a UI that changes shape when
+someone else tags a release is not a UI anyone can review.

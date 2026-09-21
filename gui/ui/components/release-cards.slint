@@ -2,96 +2,10 @@
 //
 // A release as a browsing screen shows it.
 
-import { MaterialPalette } from "../globals/material-palette.slint";
+import { MaterialPalette } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { ReleaseCard } from "../structs.slint";
-
-/// One tab of a destination.
-///
-/// An underline rather than a pill: tabs name the parts of one thing, and the
-/// official client marks the current one the same way. The whole label is the
-/// target, which on a desktop is what a pointer expects.
-export component Tab inherits Rectangle {
-    in property <string> label;
-    in property <bool> selected: false;
-    callback clicked;
-
-    width: label-text.preferred-width;
-    background: transparent;
-
-    label-text := Text {
-        text: root.label;
-        color: root.selected
-            ? MaterialPalette.primary
-            : (touch.has-hover ? MaterialPalette.on-surface : MaterialPalette.on-surface-variant);
-        font-size: Typography.title-medium-size;
-        font-weight: root.selected
-            ? Typography.title-medium-weight-em
-            : Typography.label-large-weight;
-        vertical-alignment: center;
-        width: 100%;
-        height: 100%;
-    }
-
-    Rectangle {
-        y: parent.height - self.height - 4px;
-        height: 3px;
-        width: root.selected ? parent.width : 0px;
-        x: (parent.width - self.width) / 2;
-        border-radius: 2px;
-        background: MaterialPalette.primary;
-        animate width { duration: Motion.enter-duration; easing: Motion.enter; }
-    }
-
-    touch := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-}
-
-/// A selectable chip, for choosing a section or a genre.
-///
-/// The player has one of these too, but that one lives on video and is white on
-/// translucency; this one sits on a surface and uses the palette.
-export component Chip inherits Rectangle {
-    in property <string> label;
-    in property <bool> selected: false;
-    /// A quieter size, for the long second row of genres.
-    in property <bool> small: false;
-    callback clicked;
-
-    height: root.small ? 30px : 34px;
-    width: text.preferred-width + (root.small ? Spacing.base : Spacing.comfortable);
-    border-radius: touch.pressed ? Shape.small : Shape.pill;
-    border-width: root.selected ? 0px : 1px;
-    border-color: MaterialPalette.outline-variant;
-    background: root.selected
-        ? MaterialPalette.primary-container
-        : (touch.has-hover ? MaterialPalette.surface-container-high : transparent);
-    animate border-radius { duration: Motion.spring-duration; easing: Motion.spring; }
-    animate background { duration: Motion.standard-duration; easing: Motion.standard; }
-
-    text := Text {
-        text: root.label;
-        color: root.selected
-            ? MaterialPalette.on-primary-container
-            : MaterialPalette.on-surface-variant;
-        font-size: root.small ? Typography.label-medium-size : Typography.label-large-size;
-        font-weight: root.selected
-            ? Typography.label-large-weight-em
-            : Typography.label-large-weight;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        width: 100%;
-        height: 100%;
-    }
-
-    touch := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-}
 
 /// One poster with its title underneath.
 export component PosterCard inherits Rectangle {

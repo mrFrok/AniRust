@@ -3,9 +3,9 @@
 // What has been saved, and what is still coming.
 
 import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette } from "../globals/material-palette.slint";
+import { MaterialPalette, LinearProgressIndicator, OutlineButton } from "@material";
 import { Typography } from "../globals/typography.slint";
-import { Shape, Spacing, Motion } from "../globals/shape.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { DownloadItem } from "../structs.slint";
 
@@ -46,21 +46,10 @@ component QueueRow inherits Rectangle {
             }
         }
 
-        // The bar doubles as the detail line's background while running, and
-        // steps out of the way once there is nothing left to watch.
-        if root.item.status == "running": Rectangle {
-            height: 4px;
-            border-radius: 2px;
-            background: MaterialPalette.surface-container-highest;
-
-            Rectangle {
-                x: 0;
-                width: parent.width * root.item.progress;
-                height: 100%;
-                border-radius: 2px;
-                background: MaterialPalette.primary;
-                animate width { duration: Motion.standard-duration; easing: Motion.standard; }
-            }
+        // The bar takes the detail line's place while running, and steps out
+        // of the way once there is nothing left to watch.
+        if root.item.status == "running": LinearProgressIndicator {
+            progress: root.item.progress;
         }
 
         if root.item.status != "running": Text {
@@ -103,28 +92,11 @@ export component DownloadsPage inherits Rectangle {
                 vertical-alignment: center;
             }
 
-            if root.items.length > 0: Rectangle {
-                height: 36px;
-                width: clear-label.preferred-width + Spacing.comfortable;
-                border-radius: Shape.pill;
-                border-width: 1px;
-                border-color: MaterialPalette.outline-variant;
-                background: clear-touch.has-hover
-                    ? MaterialPalette.surface-container-high
-                    : transparent;
+            if root.items.length > 0: VerticalLayout {
+                alignment: center;
 
-                clear-label := Text {
+                OutlineButton {
                     text: Tr.clear-finished;
-                    color: MaterialPalette.on-surface-variant;
-                    font-size: Typography.label-large-size;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    width: 100%;
-                    height: 100%;
-                }
-
-                clear-touch := TouchArea {
-                    mouse-cursor: pointer;
                     clicked => { root.clear-finished(); }
                 }
             }

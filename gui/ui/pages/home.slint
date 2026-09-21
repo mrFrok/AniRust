@@ -12,12 +12,31 @@
 // width it is being given to work it out.
 
 import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette } from "../globals/material-palette.slint";
+import { MaterialPalette, SecondaryTabBar, FilterChip, NavigationItem, OutlineButton, CircularProgressIndicator } from "@material";
 import { Typography } from "../globals/typography.slint";
-import { Shape, Spacing, Motion } from "../globals/shape.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { ReleaseCard } from "../structs.slint";
-import { PosterCard, Chip, Tab } from "../components/release-cards.slint";
+import { PosterCard } from "../components/release-cards.slint";
+
+/// A genre, as one of a row where exactly one of them is chosen.
+///
+/// A filter chip owns its checked state and flips it on a click, which is a
+/// toggle; this row is a choice. So the chip is put back to what the app says
+/// after every click: picking the chosen one again leaves it chosen, and
+/// picking another clears it because the app says so.
+component GenreChip inherits FilterChip {
+    in property <bool> selected;
+    callback picked();
+
+    init => { self.checked = root.selected; }
+    changed selected => { self.checked = root.selected; }
+    changed checked => {
+        if (self.checked == root.selected) { return; }
+        if (self.checked) { root.picked(); }
+        self.checked = root.selected;
+    }
+}
 
 export component HomePage inherits Rectangle {
     in property <[ReleaseCard]> results;
@@ -26,7 +45,7 @@ export component HomePage inherits Rectangle {
     in property <bool> loading: false;
     in-out property <string> query;
     /// The tabs of the current destination, and which is selected.
-    in property <[string]> tabs: [];
+    in property <[NavigationItem]> tabs: [];
     in property <int> tab: 0;
     /// Genre names the catalogue knows, supplied by Rust because they are data
     /// rather than interface text. Index 0 of the chip row is "all", which is
@@ -66,6 +85,10 @@ export component HomePage inherits Rectangle {
         Rectangle {
             height: 72px;
             background: MaterialPalette.surface-container;
+            // Painted after its siblings, so that what hangs below it — the
+            // account button's tooltip — is not drawn over by the tabs and
+            // the genres, which come after it in the column.
+            z: 1;
 
             HorizontalLayout {
                 padding-left: Spacing.base;
@@ -137,34 +160,16 @@ export component HomePage inherits Rectangle {
                     }
                 }
 
-                // Signed in, the name is the control: hovering it offers the
-                // one action there is. A menu for a single item is a menu
+                // Signed in, the name is the control, and what clicking it
+                // does is in its tooltip. A menu for a single item is a menu
                 // nobody wants.
-                account := Rectangle {
-                    y: (parent.height - self.height) / 2;
-                    height: Spacing.touch-target;
-                    width: account-label.preferred-width + 2 * Spacing.base;
-                    border-radius: Shape.pill;
-                    background: account-touch.has-hover
-                        ? MaterialPalette.surface-container-highest
-                        : transparent;
-                    border-width: 1px;
-                    border-color: MaterialPalette.outline-variant;
+                VerticalLayout {
+                    alignment: center;
 
-                    account-label := Text {
-                        text: root.signed-in
-                            ? (account-touch.has-hover ? Tr.sign-out : root.account-name)
-                            : Tr.sign-in;
-                        color: MaterialPalette.on-surface;
-                        font-size: Typography.label-large-size;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: 100%;
-                        height: 100%;
-                    }
+                    OutlineButton {
+                        text: root.signed-in ? root.account-name : Tr.sign-in;
+                        tooltip: root.signed-in ? Tr.sign-out : "";
 
-                    account-touch := TouchArea {
-                        mouse-cursor: pointer;
                         clicked => {
                             if (root.signed-in) { root.sign-out(); } else { root.sign-in(); }
                         }
@@ -177,21 +182,25 @@ export component HomePage inherits Rectangle {
         //
         // Hidden while searching: the tabs name a part of the catalogue, and a
         // search is not one of them.
-        if !root.searching && root.tabs.length > 0: Rectangle {
-            height: 48px;
-            background: transparent;
+        if !root.searching && root.tabs.length > 0: HorizontalLayout {
+            padding-left: Spacing.base;
+            padding-right: Spacing.base;
 
-            HorizontalLayout {
-                padding-left: Spacing.base;
-                padding-right: Spacing.base;
-                spacing: Spacing.comfortable;
-                alignment: start;
+            // Stretched across the page, which is what divides the width
+            // evenly between the tabs: the bar draws its indicator under one
+            // such division, so an indicator only lines up with its label
+            // when the bar has the room the labels were divided from.
+            SecondaryTabBar {
+                items: root.tabs;
+                horizontal-stretch: 1;
 
-                for name[index] in root.tabs: Tab {
-                    label: name;
-                    selected: index == root.tab;
-                    clicked => { root.select-tab(index); }
-                }
+                // Pushed, not bound: the bar writes its own index on a click,
+                // and Rust decides which tab a destination opens on.
+                property <int> wanted: root.tab;
+                init => { self.current-index = root.tab; }
+                changed wanted => { self.current-index = self.wanted; }
+
+                index-changed(i) => { root.select-tab(i); }
             }
         }
 
@@ -206,41 +215,65 @@ export component HomePage inherits Rectangle {
             spacing: Spacing.small;
             padding-bottom: Spacing.small;
 
-            Chip {
-                label: Tr.all-genres;
-                small: true;
+            GenreChip {
+                text: Tr.all-genres;
                 selected: root.genre == 0;
-                clicked => { root.select-genre(0); }
+                picked => { root.select-genre(0); }
             }
 
-            for name[index] in root.genres: Chip {
-                label: name;
-                small: true;
+            for name[index] in root.genres: GenreChip {
+                text: name;
                 selected: index + 1 == root.genre;
-                clicked => { root.select-genre(index + 1); }
+                picked => { root.select-genre(index + 1); }
             }
         }
 
         // ---- results -----------------------------------------------------
-        if root.searching || root.loading: HorizontalLayout {
+        // A line over the grid: what it is showing, and whether more of it is
+        // still coming. Loading is only ever said here while there is already
+        // something underneath — a tab being switched keeps the last one's
+        // cards until the new ones arrive. With nothing underneath, the
+        // indicator in the middle says it instead, and saying it in both
+        // places at once says it worse than either.
+        if root.searching || (root.loading && root.results.length > 0): HorizontalLayout {
             padding-left: Spacing.base;
             padding-right: Spacing.base;
             padding-top: Spacing.small;
             spacing: Spacing.small;
 
             Text {
-                text: root.searching ? Tr.search-results : "";
+                text: root.searching ? Tr.search-results : Tr.loading;
                 color: MaterialPalette.on-surface;
                 font-size: Typography.title-medium-size;
                 font-weight: Typography.title-medium-weight-em;
                 horizontal-stretch: 1;
             }
 
-            if root.loading: Text {
+            if root.searching && root.loading && root.results.length > 0: Text {
                 text: Tr.loading;
                 color: MaterialPalette.on-surface-variant;
                 font-size: Typography.label-medium-size;
                 vertical-alignment: center;
+            }
+        }
+
+        // Loading, with nothing yet to show under it.
+        if root.loading && root.results.length == 0: HorizontalLayout {
+            vertical-stretch: 1;
+            alignment: center;
+
+            VerticalLayout {
+                alignment: center;
+
+                // Sized here rather than left to itself: the indicator keeps
+                // itself round by binding its width to its height, and a
+                // layout that has to measure one from the other measures in a
+                // circle.
+                CircularProgressIndicator {
+                    indeterminate: true;
+                    width: 48px;
+                    height: 48px;
+                }
             }
         }
 

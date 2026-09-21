@@ -12,7 +12,7 @@
 // that owns the video texture is declared once, in the window.
 
 import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette } from "../globals/material-palette.slint";
+import { MaterialPalette, IconButton, FloatingActionButton, FABStyle, TonalButton } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -83,6 +83,11 @@ export component ReleasePage inherits Rectangle {
     horizontal-stretch: 1;
     vertical-stretch: 1;
 
+    /// The height the start button occupies, which the failure line above it
+    /// is placed from. Stated rather than measured: the button it belongs to
+    /// is one of two that take that place, and neither is always there.
+    property <length> start-height: 56px;
+
     /// Whether the episode list goes under the player instead of beside it.
     ///
     /// Decided by the window rather than measured here. A component that reads
@@ -108,21 +113,11 @@ export component ReleasePage inherits Rectangle {
                 padding-right: Spacing.base;
                 spacing: Spacing.small;
 
-                Rectangle {
-                    width: Spacing.touch-target;
-                    background: transparent;
+                VerticalLayout {
+                    alignment: center;
 
-                    Image {
-                        source: @image-url("../icons/back.svg");
-                        colorize: MaterialPalette.on-surface;
-                        width: 22px;
-                        height: 22px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                    }
-
-                    TouchArea {
-                        mouse-cursor: pointer;
+                    IconButton {
+                        icon: @image-url("../icons/back.svg");
                         clicked => { root.go-back(); }
                     }
                 }
@@ -191,58 +186,32 @@ export component ReleasePage inherits Rectangle {
                             wrap: word-wrap;
                             width: min(parent.width - 2 * Spacing.loose, 460px);
                             x: (parent.width - self.width) / 2;
-                            y: start.y - self.height - Spacing.base;
+                            y: (parent.height - root.start-height) / 2 - self.height - Spacing.base;
                         }
 
-                        start := Rectangle {
-                            height: 56px;
-                            width: start-row.preferred-width + Spacing.loose;
+                        // The one button that matters on this screen, so it is
+                        // the one shape Material reserves for that: an
+                        // extended floating action button, lifted off the
+                        // still behind it.
+                        if root.first-episode > 0: FloatingActionButton {
+                            style: FABStyle.standard;
+                            icon: @image-url("../icons/play.svg");
+                            text: root.resume-episode > 0 && root.watched-any
+                                ? Tr.continue-watching + " " + root.first-episode
+                                : Tr.watch-episode + " " + root.first-episode;
                             x: (parent.width - self.width) / 2;
                             y: (parent.height - self.height) / 2;
-                            border-radius: start-touch.pressed ? Shape.medium : Shape.pill;
-                            background: root.first-episode > 0
-                                ? MaterialPalette.primary
-                                : MaterialPalette.surface-container-high;
-                            animate border-radius {
-                                duration: Motion.spring-duration;
-                                easing: Motion.spring;
-                            }
 
-                            start-row := HorizontalLayout {
-                                spacing: Spacing.small;
-                                alignment: center;
+                            clicked => { root.play-episode(root.first-episode); }
+                        }
 
-                                Image {
-                                    source: @image-url("../icons/play.svg");
-                                    colorize: MaterialPalette.on-primary;
-                                    width: 22px;
-                                    height: 22px;
-                                    visible: root.first-episode > 0;
-                                }
-
-                                Text {
-                                    text: root.first-episode == 0
-                                        ? (root.loading ? Tr.loading : Tr.nothing-to-play)
-                                        : (root.resume-episode > 0 && root.watched-any
-                                            ? Tr.continue-watching + " " + root.first-episode
-                                            : Tr.watch-episode + " " + root.first-episode);
-                                    color: root.first-episode > 0
-                                        ? MaterialPalette.on-primary
-                                        : MaterialPalette.on-surface-variant;
-                                    font-size: Typography.title-medium-size;
-                                    font-weight: Typography.title-medium-weight-em;
-                                    vertical-alignment: center;
-                                }
-                            }
-
-                            start-touch := TouchArea {
-                                mouse-cursor: root.first-episode > 0 ? pointer : default;
-                                clicked => {
-                                    if (root.first-episode > 0) {
-                                        root.play-episode(root.first-episode);
-                                    }
-                                }
-                            }
+                        // Nothing to start yet. It keeps the button's place
+                        // and says why, rather than leaving the still bare.
+                        if root.first-episode == 0: TonalButton {
+                            text: root.loading ? Tr.loading : Tr.nothing-to-play;
+                            enabled: false;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
                         }
                     }
                 }

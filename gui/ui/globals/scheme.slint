@@ -1,0 +1,199 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The colour scheme, switchable while the app runs.
+//
+// Every component reads `MaterialPalette`, and that reads `MaterialPalette.schemes`
+// — an `in` property, so a scheme is a value to hand it. This is the only way
+// to change the look at runtime: a Slint *style* is fixed at compile time.
+//
+// The palette is Material 3's violet, which is where Anixart's own accent
+// sits. AMOLED is not a scheme of its own but a modifier on the dark one: the
+// surfaces go to true black, which is what an OLED panel actually switches
+// off, while every other role keeps its tonal relationship.
+
+import { Palette } from "std-widgets.slint";
+import { MaterialSchemes } from "@material";
+
+export enum Appearance { system, light, dark, amoled }
+
+export global Scheme {
+    in property <Appearance> appearance: Appearance.system;
+
+    /// Whether the dark half is the one in use.
+    out property <bool> dark:
+        root.appearance == Appearance.dark || root.appearance == Appearance.amoled ? true
+        : root.appearance == Appearance.light ? false
+        : Palette.color-scheme == ColorScheme.dark;
+
+    /// Handed to `MaterialPalette.schemes` by the window.
+    out property <MaterialSchemes> schemes:
+        root.appearance == Appearance.amoled ? root.blacken(root.violet-scheme) : root.violet-scheme;
+
+    /// The dark half with its surfaces taken to black.
+    ///
+    /// Only the surface family moves. Containers keep their order — each is
+    /// still lighter than the one below it — so elevation still reads, and the
+    /// roles that carry text or accent are untouched.
+    pure function blacken(s: MaterialSchemes) -> MaterialSchemes {
+        return {
+            light: s.light,
+            dark: {
+                primary: s.dark.primary,
+                surfaceTint: s.dark.surfaceTint,
+                onPrimary: s.dark.onPrimary,
+                primaryContainer: s.dark.primaryContainer,
+                onPrimaryContainer: s.dark.onPrimaryContainer,
+                secondary: s.dark.secondary,
+                onSecondary: s.dark.onSecondary,
+                secondaryContainer: s.dark.secondaryContainer,
+                onSecondaryContainer: s.dark.onSecondaryContainer,
+                tertiary: s.dark.tertiary,
+                onTertiary: s.dark.onTertiary,
+                tertiaryContainer: s.dark.tertiaryContainer,
+                onTertiaryContainer: s.dark.onTertiaryContainer,
+                error: s.dark.error,
+                onError: s.dark.onError,
+                errorContainer: s.dark.errorContainer,
+                onErrorContainer: s.dark.onErrorContainer,
+                background: #000000,
+                onBackground: s.dark.onBackground,
+                surface: #000000,
+                onSurface: s.dark.onSurface,
+                surfaceVariant: s.dark.surfaceVariant,
+                onSurfaceVariant: s.dark.onSurfaceVariant,
+                outline: s.dark.outline,
+                outlineVariant: s.dark.outlineVariant,
+                shadow: s.dark.shadow,
+                scrim: s.dark.scrim,
+                inverseSurface: s.dark.inverseSurface,
+                inverseOnSurface: s.dark.inverseOnSurface,
+                inversePrimary: s.dark.inversePrimary,
+                primaryFixed: s.dark.primaryFixed,
+                onPrimaryFixed: s.dark.onPrimaryFixed,
+                primaryFixedDim: s.dark.primaryFixedDim,
+                onPrimaryFixedVariant: s.dark.onPrimaryFixedVariant,
+                secondaryFixed: s.dark.secondaryFixed,
+                onSecondaryFixed: s.dark.onSecondaryFixed,
+                secondaryFixedDim: s.dark.secondaryFixedDim,
+                onSecondaryFixedVariant: s.dark.onSecondaryFixedVariant,
+                tertiaryFixed: s.dark.tertiaryFixed,
+                onTertiaryFixed: s.dark.onTertiaryFixed,
+                tertiaryFixedDim: s.dark.tertiaryFixedDim,
+                onTertiaryFixedVariant: s.dark.onTertiaryFixedVariant,
+                surfaceDim: #000000,
+                surfaceBright: #1A1A1C,
+                surfaceContainerLowest: #000000,
+                surfaceContainerLow: #0A0A0B,
+                surfaceContainer: #121213,
+                surfaceContainerHigh: #1C1C1E,
+                surfaceContainerHighest: #262628,
+            },
+        };
+    }
+
+    /// Material 3's violet, generated from Anixart's own accent.
+    property <MaterialSchemes> violet-scheme: {
+        light: {
+            primary: #8246B9,
+            surfaceTint: #8246B9,
+            onPrimary: #ffffff,
+            primaryContainer: #EBE1FB,
+            onPrimaryContainer: #381E54,
+            secondary: #8B6DA5,
+            onSecondary: #ffffff,
+            secondaryContainer: #EBE0F5,
+            onSecondaryContainer: #38244B,
+            tertiary: #AD9900,
+            onTertiary: #ffffff,
+            tertiaryContainer: #E7F1D1,
+            onTertiaryContainer: #363400,
+            error: #BA1A1A,
+            onError: #FFFFFF,
+            errorContainer: #FFDAD6,
+            onErrorContainer: #410002,
+            background: #FFFAFC,
+            onBackground: #1F1A1C,
+            surface: #FFFAFC,
+            onSurface: #1F1A1C,
+            surfaceVariant: #EEDFE1,
+            onSurfaceVariant: #4F4348,
+            outline: #7F7376,
+            outlineVariant: #D1C2C7,
+            shadow: #000000,
+            scrim: #000000,
+            inverseSurface: #333031,
+            inverseOnSurface: #F7EFEF,
+            inversePrimary: #BA98F6,
+            primaryFixed: #EFDAF4,
+            onPrimaryFixed: #270E3A,
+            primaryFixedDim: #DCB6ED,
+            onPrimaryFixedVariant: #57386B,
+            secondaryFixed: #EDDCF0,
+            onSecondaryFixed: #221627,
+            secondaryFixedDim: #D0C0D4,
+            onSecondaryFixedVariant: #4E4253,
+            tertiaryFixed: #FFD5D7,
+            onTertiaryFixed: #331017,
+            tertiaryFixedDim: #EEBABD,
+            onTertiaryFixedVariant: #643B40,
+            surfaceDim: #F9F1F3,
+            surfaceBright: #FFFFFF,
+            surfaceContainerLowest: #FFFFFF,
+            surfaceContainerLow: #FCF1F3,
+            surfaceContainer: #F9ECEF,
+            surfaceContainerHigh: #F2E5E8,
+            surfaceContainerHighest: #EBDFE1,
+        },
+        dark: {
+            primary: #BA98F6,
+            surfaceTint: #BA98F6,
+            onPrimary: #381E54,
+            primaryContainer: #583582,
+            onPrimaryContainer: #EBE1FB,
+            secondary: #CDACE4,
+            onSecondary: #38244B,
+            secondaryContainer: #503664,
+            onSecondaryContainer: #EBE0F5,
+            tertiary: #C5CF67,
+            onTertiary: #363400,
+            tertiaryContainer: #4D4800,
+            onTertiaryContainer: #E7F1D1,
+            error: #FFB4AB,
+            onError: #690005,
+            errorContainer: #93000A,
+            onErrorContainer: #FFDAD6,
+            background: #141416,
+            onBackground: #E9E1E1,
+            surface: #141416,
+            onSurface: #E9E1E1,
+            surfaceVariant: #2A2A2C,
+            onSurfaceVariant: #C8C3C5,
+            outline: #928D90,
+            outlineVariant: #474548,
+            shadow: #000000,
+            scrim: #000000,
+            inverseSurface: #E9E1E1,
+            inverseOnSurface: #1F1A1C,
+            inversePrimary: #8246B9,
+            primaryFixed: #EFDAF4,
+            onPrimaryFixed: #270E3A,
+            primaryFixedDim: #DCB6ED,
+            onPrimaryFixedVariant: #57386B,
+            secondaryFixed: #EDDCF0,
+            onSecondaryFixed: #221627,
+            secondaryFixedDim: #D0C0D4,
+            onSecondaryFixedVariant: #4E4253,
+            tertiaryFixed: #FFD5D7,
+            onTertiaryFixed: #331017,
+            tertiaryFixedDim: #EEBABD,
+            onTertiaryFixedVariant: #643B40,
+            surfaceDim: #111011,
+            surfaceBright: #1C1C1E,
+            surfaceContainerLowest: #0F0E0F,
+            surfaceContainerLow: #141416,
+            surfaceContainer: #1C1C1E,
+            surfaceContainerHigh: #28282A,
+            surfaceContainerHighest: #323234,
+        },
+    };
+}
