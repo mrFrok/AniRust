@@ -10,7 +10,12 @@
 //! or over SSH.
 //!
 //! The video surface stays empty — it is a borrowed GL texture, and there is no
-//! GL here. Everything around it is the real thing.
+//! GL here. Everything around it is the real thing, with one difference worth
+//! knowing before a bug is chased that is not there: the software renderer
+//! clips to a rectangle, ignoring `border-radius`. Anything drawn inside a
+//! rounded box with `clip: true` — the selected segment of a segmented
+//! button, a poster in its card — has square corners here and rounded ones in
+//! the application, which draws through OpenGL.
 //!
 //! ```text
 //! cargo run -p anirust-gui --example screenshot -- out.png [width height] [state]
@@ -18,7 +23,8 @@
 //!
 //! `state` is `home`, `home-signed-in`, `release` (default), `playing`,
 //! `theatre`, `downloads`, `sign-in`, `failed`, `saved`, `loading`,
-//! `refreshing`, `empty` or `nothing`. Narrow is a width, not a state: pass
+//! `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`, `light`
+//! or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
 //! `home-hover-account` parks the pointer on the account button, which is the
@@ -67,6 +73,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || state == "loading"
             || state == "empty"
             || state == "refreshing"
+            || state.starts_with("profile")
+            || state == "light"
+            || state == "amoled"
         {
             "home".into()
         } else {
@@ -119,6 +128,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_destination(2);
         ui.set_tab(5);
     }
+    // The appearances that can be seen without a desktop to ask: the browsing
+    // screen is the one with the most of the palette on it at once.
+    if state == "light" {
+        ui.set_appearance(Appearance::Light);
+    }
+    if state == "amoled" {
+        ui.set_appearance(Appearance::Amoled);
+    }
+    // The screen about the application rather than about what to watch.
+    if state.starts_with("profile") {
+        ui.set_destination(4);
+        ui.set_signed_in(state == "profile-signed-in");
+        ui.set_account_name("mrfrok".into());
+        ui.set_appearance_choice(3);
+    }
     // A tab switched: the last tab's cards stay up while the new ones are
     // fetched, which is the only case where loading is said over a full grid.
     if state == "refreshing" {
@@ -169,6 +193,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     draw(&window);
     draw(&window);
+    // Animations are driven by the clock, and three frames drawn in the same
+    // microsecond leave every one of them at its first step: an indicator
+    // half-way to the tab it belongs to, a control mid-stretch. Half a second
+    // of real time puts the picture in the state a viewer would actually see.
+    for _ in 0..12 {
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        draw(&window);
+    }
 
     let mut buffer = image::RgbImage::new(width, height);
     for (pixel, out) in pixels.iter().zip(buffer.pixels_mut()) {
