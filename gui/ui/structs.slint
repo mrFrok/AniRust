@@ -56,3 +56,28 @@ export struct EpisodeItem {
     /// Filler, so a viewer following the manga can skip it.
     filler: bool,
 }
+
+/// The account's own profile, as its screen shows it.
+///
+/// Counts rather than lists: the screen states how much is in each list and
+/// opens the list itself when one is clicked, which is the only thing a count
+/// is good for.
+export struct Account {
+    login: string,
+    /// The line the account writes about itself. Usually empty.
+    status: string,
+    /// Registered on, as `2019-05-12`. A date without the name of a month is
+    /// a date this client can show in either language without knowing twelve
+    /// more words in each.
+    registered: string,
+    verified: bool,
+    watching: int,
+    planned: int,
+    watched: int,
+    hold: int,
+    dropped: int,
+    votes: int,
+    comments: int,
+    collections: int,
+    friends: int,
+}

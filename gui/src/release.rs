@@ -330,7 +330,7 @@ pub fn select_source(
 
 /// Fetches the poster and hands it to the screen when it arrives.
 pub fn load_poster(window: &MainWindow, http: reqwest::Client, url: String) {
-    fetch_into(window, http, url, |window, image| {
+    tasks::fetch_into(window, http, url, |window, image| {
         window.set_release_poster(image);
         window.set_poster_loaded(true);
     });
@@ -338,34 +338,9 @@ pub fn load_poster(window: &MainWindow, http: reqwest::Client, url: String) {
 
 /// Fetches the still shown behind the play button.
 pub fn load_backdrop(window: &MainWindow, http: reqwest::Client, url: String) {
-    fetch_into(window, http, url, |window, image| {
+    tasks::fetch_into(window, http, url, |window, image| {
         window.set_release_backdrop(image);
         window.set_backdrop_loaded(true);
-    });
-}
-
-/// Loads one image and puts it on the screen, or leaves the screen alone.
-///
-/// Both images are decoration: a release without them is still entirely
-/// usable, so a failure here is a debug line rather than anything the viewer
-/// is told about.
-fn fetch_into(
-    window: &MainWindow,
-    http: reqwest::Client,
-    url: String,
-    apply: impl FnOnce(&MainWindow, slint::Image) + 'static,
-) {
-    if url.is_empty() {
-        return;
-    }
-
-    let weak = window.as_weak();
-    tasks::spawn(tasks::fetch_image(http, url), move |result| {
-        let Some(window) = weak.upgrade() else { return };
-        match result {
-            Ok(buffer) => apply(&window, slint::Image::from_rgba8(buffer)),
-            Err(error) => tracing::debug!(%error, "image not loaded"),
-        }
     });
 }
 

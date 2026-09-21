@@ -23,8 +23,8 @@
 //!
 //! `state` is `home`, `home-signed-in`, `release` (default), `playing`,
 //! `theatre`, `downloads`, `sign-in`, `failed`, `saved`, `loading`,
-//! `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`, `light`
-//! or `amoled`. Narrow is a width, not a state: pass
+//! `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`,
+//! `profile-light`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
 //! `home-hover-account` parks the pointer on the account button, which is the
@@ -130,7 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // The appearances that can be seen without a desktop to ask: the browsing
     // screen is the one with the most of the palette on it at once.
-    if state == "light" {
+    if state == "light" || state == "profile-light" {
         ui.set_appearance(Appearance::Light);
     }
     if state == "amoled" {
@@ -139,9 +139,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The screen about the application rather than about what to watch.
     if state.starts_with("profile") {
         ui.set_destination(4);
-        ui.set_signed_in(state == "profile-signed-in");
+        // `profile` alone is the screen with nobody on it; every other spelling
+        // of it has an account behind it.
+        ui.set_signed_in(state != "profile");
         ui.set_account_name("mrfrok".into());
         ui.set_appearance_choice(3);
+        ui.set_account(Account {
+            login: "mrfrok".into(),
+            status: "смотрю по одной серии в день, честно".into(),
+            registered: "2019-05-12".into(),
+            verified: true,
+            watching: 12,
+            planned: 148,
+            watched: 306,
+            hold: 4,
+            dropped: 9,
+            votes: 271,
+            comments: 18,
+            collections: 3,
+            friends: 26,
+        });
     }
     // A tab switched: the last tab's cards stay up while the new ones are
     // fetched, which is the only case where loading is said over a full grid.

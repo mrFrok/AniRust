@@ -96,7 +96,7 @@ fn main() -> Result<()> {
 
     // Before anything is fetched: a restored session changes what the server
     // answers with, down to which episodes are marked watched.
-    session::restore(&window, &app.account, &app.client);
+    session::restore(&window, &app.account, &app.client, app.http.clone());
 
     // A release id on the command line opens straight into it; otherwise the
     // client starts where a client should, on something to choose from.
@@ -183,6 +183,7 @@ fn wire_account(window: &MainWindow, app: &Rc<App>) {
                 &window,
                 &app.account,
                 Rc::clone(&app.client),
+                app.http.clone(),
                 window.get_login().trim().to_string(),
                 window.get_password().to_string(),
             );
@@ -283,6 +284,21 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
         move |index| {
             let Some(window) = weak.upgrade() else { return };
             home::select_tab(
+                &window,
+                &app.home,
+                Rc::clone(&app.client),
+                app.http.clone(),
+                index.max(0) as usize,
+            );
+        }
+    });
+
+    window.on_open_list({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            home::open_list(
                 &window,
                 &app.home,
                 Rc::clone(&app.client),

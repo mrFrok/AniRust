@@ -3,18 +3,72 @@
 // The account, and what the application is set to.
 //
 // The fifth destination on the rail, and the only one that is about the
-// application rather than about what to watch. It is deliberately short: a
-// client for watching something should not grow a control panel, and every
-// setting here has to earn its line.
+// application rather than about what to watch. The account's own client shows
+// the same things here: who you are, how much is in each of your lists, and
+// how much you have had to say about it.
+//
+// Every count on the screen is a way into the list it counts. A number nobody
+// can act on is decoration, and this client has no room for decoration it
+// cannot click.
 
-import { MaterialPalette, ListTile, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton } from "@material";
+import { MaterialPalette, ListTile, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton, FilledCard } from "@material";
 import { Typography } from "../globals/typography.slint";
-import { Spacing } from "../globals/shape.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
+import { Account } from "../structs.slint";
+
+/// One number, with what it counts under it.
+///
+/// A card rather than a plain box when it leads somewhere: the state layer a
+/// card draws under its children is what says it can be pressed, and the two
+/// pieces of text on top of it are transparent enough to let that through.
+component Stat inherits Rectangle {
+    in property <string> label;
+    in property <int> value;
+    /// Whether clicking it goes anywhere.
+    in property <bool> opens: false;
+    callback clicked;
+
+    width: 146px;
+    height: 76px;
+    background: transparent;
+
+    // Told to fill its box. A card sitting in a plain rectangle takes the size
+    // of what is written on it otherwise, and a row of them then has one gap
+    // per word length.
+    FilledCard {
+        width: 100%;
+        height: 100%;
+        clickable: root.opens;
+        clicked => { root.clicked(); }
+
+        VerticalLayout {
+            padding: Spacing.medium;
+            spacing: Spacing.hair;
+            alignment: center;
+
+            Text {
+                text: root.value;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.headline-small-size;
+                font-weight: Typography.headline-small-weight;
+            }
+
+            Text {
+                text: root.label;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.label-medium-size;
+                overflow: elide;
+            }
+        }
+    }
+}
 
 export component ProfilePage inherits Rectangle {
     in property <bool> signed-in: false;
-    in property <string> account-name;
+    in property <Account> account;
+    in property <image> avatar;
+    in property <bool> avatar-loaded: false;
     /// Which appearance is chosen, as a position in the row of them. Rust owns
     /// the list and the order; this only says which one is lit.
     in property <int> appearance: 0;
@@ -22,6 +76,8 @@ export component ProfilePage inherits Rectangle {
     callback sign-in();
     callback sign-out();
     callback select-appearance(int);
+    /// One of the account's own lists, by its place in the bookmarks tabs.
+    callback open-list(int);
 
     background: MaterialPalette.surface;
 
@@ -39,28 +95,93 @@ export component ProfilePage inherits Rectangle {
         spacing: Spacing.base;
         alignment: start;
 
-        Text {
-            text: Tr.nav-profile;
-            color: MaterialPalette.on-surface;
-            font-size: Typography.title-large-size;
-            font-weight: Typography.title-large-weight-em;
-        }
-
-        // ---- the account -----------------------------------------------
+        // ---- who ---------------------------------------------------------
         HorizontalLayout {
-            spacing: Spacing.small;
+            spacing: Spacing.base;
 
-            // Its height is stated because the avatar inside keeps itself
-            // round by taking its width from its height, and a layout that
-            // has to measure one from the other measures in a circle.
-            ListTile {
-                horizontal-stretch: 1;
+            // The avatar is the account's own picture once it arrives, and a
+            // filled circle until then — never a gap that fills in later and
+            // moves everything sideways.
+            Rectangle {
+                width: 72px;
                 height: 72px;
-                text: root.signed-in ? root.account-name : Tr.signed-out;
-                supporting-text: root.signed-in ? Tr.signed-in-as : Tr.sign-in-why;
-                avatar-icon: @image-url("../icons/person.svg");
-                avatar-background: MaterialPalette.primary-container;
-                avatar-foreground: MaterialPalette.on-primary-container;
+                border-radius: self.width / 2;
+                background: MaterialPalette.primary-container;
+                clip: true;
+
+                Image {
+                    source: root.avatar;
+                    image-fit: cover;
+                    width: 100%;
+                    height: 100%;
+                    visible: root.signed-in && root.avatar-loaded;
+                }
+
+                Image {
+                    source: @image-url("../icons/person.svg");
+                    colorize: MaterialPalette.on-primary-container;
+                    width: 34px;
+                    height: 34px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    visible: !root.signed-in || !root.avatar-loaded;
+                }
+            }
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: Spacing.hair;
+
+                HorizontalLayout {
+                    spacing: Spacing.small;
+                    alignment: start;
+
+                    Text {
+                        text: root.signed-in ? root.account.login : Tr.signed-out;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.title-large-size;
+                        font-weight: Typography.title-large-weight-em;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+
+                    if root.signed-in && root.account.verified: Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        height: 22px;
+                        width: badge.preferred-width + Spacing.medium;
+                        border-radius: Shape.small;
+                        background: MaterialPalette.secondary-container;
+
+                        badge := Text {
+                            text: Tr.verified;
+                            color: MaterialPalette.on-secondary-container;
+                            font-size: Typography.label-small-size;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: 100%;
+                            height: 100%;
+                        }
+                    }
+                }
+
+                if root.signed-in && root.account.status != "": Text {
+                    text: root.account.status;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.body-medium-size;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: root.signed-in
+                        ? (root.account.registered != ""
+                            ? Tr.registered + " " + root.account.registered
+                            : "")
+                        : Tr.sign-in-to-profile;
+                    color: MaterialPalette.on-surface-variant;
+                    font-size: Typography.body-medium-size;
+                    wrap: word-wrap;
+                }
             }
 
             VerticalLayout {
@@ -81,9 +202,115 @@ export component ProfilePage inherits Rectangle {
             }
         }
 
+        // ---- what is in the lists ----------------------------------------
+        //
+        // Only with an account behind them. Five zeroes state nothing except
+        // that nobody is signed in, which the line above already said.
+        if root.signed-in: VerticalLayout {
+            // The gap between the groups is wider than the one inside them,
+            // which is what makes them read as two groups rather than as four
+            // things stacked in a column.
+            spacing: Spacing.base;
+
+            VerticalLayout {
+                spacing: Spacing.small;
+
+                Text {
+                    text: Tr.lists;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-medium-size;
+                    font-weight: Typography.title-medium-weight-em;
+                }
+
+                // Wrapped rather than squeezed: five cards do not fit across a
+                // window that is allowed to be 640 wide.
+                FlexboxLayout {
+                    flex-wrap: wrap;
+                    alignment: start;
+                    spacing: Spacing.small;
+
+                    Stat {
+                        label: Tr.list-watching;
+                        value: root.account.watching;
+                        opens: true;
+                        clicked => { root.open-list(0); }
+                    }
+
+                    Stat {
+                        label: Tr.list-planned;
+                        value: root.account.planned;
+                        opens: true;
+                        clicked => { root.open-list(1); }
+                    }
+
+                    Stat {
+                        label: Tr.list-watched;
+                        value: root.account.watched;
+                        opens: true;
+                        clicked => { root.open-list(2); }
+                    }
+
+                    Stat {
+                        label: Tr.list-hold;
+                        value: root.account.hold;
+                        opens: true;
+                        clicked => { root.open-list(3); }
+                    }
+
+                    Stat {
+                        label: Tr.list-dropped;
+                        value: root.account.dropped;
+                        opens: true;
+                        clicked => { root.open-list(4); }
+                    }
+                }
+            }
+
+            // Counts of things this client has no screen for, so they are
+            // under a heading of their own rather than sitting among lists
+            // that open. They are still worth stating: they are the account's
+            // own measure of itself.
+            VerticalLayout {
+                spacing: Spacing.small;
+
+                Text {
+                    text: Tr.activity;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-medium-size;
+                    font-weight: Typography.title-medium-weight-em;
+                }
+
+                FlexboxLayout {
+                    flex-wrap: wrap;
+                    alignment: start;
+                    spacing: Spacing.small;
+
+                    Stat {
+                        label: Tr.votes;
+                        value: root.account.votes;
+                    }
+
+                    Stat {
+                        label: Tr.comments;
+                        value: root.account.comments;
+                    }
+
+                    Stat {
+                        label: Tr.collections;
+                        value: root.account.collections;
+                    }
+
+                    Stat {
+                        label: Tr.friends;
+                        value: root.account.friends;
+                    }
+                }
+            }
+        }
+
         HorizontalDivider {}
 
-        // ---- how it looks ----------------------------------------------
+        // ---- how it looks ------------------------------------------------
         VerticalLayout {
             spacing: Spacing.small;
 

@@ -298,6 +298,28 @@ pub fn select_destination(
     open(window, state, client, http);
 }
 
+/// Opens one of the account's own lists by name, from wherever the viewer is.
+///
+/// The profile screen counts what is in each of them, and a count is only
+/// worth stating if it can be followed. This is the destination and the tab in
+/// one move, so the list behind it is fetched once rather than twice.
+pub fn open_list(
+    window: &MainWindow,
+    state: &Rc<RefCell<HomeState>>,
+    client: Rc<Client>,
+    http: reqwest::Client,
+    tab: usize,
+) {
+    {
+        let mut state = state.borrow_mut();
+        state.destination = Destination::Saved;
+        state.tab = tab.min(Destination::Saved.tabs().saturating_sub(1));
+        state.genre = 0;
+    }
+    window.set_query("".into());
+    open(window, state, client, http);
+}
+
 /// Switches tab within the current destination.
 pub fn select_tab(
     window: &MainWindow,

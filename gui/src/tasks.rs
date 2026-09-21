@@ -107,3 +107,30 @@ pub async fn fetch_image(
         decoded.height(),
     ))
 }
+
+/// Loads one image and puts it on the screen, or leaves the screen alone.
+///
+/// Every image this client shows is decoration: a release without its poster,
+/// or an account without its picture, is still entirely usable. A failure here
+/// is a debug line rather than anything the viewer is told about.
+pub fn fetch_into(
+    window: &crate::MainWindow,
+    http: reqwest::Client,
+    url: String,
+    apply: impl FnOnce(&crate::MainWindow, slint::Image) + 'static,
+) {
+    use slint::ComponentHandle;
+
+    if url.is_empty() {
+        return;
+    }
+
+    let weak = window.as_weak();
+    spawn(fetch_image(http, url), move |result| {
+        let Some(window) = weak.upgrade() else { return };
+        match result {
+            Ok(buffer) => apply(&window, slint::Image::from_rgba8(buffer)),
+            Err(error) => tracing::debug!(%error, "image not loaded"),
+        }
+    });
+}

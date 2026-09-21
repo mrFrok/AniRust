@@ -9,7 +9,7 @@ import { HomePage } from "pages/home.slint";
 import { SignInSheet } from "components/sign-in.slint";
 import { DownloadsPage } from "pages/downloads.slint";
 import { ProfilePage } from "pages/profile.slint";
-import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem } from "structs.slint";
+import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -199,6 +199,12 @@ export component MainWindow inherits Window {
     // ---- account ---------------------------------------------------------
     in property <bool> signed-in: false;
     in property <string> account-name;
+    /// The rest of the account, which only the profile screen shows.
+    in property <Account> account;
+    in property <image> avatar;
+    in property <bool> avatar-loaded: false;
+    /// One of the account's own lists, by its place in the bookmarks tabs.
+    callback open-list(int);
     in-out property <bool> show-sign-in: false;
     in-out property <string> login;
     in-out property <string> password;
@@ -246,12 +252,15 @@ export component MainWindow inherits Window {
 
         if root.destination == 4: ProfilePage {
             signed-in: root.signed-in;
-            account-name: root.account-name;
+            account: root.account;
+            avatar: root.avatar;
+            avatar-loaded: root.avatar-loaded;
             appearance: root.appearance-choice;
 
             sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
             sign-out => { root.sign-out(); }
             select-appearance(i) => { root.select-appearance(i); }
+            open-list(i) => { root.open-list(i); }
         }
 
         if root.destination != 3 && root.destination != 4: HomePage {
