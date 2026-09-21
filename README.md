@@ -38,8 +38,8 @@ mean reading someone else's implementation. Allvideo, StudioMir, Myvi, VKVideo,
 OK, RuTube and MailRu are listed by the official client but did not appear in
 the sampled catalogue.
 
-Still to come: the account's own lists and history as screens, and packaged
-builds.
+Still to come: a profile screen — the rail's fifth destination is still a
+dead end — and packaged builds.
 
 ## Building
 
@@ -61,8 +61,12 @@ renders to a PNG with the software renderer, no window server involved:
 cargo run -p anirust-gui --example screenshot -- out.png 1440 900 release
 ```
 
-The last argument is one of `home`, `release`, `playing`, `theatre`, `sign-in`
-or `failed`; a width below 900 gives the stacked layout.
+The last argument is one of `home`, `home-signed-in`, `home-hover-account`,
+`release`, `playing`, `theatre`, `downloads`, `sign-in`, `failed`, `saved`,
+`loading`, `refreshing`, `empty` or `nothing`; a width below 900 gives the
+stacked layout. The states past the obvious ones are the ones worth having:
+each is a screen that is easy to leave untested and easy to get wrong —
+nothing loaded yet, nothing found, nothing to play.
 
 ## The probe
 
