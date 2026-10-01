@@ -257,6 +257,7 @@ export component MainWindow inherits Window {
     in property <string> feed-notice;
     callback select-feed-tab(int);
     callback toggle-subscription(int);
+    callback toggle-like(int);
 
     callback clear-finished-downloads();
 
@@ -334,6 +335,7 @@ export component MainWindow inherits Window {
             select-tab(i) => { root.select-feed-tab(i); }
             toggle-subscription(i) => { root.toggle-subscription(i); }
             open-comments(i) => { root.open-post-comments(i); }
+            toggle-like(i) => { root.toggle-like(i); }
             sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
         }
 

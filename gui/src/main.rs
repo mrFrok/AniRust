@@ -419,6 +419,20 @@ fn wire_feed(window: &MainWindow, app: &Rc<App>) {
         }
     });
 
+    window.on_toggle_like({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            if !app.client.is_authenticated() {
+                window.set_sign_in_error("".into());
+                window.set_show_sign_in(true);
+                return;
+            }
+            feed::toggle_like(&window, &app.feed, &app.client, index);
+        }
+    });
+
     window.on_toggle_subscription({
         let app = Rc::clone(app);
         move |index| {

@@ -12,7 +12,7 @@ use std::rc::Rc;
 
 use slint::{ComponentHandle, Model, VecModel};
 
-use anirust_api::{Article, Client, Page};
+use anirust_api::{Article, Client, CommentVote, Page};
 
 use crate::{FeedPost, MainWindow, tasks};
 
@@ -183,6 +183,86 @@ pub fn toggle_subscription(
     );
 }
 
+/// The heart on a post: an up vote on the service's one vote scale.
+const UP: i32 = 2;
+
+/// Gives a post a heart, or takes it back. The count moves with it at once,
+/// and both go back if the server refuses.
+pub fn toggle_like(
+    window: &MainWindow,
+    state: &Rc<RefCell<FeedState>>,
+    client: &Client,
+    index: i32,
+) {
+    let Ok(at) = usize::try_from(index) else {
+        return;
+    };
+    let Some((article_id, before_vote, before_count)) = state
+        .borrow()
+        .articles
+        .get(at)
+        .map(|a| (a.id, a.vote, a.vote_count))
+    else {
+        return;
+    };
+    let liking = before_vote != UP;
+    let after_vote = if liking { UP } else { 0 };
+    let after_count = recount(before_count, before_vote, after_vote);
+
+    set_like(state, at, after_vote, after_count);
+
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    let api = client.clone();
+    tasks::spawn(
+        async move {
+            let vote = if liking {
+                CommentVote::Up
+            } else {
+                CommentVote::None
+            };
+            api.article_vote(article_id, vote).await
+        },
+        move |result| {
+            if weak.upgrade().is_none() {
+                return;
+            }
+            if let Err(error) = result {
+                tracing::warn!(%error, article_id, "the heart was not counted");
+                set_like(&state, at, before_vote, before_count);
+            }
+        },
+    );
+}
+
+/// A post's score after the account's vote changes from `before` to `after`:
+/// an up vote is worth one, a down vote minus one. A heart on a post this
+/// account had voted down moves it by two.
+fn recount(score: i64, before: i32, after: i32) -> i64 {
+    let worth = |vote: i32| match vote {
+        UP => 1,
+        1 => -1,
+        _ => 0,
+    };
+    score - worth(before) + worth(after)
+}
+
+fn set_like(state: &Rc<RefCell<FeedState>>, at: usize, vote: i32, count_now: i64) {
+    let mut state = state.borrow_mut();
+    let Some(article) = state.articles.get_mut(at) else {
+        return;
+    };
+    article.vote = vote;
+    article.vote_count = count_now;
+    if let Some(model) = state.posts.clone()
+        && let Some(mut post) = model.row_data(at)
+    {
+        post.liked = vote == UP;
+        post.votes = count(count_now);
+        model.set_row_data(at, post);
+    }
+}
+
 /// Sets whether a channel is followed, on every post of it and on screen.
 fn mark_channel(state: &Rc<RefCell<FeedState>>, channel_id: i64, subscribed: bool) {
     let mut state = state.borrow_mut();
@@ -285,6 +365,7 @@ fn post_for(article: &Article, now: i64) -> FeedPost {
         has_picture: article.first_image().is_some(),
         comments: count(article.comment_count),
         votes: count(article.vote_count),
+        liked: article.vote == UP,
         pinned: article.is_pinned,
     }
 }
@@ -338,6 +419,13 @@ fn load_image(
 mod tests {
     use super::*;
     use anirust_api::{Channel, ProfileSlim};
+
+    #[test]
+    fn a_heart_moves_the_score_by_what_the_old_vote_was_worth() {
+        assert_eq!(recount(10, 0, UP), 11);
+        assert_eq!(recount(10, UP, 0), 9);
+        assert_eq!(recount(10, 1, UP), 12, "a down vote turned into a heart");
+    }
 
     #[test]
     fn a_tab_index_names_the_same_tab_back() {

@@ -24,6 +24,7 @@ import { FeedPost } from "../structs.slint";
 component Tally inherits HorizontalLayout {
     in property <image> icon;
     in property <int> value;
+    in property <color> tint: MaterialPalette.on-surface-variant;
 
     spacing: Spacing.tight;
 
@@ -32,7 +33,7 @@ component Tally inherits HorizontalLayout {
 
         Image {
             source: root.icon;
-            colorize: MaterialPalette.on-surface-variant;
+            colorize: root.tint;
             width: 18px;
             height: 18px;
         }
@@ -40,7 +41,7 @@ component Tally inherits HorizontalLayout {
 
     Text {
         text: root.value;
-        color: MaterialPalette.on-surface-variant;
+        color: root.tint;
         font-size: Typography.label-large-size;
         vertical-alignment: center;
     }
@@ -51,6 +52,7 @@ component PostCard inherits Rectangle {
     in property <FeedPost> post;
     callback toggle-subscription();
     callback open-comments();
+    callback toggle-like();
 
     /// Folded by default when the post is long enough to need it. Each card
     /// keeps its own: unfolding one post is not a reason to unfold them all.
@@ -167,20 +169,47 @@ component PostCard inherits Rectangle {
             spacing: Spacing.base;
             alignment: start;
 
-            Tally {
-                icon: @image-url("../icons/heart.svg");
-                value: root.post.votes;
+            // The heart is the account's vote, and the count beside it moves
+            // with it. Without an account it asks for one.
+            Rectangle {
+                width: heart-tally.preferred-width + Spacing.small;
+                height: 28px;
+                border-radius: Shape.small;
+                background: heart-touch.has-hover ? MaterialPalette.surface-container-high : transparent;
+
+                // Sized outright: a layout inside a plain rectangle is not
+                // given a size by it, and draws its text into nothing.
+                heart-tally := Tally {
+                    x: Spacing.tight;
+                    width: self.preferred-width;
+                    height: parent.height;
+                    icon: root.post.liked
+                        ? @image-url("../icons/heart-filled.svg")
+                        : @image-url("../icons/heart.svg");
+                    tint: root.post.liked ? MaterialPalette.primary : MaterialPalette.on-surface-variant;
+                    value: root.post.votes;
+                }
+
+                heart-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.toggle-like(); }
+                }
             }
 
             // The comment count opens the thread; the vote count is only a
             // count until votes are something this screen casts.
             Rectangle {
                 width: comments-tally.preferred-width + Spacing.small;
+                height: 28px;
                 border-radius: Shape.small;
                 background: comments-touch.has-hover ? MaterialPalette.surface-container-high : transparent;
 
+                // Sized outright: a layout inside a plain rectangle is not
+                // given a size by it, and draws its text into nothing.
                 comments-tally := Tally {
                     x: Spacing.tight;
+                    width: self.preferred-width;
+                    height: parent.height;
                     icon: @image-url("../icons/comment.svg");
                     value: root.post.comments;
                 }
@@ -228,6 +257,7 @@ export component FeedPage inherits Rectangle {
     callback select-tab(int);
     callback toggle-subscription(int);
     callback open-comments(int);
+    callback toggle-like(int);
     callback sign-in();
 
     background: MaterialPalette.surface;
@@ -342,6 +372,7 @@ export component FeedPage inherits Rectangle {
                     post: post;
                     toggle-subscription => { root.toggle-subscription(index); }
                     open-comments => { root.open-comments(index); }
+                    toggle-like => { root.toggle-like(index); }
                 }
             }
         }
