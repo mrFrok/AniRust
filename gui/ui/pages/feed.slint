@@ -1,0 +1,332 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Posts from channels.
+//
+// Two tabs, as in the official client: what the account is subscribed to, and
+// what was posted anywhere lately. The second is how the first gets filled —
+// a channel is subscribed to from one of its posts — so it is never more than
+// a tab away.
+//
+// A reader rather than a wall: one column, a comfortable measure, and long
+// posts folded behind "show more" so a single essay does not push the next
+// twenty posts off the screen. Posts are read here, not written; publishing
+// into someone else's network from a third-party client is a separate
+// decision, and not one this screen makes.
+
+import { ScrollView } from "std-widgets.slint";
+import { MaterialPalette, SecondaryTabBar, CircularProgressIndicator, TonalButton, OutlineButton, TextButton } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+import { FeedPost } from "../structs.slint";
+
+/// An icon and a number beside it.
+component Tally inherits HorizontalLayout {
+    in property <image> icon;
+    in property <int> value;
+
+    spacing: Spacing.tight;
+
+    VerticalLayout {
+        alignment: center;
+
+        Image {
+            source: root.icon;
+            colorize: MaterialPalette.on-surface-variant;
+            width: 18px;
+            height: 18px;
+        }
+    }
+
+    Text {
+        text: root.value;
+        color: MaterialPalette.on-surface-variant;
+        font-size: Typography.label-large-size;
+        vertical-alignment: center;
+    }
+}
+
+/// One post.
+component PostCard inherits Rectangle {
+    in property <FeedPost> post;
+    callback toggle-subscription();
+
+    /// Folded by default when the post is long enough to need it. Each card
+    /// keeps its own: unfolding one post is not a reason to unfold them all.
+    property <bool> expanded: false;
+    property <int> folded-lines: 6;
+
+    border-radius: Shape.large;
+    background: MaterialPalette.surface-container;
+
+    layout := VerticalLayout {
+        padding: Spacing.base;
+        spacing: Spacing.medium;
+
+        // ---- who and when ------------------------------------------------
+        HorizontalLayout {
+            spacing: Spacing.medium;
+
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: 20px;
+                background: MaterialPalette.primary-container;
+                clip: true;
+
+                Image {
+                    source: root.post.channel-avatar;
+                    image-fit: cover;
+                    width: 100%;
+                    height: 100%;
+                    visible: root.post.channel-avatar-loaded;
+                }
+            }
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+
+                Text {
+                    text: root.post.channel;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-small-size;
+                    font-weight: Typography.title-small-weight-em;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: root.post.pinned
+                        ? Tr.pinned + " · " + Tr.ago(root.post.minutes-ago)
+                        : Tr.ago(root.post.minutes-ago);
+                    color: MaterialPalette.on-surface-variant;
+                    font-size: Typography.label-medium-size;
+                }
+            }
+
+            // Subscribing is the offer, so it is the one with a fill; being
+            // subscribed already is a state, and says so quietly.
+            if root.post.can-subscribe: VerticalLayout {
+                alignment: center;
+
+                if !root.post.subscribed: TonalButton {
+                    text: Tr.subscribe;
+                    clicked => { root.toggle-subscription(); }
+                }
+
+                if root.post.subscribed: TextButton {
+                    text: Tr.subscribed;
+                    clicked => { root.toggle-subscription(); }
+                }
+            }
+        }
+
+        // ---- what it says ------------------------------------------------
+        if root.post.text != "": body := Text {
+            text: root.post.text;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.body-large-size;
+            wrap: word-wrap;
+            max-lines: root.expanded ? 0 : root.folded-lines;
+            overflow: elide;
+        }
+
+        // Offered only when there is something folded away. Measured rather
+        // than guessed from the length: a short text of long lines folds, a
+        // long text of short ones may not.
+        if root.post.text != "" && (root.expanded || measure.preferred-height > folded.preferred-height + 1px): HorizontalLayout {
+            alignment: start;
+
+            TextButton {
+                text: root.expanded ? Tr.show-less : Tr.show-more;
+                clicked => { root.expanded = !root.expanded; }
+            }
+        }
+
+        if root.post.has-picture: Rectangle {
+            height: 280px;
+            border-radius: Shape.medium;
+            background: MaterialPalette.surface-container-high;
+            clip: true;
+
+            Image {
+                source: root.post.picture;
+                image-fit: cover;
+                width: 100%;
+                height: 100%;
+                visible: root.post.picture-loaded;
+            }
+        }
+
+        // ---- what people made of it --------------------------------------
+        //
+        // Counts, not controls: voting and commenting are writing into the
+        // network, which this screen does not do.
+        HorizontalLayout {
+            spacing: Spacing.base;
+            alignment: start;
+
+            Tally {
+                icon: @image-url("../icons/heart.svg");
+                value: root.post.votes;
+            }
+
+            Tally {
+                icon: @image-url("../icons/comment.svg");
+                value: root.post.comments;
+            }
+        }
+    }
+
+    // The two measures the fold is decided by: the whole text, and the text
+    // cut to the folded height, both laid out at the width the body has.
+    // Invisible; they exist to be measured.
+    measure := Text {
+        visible: false;
+        width: root.width - 2 * Spacing.base;
+        text: root.post.text;
+        font-size: Typography.body-large-size;
+        wrap: word-wrap;
+    }
+
+    folded := Text {
+        visible: false;
+        width: root.width - 2 * Spacing.base;
+        text: root.post.text;
+        font-size: Typography.body-large-size;
+        wrap: word-wrap;
+        max-lines: root.folded-lines;
+    }
+
+    height: layout.preferred-height;
+}
+
+export component FeedPage inherits Rectangle {
+    in property <[FeedPost]> posts: [];
+    in property <bool> loading: false;
+    in property <bool> signed-in: false;
+    /// 0 the account's own feed, 1 the latest from everywhere.
+    in property <int> tab: 0;
+    /// Shown instead of the posts when there is a reason they are not there.
+    in property <string> notice;
+
+    callback select-tab(int);
+    callback toggle-subscription(int);
+    callback sign-in();
+
+    background: MaterialPalette.surface;
+
+    min-width: 0px;
+    min-height: 0px;
+    preferred-width: 0px;
+    preferred-height: 0px;
+    max-width: 100000px;
+    max-height: 100000px;
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
+
+    /// The width a column of text is comfortable to read at. A post stretched
+    /// across a desktop window is a line too long to find the start of the
+    /// next one.
+    property <length> measure: 680px;
+
+    VerticalLayout {
+        // Over the column of posts rather than across the window: the tabs
+        // name what is in that column, and an underline a metre from the text
+        // it names does not read as naming it.
+        //
+        // Capped rather than computed: the bar outweighs the two spacers, so
+        // it takes the room up to the column's width and the spacers share
+        // what is left on either side. Asking for `root.width` instead would
+        // have the page's size depend on itself.
+        HorizontalLayout {
+            padding-top: Spacing.small;
+            padding-left: Spacing.base;
+            padding-right: Spacing.base;
+
+            Rectangle { horizontal-stretch: 1; }
+
+            SecondaryTabBar {
+                horizontal-stretch: 1000;
+                max-width: root.measure;
+                items: [{ text: Tr.feed-mine }, { text: Tr.feed-latest }];
+
+                // Pushed, not bound: the bar writes its own index on a click.
+                property <int> wanted: root.tab;
+                init => { self.current-index = root.tab; }
+                changed wanted => { self.current-index = self.wanted; }
+
+                index-changed(i) => { root.select-tab(i); }
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+        }
+
+        if !root.signed-in: VerticalLayout {
+            vertical-stretch: 1;
+            alignment: center;
+            spacing: Spacing.base;
+
+            Text {
+                text: Tr.sign-in-to-feed;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.body-large-size;
+                horizontal-alignment: center;
+            }
+
+            HorizontalLayout {
+                alignment: center;
+
+                OutlineButton {
+                    text: Tr.sign-in;
+                    clicked => { root.sign-in(); }
+                }
+            }
+        }
+
+        if root.signed-in && root.loading && root.posts.length == 0: HorizontalLayout {
+            vertical-stretch: 1;
+            alignment: center;
+
+            VerticalLayout {
+                alignment: center;
+
+                // Sized here: the indicator takes its width from its height,
+                // and a layout measuring one from the other goes round.
+                CircularProgressIndicator {
+                    indeterminate: true;
+                    width: 48px;
+                    height: 48px;
+                }
+            }
+        }
+
+        if root.signed-in && !root.loading && root.posts.length == 0: Text {
+            vertical-stretch: 1;
+            text: root.notice != "" ? root.notice : Tr.feed-empty;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.body-large-size;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            wrap: word-wrap;
+        }
+
+        if root.signed-in && root.posts.length > 0: ScrollView {
+            vertical-stretch: 1;
+            content-height: column.preferred-height + 2 * Spacing.base;
+
+            column := VerticalLayout {
+                y: Spacing.base;
+                x: max(Spacing.base, (parent.width - self.width) / 2);
+                width: min(root.measure, parent.width - 2 * Spacing.base);
+                spacing: Spacing.base;
+                alignment: start;
+
+                for post[index] in root.posts: PostCard {
+                    post: post;
+                    toggle-subscription => { root.toggle-subscription(index); }
+                }
+            }
+        }
+    }
+}

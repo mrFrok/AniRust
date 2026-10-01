@@ -11,6 +11,7 @@
 //! goes through [`tasks`] and comes back on the UI thread.
 
 mod downloads;
+mod feed;
 mod home;
 mod preferences;
 mod progress;
@@ -39,9 +40,11 @@ use crate::video::VideoBridge;
 
 slint::include_modules!();
 
-/// Where the profile sits on the rail. Named because two places have to agree
-/// about it: the rail's own order, and what arriving there has to fetch.
-const PROFILE_DESTINATION: i32 = 3;
+/// Where the feed and the profile sit on the rail. Named because two places
+/// have to agree about each: the rail's own order, and what arriving there has
+/// to fetch — neither is a grid, so nothing in `home` fetches for them.
+const FEED_DESTINATION: i32 = 3;
+const PROFILE_DESTINATION: i32 = 4;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -86,6 +89,7 @@ fn main() -> Result<()> {
             progress::Store::load(),
         ))))),
         home: Rc::new(RefCell::new(HomeState::default())),
+        feed: Rc::new(RefCell::new(feed::FeedState::default())),
         queue: Rc::new(RefCell::new(downloads::Queue::default())),
         account: Rc::new(RefCell::new(Session::default())),
         playing: Rc::new(RefCell::new(None)),
@@ -93,6 +97,7 @@ fn main() -> Result<()> {
     });
 
     wire_home(&window, &app);
+    wire_feed(&window, &app);
     wire_account(&window, &app);
     wire_release(&window, &app);
     let advance = wire_player(&window, &app);
@@ -134,6 +139,7 @@ struct App {
     bridge: Rc<VideoBridge>,
     release: Rc<RefCell<ReleaseState>>,
     home: Rc<RefCell<HomeState>>,
+    feed: Rc<RefCell<feed::FeedState>>,
     queue: Rc<RefCell<downloads::Queue>>,
     account: Rc<RefCell<Session>>,
     /// The stream currently loaded, so the quality menu and the skip button
@@ -241,6 +247,34 @@ fn show_appearance(window: &MainWindow, chosen: preferences::Appearance) {
 // Browsing
 // ---------------------------------------------------------------------------
 
+fn wire_feed(window: &MainWindow, app: &Rc<App>) {
+    let weak = window.as_weak();
+
+    window.on_select_feed_tab({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            feed::select_tab(
+                &window,
+                &app.feed,
+                &app.client,
+                app.http.clone(),
+                app.account.borrow().authenticated,
+                index,
+            );
+        }
+    });
+
+    window.on_toggle_subscription({
+        let app = Rc::clone(app);
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            feed::toggle_subscription(&window, &app.feed, &app.client, index);
+        }
+    });
+}
+
 fn wire_home(window: &MainWindow, app: &Rc<App>) {
     let weak = window.as_weak();
     window.on_search({
@@ -287,6 +321,15 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
                     &app.account,
                     Rc::clone(&app.client),
                     app.http.clone(),
+                );
+            }
+            if index == FEED_DESTINATION {
+                feed::open(
+                    &window,
+                    &app.feed,
+                    &app.client,
+                    app.http.clone(),
+                    app.account.borrow().authenticated,
                 );
             }
         }

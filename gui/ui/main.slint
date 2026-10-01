@@ -9,7 +9,8 @@ import { HomePage } from "pages/home.slint";
 import { SignInSheet } from "components/sign-in.slint";
 import { DownloadsPage } from "pages/downloads.slint";
 import { ProfilePage } from "pages/profile.slint";
-import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem } from "structs.slint";
+import { FeedPage } from "pages/feed.slint";
+import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -172,11 +173,12 @@ export component MainWindow inherits Window {
     in property <bool> results-loading: false;
     in-out property <string> query;
 
-    /// Which destination is open: 0 home, 1 browse, 2 saved, 3 profile,
-    /// 4 downloads.
+    /// Which destination is open: 0 home, 1 browse, 2 saved, 3 feed,
+    /// 4 profile, 5 downloads.
     ///
-    /// The rail carries the first four, which are the four the client this one
-    /// follows has. The queue is the fifth and is reached from the toolbar,
+    /// The rail carries the first five, which are the five the client this one
+    /// follows has, in its order. The queue is the sixth and is reached from
+    /// the toolbar,
     /// because it is this client's own addition rather than one of theirs —
     /// and because it is somewhere you go when something is downloading, not
     /// somewhere you browse.
@@ -196,6 +198,15 @@ export component MainWindow inherits Window {
     /// How many of them are still queued or running, which is what the
     /// toolbar's badge counts.
     in property <int> downloads-working: 0;
+
+    // ---- feed ------------------------------------------------------------
+    in property <[FeedPost]> posts: [];
+    in property <bool> feed-loading: false;
+    /// 0 the account's own feed, 1 the latest from everywhere.
+    in property <int> feed-tab: 0;
+    in property <string> feed-notice;
+    callback select-feed-tab(int);
+    callback toggle-subscription(int);
 
     callback clear-finished-downloads();
 
@@ -246,6 +257,7 @@ export component MainWindow inherits Window {
                 { icon: @image-url("icons/home.svg"), text: Tr.nav-home },
                 { icon: @image-url("icons/compass.svg"), text: Tr.nav-catalogue },
                 { icon: @image-url("icons/bookmark.svg"), text: Tr.nav-bookmarks },
+                { icon: @image-url("icons/feed.svg"), text: Tr.nav-feed },
                 { icon: @image-url("icons/person.svg"), text: Tr.nav-profile },
             ];
 
@@ -256,12 +268,24 @@ export component MainWindow inherits Window {
         // Two destinations are not a grid of posters, so they are their own
         // pages beside the browsing one: the download queue, and the screen
         // about the application rather than about what to watch.
-        if root.destination == 4: DownloadsPage {
+        if root.destination == 5: DownloadsPage {
             items: root.downloads;
             clear-finished => { root.clear-finished-downloads(); }
         }
 
-        if root.destination == 3: ProfilePage {
+        if root.destination == 3: FeedPage {
+            posts: root.posts;
+            loading: root.feed-loading;
+            signed-in: root.signed-in;
+            tab: root.feed-tab;
+            notice: root.feed-notice;
+
+            select-tab(i) => { root.select-feed-tab(i); }
+            toggle-subscription(i) => { root.toggle-subscription(i); }
+            sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
+        }
+
+        if root.destination == 4: ProfilePage {
             signed-in: root.signed-in;
             account: root.account;
             avatar: root.avatar;
@@ -317,7 +341,7 @@ export component MainWindow inherits Window {
             downloads-working: root.downloads-working;
 
             search(q) => { root.search(q); }
-            open-downloads => { root.select-destination(4); }
+            open-downloads => { root.select-destination(5); }
             open-release(i) => { root.open-release(i); }
             select-tab(i) => { root.select-tab(i); }
             select-genre(i) => { root.select-genre(i); }

@@ -96,3 +96,31 @@ export struct HistoryItem {
     /// business, and Russian needs three forms of every counting word.
     minutes-ago: int,
 }
+
+/// One post, as the feed shows it.
+///
+/// Carries no id: which post it is comes from its place in the list, as with
+/// every other list this interface shows.
+export struct FeedPost {
+    /// Where it was published — a channel's title, or the account's name for
+    /// a personal blog.
+    channel: string,
+    channel-avatar: image,
+    channel-avatar-loaded: bool,
+    /// Whether the account follows that channel. Only offered for channels:
+    /// a blog is followed by befriending its author, which this client does
+    /// not do.
+    subscribed: bool,
+    can-subscribe: bool,
+    /// How long ago it was posted, in minutes, worded by the interface.
+    minutes-ago: int,
+    /// The body with its markup taken out, blocks a blank line apart.
+    text: string,
+    /// The first picture in the post, if it has one.
+    picture: image,
+    picture-loaded: bool,
+    has-picture: bool,
+    comments: int,
+    votes: int,
+    pinned: bool,
+}

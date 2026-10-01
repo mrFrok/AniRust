@@ -247,7 +247,7 @@ pub fn load_recent(
 ///
 /// A server clock a little ahead of this one would otherwise be reported as
 /// the future, which reads as a bug rather than as the half-second it is.
-fn minutes_since(then: i64, now: i64) -> i32 {
+pub(crate) fn minutes_since(then: i64, now: i64) -> i32 {
     if then <= 0 {
         return 0;
     }

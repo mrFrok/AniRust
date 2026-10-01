@@ -68,19 +68,23 @@ pub enum Destination {
     Browse,
     /// The account's own lists, history and favourites.
     Saved,
-    Downloads,
+    /// Posts from channels. Not a grid of releases, so it has a page of its
+    /// own and fetches through `feed`, not through here.
+    Feed,
     Profile,
+    Downloads,
 }
 
 impl Destination {
     /// The order the rail puts them in, and the order Rust and the interface
-    /// both count by. Downloads is last and off the end of the rail: the
-    /// client this one follows has no such destination, and a queue is
-    /// reached from the toolbar instead.
-    const ALL: [Self; 5] = [
+    /// both count by. The first five are the official client's own, in its
+    /// order. Downloads is last and off the end of the rail: that client has
+    /// no such destination, and a queue is reached from the toolbar instead.
+    const ALL: [Self; 6] = [
         Self::Home,
         Self::Browse,
         Self::Saved,
+        Self::Feed,
         Self::Profile,
         Self::Downloads,
     ];
@@ -100,7 +104,7 @@ impl Destination {
             Self::Home => 3,
             Self::Browse => 4,
             Self::Saved => 7,
-            Self::Downloads | Self::Profile => 0,
+            Self::Feed | Self::Profile | Self::Downloads => 0,
         }
     }
 
@@ -157,7 +161,7 @@ fn query_for(destination: Destination, tab: usize) -> Query {
                 .unwrap_or(ProfileList::Watching),
         ),
 
-        (Destination::Downloads | Destination::Profile, _) => Query::None,
+        (Destination::Feed | Destination::Profile | Destination::Downloads, _) => Query::None,
     }
 }
 

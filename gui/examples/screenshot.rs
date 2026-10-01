@@ -24,7 +24,8 @@
 //! `state` is `home`, `home-signed-in`, `release` (default), `playing`,
 //! `theatre`, `downloads`, `sign-in`, `failed`, `saved`, `loading`,
 //! `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`,
-//! `profile-light`, `home-downloading`, `light` or `amoled`. Narrow is a width, not a state: pass
+//! `profile-light`, `home-downloading`, `feed`, `feed-latest`,
+//! `feed-signed-out`, `feed-empty`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
 //! `home-hover-account` parks the pointer on the account button, which is the
@@ -76,6 +77,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || state.starts_with("profile")
             || state == "light"
             || state == "amoled"
+            || state.starts_with("feed")
         {
             "home".into()
         } else {
@@ -87,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_account_name("mrfrok".into());
     }
     if state == "downloads" {
-        ui.set_destination(4);
+        ui.set_destination(5);
         ui.set_downloads_working(2);
         ui.set_downloads(slint::ModelRc::new(slint::VecModel::from(vec![
             DownloadItem {
@@ -129,6 +131,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_destination(2);
         ui.set_tab(5);
     }
+    // The feed, with posts of each shape it has to lay out: long text that
+    // folds, a picture, a short line, a blog, a channel already followed.
+    if state.starts_with("feed") {
+        ui.set_destination(3);
+        ui.set_signed_in(state != "feed-signed-out");
+        ui.set_feed_tab(i32::from(state == "feed-latest"));
+        if state != "feed-signed-out" && state != "feed-empty" {
+            ui.set_posts(slint::ModelRc::new(slint::VecModel::from(sample_posts())));
+        }
+    }
     // Something in the queue, so the badge on the toolbar has a number in it.
     if state == "home-downloading" {
         ui.set_downloads_working(3);
@@ -148,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // The screen about the application rather than about what to watch.
     if state.starts_with("profile") {
-        ui.set_destination(3);
+        ui.set_destination(4);
         // `profile` alone is the screen with nobody on it; every other spelling
         // of it has an account behind it.
         ui.set_signed_in(state != "profile");
@@ -408,6 +420,51 @@ fn stand_in_avatar() -> slint::Image {
         };
     }
     slint::Image::from_rgba8(buffer)
+}
+
+/// Posts written for the screenshot. Their wording is invented and says so;
+/// only their shapes matter.
+fn sample_posts() -> Vec<FeedPost> {
+    let post = |channel: &str, minutes: i32, text: &str| FeedPost {
+        channel: channel.into(),
+        channel_avatar: stand_in_avatar(),
+        channel_avatar_loaded: true,
+        subscribed: false,
+        can_subscribe: true,
+        minutes_ago: minutes,
+        text: text.into(),
+        picture: slint::Image::default(),
+        picture_loaded: false,
+        has_picture: false,
+        comments: 4,
+        votes: 37,
+        pinned: false,
+    };
+    vec![
+        FeedPost {
+            pinned: true,
+            subscribed: true,
+            ..post(
+                "Новостной канал",
+                90,
+                "Закреплённая запись канала. Длинный текст, чтобы было видно, как запись сворачивается после шести строк и предлагает показать остальное. Ещё одно предложение, чтобы строк точно хватило. И ещё одно, на всякий случай, потому что окно бывает широким. Здесь текст продолжается и продолжается, как продолжаются настоящие анонсы, в которых всё самое важное — в последнем абзаце.
+
+Второй абзац записи, отделённый пустой строкой, как и блоки редактора.
+
+ Третий абзац, которого в свёрнутом виде уже не видно.",
+            )
+        },
+        FeedPost {
+            has_picture: true,
+            picture: stand_in_avatar(),
+            picture_loaded: true,
+            ..post("Канал с картинками", 2_900, "Короткая подпись к картинке.")
+        },
+        FeedPost {
+            can_subscribe: false,
+            ..post("mrFrok", 6_300, "Запись из личного блога: на блог не подписываются, поэтому кнопки нет.")
+        },
+    ]
 }
 
 fn recent(title: &str, episode: i32, minutes_ago: i32) -> HistoryItem {
