@@ -101,7 +101,7 @@ impl Destination {
     /// rather than pointing past the end.
     fn tabs(self) -> usize {
         match self {
-            Self::Home => 3,
+            Self::Home => HOME_TABS,
             Self::Browse => 4,
             Self::Saved => 7,
             Self::Feed | Self::Profile | Self::Downloads => 0,
@@ -114,6 +114,23 @@ impl Destination {
     }
 }
 
+/// The home destination's tabs, in their order on screen.
+///
+/// The first three are the catalogue cut three ways; the rest are what the
+/// official client's front page offers: its curated cards, recommendations
+/// for this account, what is being watched and discussed, and the week's
+/// schedule.
+const HOME_TABS: usize = 8;
+const TAB_INTERESTING: usize = 3;
+const TAB_RECOMMENDED: usize = 4;
+const TAB_WATCHING: usize = 5;
+const TAB_DISCUSSING: usize = 6;
+pub const TAB_SCHEDULE: usize = 7;
+
+/// The schedule's day chips: 0 the whole week, then Monday to Sunday.
+pub const WEEKDAYS_RU: [&str; 7] = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+pub const WEEKDAYS_EN: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
 /// What one tab fetches.
 enum Query {
     /// The catalogue, filtered.
@@ -122,6 +139,14 @@ enum Query {
     List(ProfileList),
     History,
     Favourites,
+    /// The front page's curated cards, each standing for a release.
+    Interesting,
+    /// Recommendations for this account.
+    Recommended,
+    Watching,
+    Discussing,
+    /// The week's schedule, or one day of it: 0 the whole week, 1 Monday.
+    Schedule(usize),
     /// Nothing to fetch — the destination is not a grid of releases.
     None,
 }
@@ -135,9 +160,14 @@ fn query_for(destination: Destination, tab: usize) -> Query {
         (Destination::Home, 1) => Query::Catalogue(Box::new(
             Filter::sorted_by(FilterSort::Popularity).status(AIRING),
         )),
-        (Destination::Home, _) => Query::Catalogue(Box::new(
+        (Destination::Home, 2) => Query::Catalogue(Box::new(
             Filter::sorted_by(FilterSort::Popularity).status(FINISHED),
         )),
+        (Destination::Home, TAB_INTERESTING) => Query::Interesting,
+        (Destination::Home, TAB_RECOMMENDED) => Query::Recommended,
+        (Destination::Home, TAB_WATCHING) => Query::Watching,
+        (Destination::Home, TAB_DISCUSSING) => Query::Discussing,
+        (Destination::Home, _) => Query::Schedule(0),
 
         (Destination::Browse, 0) => {
             Query::Catalogue(Box::new(Filter::sorted_by(FilterSort::Popularity)))
@@ -212,21 +242,31 @@ pub fn open(
         (state.destination, state.tab, state.genre, generation)
     };
 
+    let schedule = destination == Destination::Home && tab == TAB_SCHEDULE;
     window.set_destination(destination.index() as i32);
     window.set_tab(tab as i32);
     window.set_genre(genre as i32);
-    window.set_genres(slint::ModelRc::new(VecModel::from(
-        if destination.has_genres() {
-            GENRES
-                .iter()
-                .map(|name| slint::SharedString::from(*name))
-                .collect::<Vec<_>>()
+    // The chip row is the catalogue's genres, or on the schedule the days of
+    // the week — the same control choosing one of several, with "all" first.
+    let chips: Vec<slint::SharedString> = if destination.has_genres() {
+        GENRES.iter().map(|name| (*name).into()).collect()
+    } else if schedule {
+        let days = if window.get_lang() == "ru" {
+            WEEKDAYS_RU
         } else {
-            Vec::new()
-        },
-    )));
+            WEEKDAYS_EN
+        };
+        days.iter().map(|name| (*name).into()).collect()
+    } else {
+        Vec::new()
+    };
+    window.set_genres(slint::ModelRc::new(VecModel::from(chips)));
+    window.set_chips_are_days(schedule);
 
     let mut query = query_for(destination, tab);
+    if let Query::Schedule(day) = &mut query {
+        *day = genre;
+    }
     if let Query::Catalogue(filter) = &mut query
         && let Some(name) = genre.checked_sub(1).and_then(|at| GENRES.get(at))
     {
@@ -235,7 +275,10 @@ pub fn open(
 
     // The account's own lists are the only thing here that needs a session.
     // Saying so beats an empty grid that looks like an empty account.
-    let needs_account = matches!(query, Query::List(_) | Query::History | Query::Favourites);
+    let needs_account = matches!(
+        query,
+        Query::List(_) | Query::History | Query::Favourites | Query::Recommended
+    );
     if needs_account && !client.is_authenticated() {
         show(window, state, Vec::new(), generation, http);
         window.set_notice(sign_in_notice(window));
@@ -255,6 +298,20 @@ pub fn open(
                 Query::List(list) => api.profile_list(list, 0, None).await.map(|p| p.content),
                 Query::History => api.history(0).await.map(|page| page.content),
                 Query::Favourites => api.favorites(0, None).await.map(|page| page.content),
+                Query::Interesting => api.discover_interesting().await.map(releases_of_cards),
+                Query::Recommended => api
+                    .discover_recommendations(0, 0)
+                    .await
+                    .map(|page| page.content),
+                Query::Watching => api.discover_watching(0).await.map(|page| page.content),
+                Query::Discussing => api.discover_discussing().await.map(|page| page.content),
+                Query::Schedule(day) => api.schedule().await.map(|week| {
+                    let days = week.days();
+                    match day.checked_sub(1).and_then(|at| days.get(at)) {
+                        Some(one) => one.to_vec(),
+                        None => days.iter().flat_map(|d| d.iter().cloned()).collect(),
+                    }
+                }),
                 Query::None => Ok(Vec::new()),
             }
         },
@@ -269,6 +326,45 @@ pub fn open(
             }
         },
     );
+}
+
+/// Today as a schedule chip: 1 for Monday through 7 for Sunday.
+///
+/// By UTC, which is a few hours off the viewer's own midnight for most of
+/// them; the schedule is the service's, kept by its own calendar, and a day
+/// that turns over a little late in the evening is the smaller error than
+/// guessing a time zone.
+fn today() -> usize {
+    let days = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs() / 86_400);
+    weekday(days)
+}
+
+/// The weekday of a day count since 1970-01-01, which was a Thursday:
+/// 1 Monday through 7 Sunday.
+fn weekday(days_since_epoch: u64) -> usize {
+    // Thursday is day 4 of a Monday-first week.
+    usize::try_from((days_since_epoch + 3) % 7).unwrap_or(0) + 1
+}
+
+/// The front page's curated cards as releases: each card leads to a release,
+/// and the card's own picture and line stand in for the release's until it is
+/// opened. Cards of a kind that does not lead to a release are left out.
+fn releases_of_cards(cards: Vec<anirust_api::Interesting>) -> Vec<Release> {
+    cards
+        .into_iter()
+        .filter(|card| !card.is_hidden)
+        .filter_map(|card| {
+            Some(Release {
+                id: card.release_id()?,
+                title_ru: card.title,
+                description: card.description,
+                image: card.image,
+                ..Release::default()
+            })
+        })
+        .collect()
 }
 
 /// The line shown where the account's lists would be.
@@ -340,6 +436,16 @@ pub fn select_tab(
         let mut state = state.borrow_mut();
         let tabs = state.destination.tabs();
         state.tab = index.min(tabs.saturating_sub(1));
+        // The chips mean genres on one tab and days on another, so a choice
+        // made under one is not carried to the other. The schedule opens on
+        // today, which is the day anyone opening it is asking about.
+        if state.destination == Destination::Home {
+            state.genre = if state.tab == TAB_SCHEDULE {
+                today()
+            } else {
+                0
+            };
+        }
     }
     window.set_query("".into());
     open(window, state, client, http);
@@ -353,7 +459,8 @@ pub fn select_genre(
     http: reqwest::Client,
     index: usize,
 ) {
-    state.borrow_mut().genre = index.min(GENRES.len());
+    // Genres on the catalogue, days of the week on the schedule.
+    state.borrow_mut().genre = index.min(GENRES.len().max(WEEKDAYS_RU.len()));
     window.set_query("".into());
     open(window, state, client, http);
 }
@@ -494,6 +601,13 @@ fn subtitle(release: &Release) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_epoch_was_a_thursday() {
+        assert_eq!(weekday(0), 4);
+        assert_eq!(weekday(4), 1, "1970-01-05 was a Monday");
+        assert_eq!(weekday(20_363), 4, "2025-10-02 was a Thursday");
+    }
 
     fn release(year: &str, released: i32, total: i32) -> Release {
         Release {

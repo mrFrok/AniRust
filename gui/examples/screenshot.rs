@@ -82,6 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || state == "light"
             || state == "amoled"
             || state.starts_with("feed")
+            || state == "schedule"
         {
             "home".into()
         } else {
@@ -172,6 +173,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if state != "feed-signed-out" && state != "feed-empty" {
             ui.set_posts(slint::ModelRc::new(slint::VecModel::from(sample_posts())));
         }
+    }
+    // The schedule: the home tabs at their fullest, and the chip row as days.
+    if state == "schedule" {
+        ui.set_destination(0);
+        ui.set_tab(7);
+        ui.set_genre(4);
+        ui.set_chips_are_days(true);
+        ui.set_genres(slint::ModelRc::new(slint::VecModel::from(
+            ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
+                .iter()
+                .map(|day| slint::SharedString::from(*day))
+                .collect::<Vec<_>>(),
+        )));
     }
     // Something in the queue, so the badge on the toolbar has a number in it.
     if state == "home-downloading" {

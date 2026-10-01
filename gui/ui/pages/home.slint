@@ -52,6 +52,9 @@ export component HomePage inherits Rectangle {
     /// not one of them. Empty everywhere but the catalogue.
     in property <[string]> genres: [];
     in property <int> genre: 0;
+    /// The chip row is days of the week on the schedule, genres elsewhere.
+    in property <bool> chips-are-days: false;
+    callback open-random();
     /// Shown instead of the grid when there is a reason it is empty.
     in property <string> notice;
     in property <bool> signed-in: false;
@@ -79,6 +82,10 @@ export component HomePage inherits Rectangle {
     max-height: 100000px;
     horizontal-stretch: 1;
     vertical-stretch: 1;
+
+    /// The narrowest a tab may be before the strip scrolls instead: room for
+    /// the longest label the destinations have, "Смотрят сейчас".
+    property <length> tab-width: 132px;
 
     property <length> card-width: 160px;
     property <length> card-height: 280px;
@@ -164,6 +171,18 @@ export component HomePage inherits Rectangle {
                     }
                 }
 
+                // Something to watch with no idea what: the official client's
+                // dice, a release picked by the service.
+                VerticalLayout {
+                    alignment: center;
+
+                    IconButton {
+                        icon: @image-url("../icons/dice.svg");
+                        tooltip: Tr.random-release;
+                        clicked => { root.open-random(); }
+                    }
+                }
+
                 // The download queue is this client's own addition, so it is
                 // not one of the rail's destinations — it lives here, where it
                 // is out of the way until it has something to say, and says it
@@ -213,25 +232,46 @@ export component HomePage inherits Rectangle {
         //
         // Hidden while searching: the tabs name a part of the catalogue, and a
         // search is not one of them.
-        if !root.searching && root.tabs.length > 0: HorizontalLayout {
-            padding-left: Spacing.base;
-            padding-right: Spacing.base;
+        //
+        // The bar divides its width evenly between the tabs and draws its
+        // indicator under one division, so every tab needs a division wide
+        // enough for its label. Eight tabs do not get that from a narrow
+        // window; there the bar keeps its comfortable width and scrolls
+        // sideways under a fixed viewport rather than letting labels run into
+        // each other.
+        if !root.searching && root.tabs.length > 0: tab-strip := Flickable {
+            height: 48px;
+            interactive: self.viewport-width > self.width;
+            viewport-width: max(self.width, root.tab-width * root.tabs.length + 2 * Spacing.base);
 
-            // Stretched across the page, which is what divides the width
-            // evenly between the tabs: the bar draws its indicator under one
-            // such division, so an indicator only lines up with its label
-            // when the bar has the room the labels were divided from.
             SecondaryTabBar {
+                x: Spacing.base;
+                width: tab-strip.viewport-width - 2 * Spacing.base;
+                height: 100%;
                 items: root.tabs;
-                horizontal-stretch: 1;
 
                 // Pushed, not bound: the bar writes its own index on a click,
                 // and Rust decides which tab a destination opens on.
                 property <int> wanted: root.tab;
-                init => { self.current-index = root.tab; }
-                changed wanted => { self.current-index = self.wanted; }
+                init => {
+                    self.current-index = root.tab;
+                    tab-strip.reveal(root.tab);
+                }
+                changed wanted => {
+                    self.current-index = self.wanted;
+                    tab-strip.reveal(self.wanted);
+                }
 
                 index-changed(i) => { root.select-tab(i); }
+            }
+
+            /// Scrolls the strip so the tab at `index` is in the middle of it,
+            /// or as near as the ends allow. A selected tab out of sight is a
+            /// question nobody can see the answer to.
+            function reveal(index: int) {
+                let division = (self.viewport-width - 2 * Spacing.base) / root.tabs.length;
+                let centre = Spacing.base + division * (index + 0.5);
+                self.viewport-x = clamp(self.width / 2 - centre, self.width - self.viewport-width, 0px);
             }
         }
 
@@ -247,7 +287,7 @@ export component HomePage inherits Rectangle {
             padding-bottom: Spacing.small;
 
             GenreChip {
-                text: Tr.all-genres;
+                text: root.chips-are-days ? Tr.whole-week : Tr.all-genres;
                 selected: root.genre == 0;
                 picked => { root.select-genre(0); }
             }

@@ -576,6 +576,37 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
         }
     });
 
+    window.on_open_random({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            let api = (*app.client).clone();
+            let app = Rc::clone(&app);
+            let weak = window.as_weak();
+            tasks::spawn(
+                async move { api.random_release(false).await },
+                move |found| {
+                    let Some(window) = weak.upgrade() else { return };
+                    match found {
+                        Ok(release) if release.id > 0 => {
+                            window.set_screen("release".into());
+                            release::load(
+                                &window,
+                                &app.release,
+                                Rc::clone(&app.client),
+                                app.http.clone(),
+                                release.id,
+                            );
+                        }
+                        Ok(_) => tracing::warn!("the service offered no random release"),
+                        Err(error) => tracing::warn!(%error, "no random release"),
+                    }
+                },
+            );
+        }
+    });
+
     window.on_select_genre({
         let app = Rc::clone(app);
         let weak = weak.clone();

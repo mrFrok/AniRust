@@ -209,6 +209,9 @@ export component MainWindow inherits Window {
     in property <int> tab: 0;
     in property <[string]> genres: [];
     in property <int> genre: 0;
+    /// Whether the chip row is days of the week rather than genres.
+    in property <bool> chips-are-days: false;
+    callback open-random();
     /// Shown instead of the grid when there is a reason it is empty.
     in property <string> notice;
     in property <[DownloadItem]> downloads: [];
@@ -370,7 +373,16 @@ export component MainWindow inherits Window {
             // the rest of the translations; which one is selected, and what it
             // fetches, is Rust's business.
             tabs: root.destination == 0
-                ? [{ text: Tr.tab-latest }, { text: Tr.tab-airing }, { text: Tr.tab-finished }]
+                ? [
+                    { text: Tr.tab-latest },
+                    { text: Tr.tab-airing },
+                    { text: Tr.tab-finished },
+                    { text: Tr.tab-interesting },
+                    { text: Tr.tab-recommended },
+                    { text: Tr.tab-watching },
+                    { text: Tr.tab-discussing },
+                    { text: Tr.tab-schedule },
+                ]
                 : root.destination == 1
                     ? [
                         { text: Tr.section-popular },
@@ -392,6 +404,8 @@ export component MainWindow inherits Window {
             tab: root.tab;
             genres: root.genres;
             genre: root.genre;
+            chips-are-days: root.chips-are-days;
+            open-random => { root.open-random(); }
             notice: root.notice;
             downloads-working: root.downloads-working;
 
