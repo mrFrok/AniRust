@@ -100,3 +100,22 @@ impl Episode {
             .map(std::time::Duration::from_millis)
     }
 }
+
+/// When a release last gained an episode, and from which voice-over and host.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "snake_case")]
+pub struct EpisodeUpdate {
+    #[serde(deserialize_with = "nullable")]
+    pub last_episode_update_name: String,
+    /// Seconds since the epoch.
+    #[serde(deserialize_with = "nullable")]
+    pub last_episode_update_date: i64,
+    #[serde(deserialize_with = "nullable")]
+    pub last_episode_type_update_id: i64,
+    #[serde(deserialize_with = "nullable")]
+    pub last_episode_type_update_name: String,
+    #[serde(deserialize_with = "nullable")]
+    pub last_episode_source_update_id: i64,
+    #[serde(deserialize_with = "nullable")]
+    pub last_episode_source_update_name: String,
+}

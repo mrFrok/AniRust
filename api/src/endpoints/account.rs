@@ -117,6 +117,28 @@ impl Client {
         Ok(payload.into())
     }
 
+    /// One of another account's lists, as far as its privacy lets anyone see.
+    /// Pages are 0-based.
+    ///
+    /// `GET profile/list/all/{profile_id}/{status}/{page}`
+    pub async fn profile_list_of(
+        &self,
+        profile_id: i64,
+        list: ProfileList,
+        page: i32,
+        sort: Option<i32>,
+    ) -> Result<Page<Release>> {
+        let status = list.raw();
+        let payload: PageablePayload<Release> = self
+            .send(
+                self.get(format!("profile/list/all/{profile_id}/{status}/{page}"))
+                    .query_opt("sort", sort)
+                    .with_token(),
+            )
+            .await?;
+        Ok(payload.into())
+    }
+
     /// Moves a release into one of the user's lists.
     pub async fn profile_list_add(&self, list: ProfileList, release_id: i64) -> Result<()> {
         self.require_token()?;

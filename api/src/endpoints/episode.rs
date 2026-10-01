@@ -6,7 +6,9 @@ use serde::Deserialize;
 
 use crate::client::{Ack, Client};
 use crate::error::Result;
-use crate::models::{Dubber, Episode, Source};
+use crate::models::{Channel, Dubber, Episode, EpisodeUpdate, Page, Source};
+
+use super::PageablePayload;
 
 #[derive(Deserialize)]
 struct TypesPayload {
@@ -152,4 +154,153 @@ impl Client {
             .await?;
         Ok(())
     }
+
+    /// Marks every episode of a source watched.
+    ///
+    /// `POST episode/watch/{release_id}/{source_id}` — the same call as for one
+    /// episode, without the position.
+    pub async fn mark_all_watched(&self, release_id: i64, source_id: i64) -> Result<()> {
+        self.require_token()?;
+        let _: Ack = self
+            .send(
+                self.post(format!("episode/watch/{release_id}/{source_id}"))
+                    .with_token(),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Clears the watched flag on every episode of a source.
+    ///
+    /// `POST episode/unwatch/{release_id}/{source_id}`
+    pub async fn mark_all_unwatched(&self, release_id: i64, source_id: i64) -> Result<()> {
+        self.require_token()?;
+        let _: Ack = self
+            .send(
+                self.post(format!("episode/unwatch/{release_id}/{source_id}"))
+                    .with_token(),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// One episode by its place in a source, without walking the chain to it.
+    ///
+    /// `GET episode/target/{release_id}/{source_id}/{position}`, anonymous.
+    /// What a notification about a new episode links to.
+    pub async fn episode_target(
+        &self,
+        release_id: i64,
+        source_id: i64,
+        position: i32,
+    ) -> Result<Episode> {
+        let payload: EpisodeTargetPayload = self
+            .send(self.get(format!(
+                "episode/target/{release_id}/{source_id}/{position}"
+            )))
+            .await?;
+        Ok(payload.episode)
+    }
+
+    /// When a release gained episodes, newest first. Pages are 0-based.
+    ///
+    /// `GET episode/updates/{release_id}/{page}`, anonymous.
+    pub async fn episode_updates(&self, release_id: i64, page: i32) -> Result<Page<EpisodeUpdate>> {
+        let payload: PageablePayload<EpisodeUpdate> = self
+            .send(self.get(format!("episode/updates/{release_id}/{page}")))
+            .await?;
+        Ok(payload.into())
+    }
+
+    /// Every voice-over the service knows, across all releases.
+    ///
+    /// `GET type/all`
+    pub async fn all_dubbers(&self) -> Result<Vec<Dubber>> {
+        self.require_token()?;
+        let payload: TypesPayload = self.send(self.get("type/all").with_token()).await?;
+        Ok(payload.types)
+    }
+
+    /// The channel a voice-over team publishes in, if it has one.
+    ///
+    /// `GET type/{dubber_id}/channel`
+    pub async fn dubber_channel(&self, dubber_id: i64) -> Result<DubberChannel> {
+        self.require_token()?;
+        self.send(self.get(format!("type/{dubber_id}/channel")).with_token())
+            .await
+    }
+
+    /// Makes a voice-over the one a release opens with, for this account.
+    ///
+    /// `GET type/pin/{release_id}/{dubber_id}`
+    pub async fn dubber_pin(&self, release_id: i64, dubber_id: i64) -> Result<()> {
+        self.require_token()?;
+        let _: Ack = self
+            .send(
+                self.get(format!("type/pin/{release_id}/{dubber_id}"))
+                    .with_token(),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// `GET type/unpin/{release_id}/{dubber_id}`
+    pub async fn dubber_unpin(&self, release_id: i64, dubber_id: i64) -> Result<()> {
+        self.require_token()?;
+        let _: Ack = self
+            .send(
+                self.get(format!("type/unpin/{release_id}/{dubber_id}"))
+                    .with_token(),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Hides a voice-over team's channel widget from the episode list.
+    ///
+    /// `GET type/widget/hide/{dubber_id}?permanent=` — `permanent` hides it
+    /// for good rather than until the next post.
+    pub async fn dubber_widget_hide(&self, dubber_id: i64, permanent: bool) -> Result<()> {
+        self.require_token()?;
+        let _: Ack = self
+            .send(
+                self.get(format!("type/widget/hide/{dubber_id}"))
+                    .query("permanent", permanent)
+                    .with_token(),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// `GET type/widget/unhide/{dubber_id}`
+    pub async fn dubber_widget_unhide(&self, dubber_id: i64) -> Result<()> {
+        self.require_token()?;
+        let _: Ack = self
+            .send(
+                self.get(format!("type/widget/unhide/{dubber_id}"))
+                    .with_token(),
+            )
+            .await?;
+        Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+struct EpisodeTargetPayload {
+    #[serde(default)]
+    episode: Episode,
+}
+
+/// A voice-over team's channel, and whether its widget should show.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct DubberChannel {
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub channel: Option<Channel>,
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub is_widget_eligible: bool,
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub is_hidden_by_user: bool,
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub are_widgets_hidden_globally: bool,
 }

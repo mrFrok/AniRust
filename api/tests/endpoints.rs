@@ -14,7 +14,7 @@
 
 use anirust_api::{Client, EpisodeSort, Filter, FilterSort, ProfileList, SearchBy};
 use serde_json::{Value, json};
-use wiremock::matchers::{body_string_contains, method, path, query_param};
+use wiremock::matchers::{body_string_contains, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const TOKEN: &str = "test-token";
@@ -307,4 +307,156 @@ endpoint! {
     token: true,
     reply: ack(),
     call: |c| c.avatar_delete(),
+}
+
+// ---- A1: the release, and what can be done to it --------------------------
+
+/// Checked by hand for the header: the franchise listing answers only to the
+/// same API version the search does.
+#[tokio::test]
+async fn related() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/related/42/0"))
+        .and(query_param("token", TOKEN))
+        .and(header("API-Version", "v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(page()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    client(&server)
+        .related(42, 0)
+        .await
+        .expect("the franchise is asked for by its own id, with the version header");
+}
+
+endpoint! {
+    release_vote: "GET" "/release/vote/add/7/4",
+    token: true,
+    reply: ack(),
+    call: |c| c.release_vote(7, 4),
+}
+
+endpoint! {
+    release_vote_out_of_range_is_clamped: "GET" "/release/vote/add/7/5",
+    token: true,
+    reply: ack(),
+    call: |c| c.release_vote(7, 9),
+}
+
+endpoint! {
+    release_vote_delete: "GET" "/release/vote/delete/7",
+    token: true,
+    reply: ack(),
+    call: |c| c.release_vote_delete(7),
+}
+
+endpoint! {
+    random_favorite: "GET" "/release/random/favorite",
+    token: true,
+    ["extended_mode" = "false"]
+    reply: json!({ "code": 0, "release": {} }),
+    call: |c| c.random_favorite(false),
+}
+
+endpoint! {
+    random_from_list: "GET" "/release/random/profile/list/5/2",
+    token: true,
+    ["extended_mode" = "true"]
+    reply: json!({ "code": 0, "release": {} }),
+    call: |c| c.random_from_list(5, ProfileList::Planned, true),
+}
+
+endpoint! {
+    random_from_collection: "GET" "/release/collection/3/random",
+    token: true,
+    ["extended_mode" = "false"]
+    reply: json!({ "code": 0, "release": {} }),
+    call: |c| c.random_from_collection(3, false),
+}
+
+endpoint! {
+    streaming_platforms: "GET" "/release/streaming/platform/7",
+    token: false,
+    reply: page(),
+    call: |c| c.streaming_platforms(7),
+}
+
+endpoint! {
+    mark_all_watched: "POST" "/episode/watch/7/11",
+    token: true,
+    reply: ack(),
+    call: |c| c.mark_all_watched(7, 11),
+}
+
+endpoint! {
+    mark_all_unwatched: "POST" "/episode/unwatch/7/11",
+    token: true,
+    reply: ack(),
+    call: |c| c.mark_all_unwatched(7, 11),
+}
+
+endpoint! {
+    episode_target: "GET" "/episode/target/7/11/4",
+    token: false,
+    reply: json!({ "code": 0, "episode": {} }),
+    call: |c| c.episode_target(7, 11, 4),
+}
+
+endpoint! {
+    episode_updates: "GET" "/episode/updates/7/0",
+    token: false,
+    reply: page(),
+    call: |c| c.episode_updates(7, 0),
+}
+
+endpoint! {
+    all_dubbers: "GET" "/type/all",
+    token: true,
+    reply: json!({ "code": 0, "types": [] }),
+    call: |c| c.all_dubbers(),
+}
+
+endpoint! {
+    dubber_channel: "GET" "/type/3/channel",
+    token: true,
+    reply: json!({ "code": 0, "channel": null, "is_widget_eligible": true }),
+    call: |c| c.dubber_channel(3),
+}
+
+endpoint! {
+    dubber_pin: "GET" "/type/pin/7/3",
+    token: true,
+    reply: ack(),
+    call: |c| c.dubber_pin(7, 3),
+}
+
+endpoint! {
+    dubber_unpin: "GET" "/type/unpin/7/3",
+    token: true,
+    reply: ack(),
+    call: |c| c.dubber_unpin(7, 3),
+}
+
+endpoint! {
+    dubber_widget_hide: "GET" "/type/widget/hide/3",
+    token: true,
+    ["permanent" = "true"]
+    reply: ack(),
+    call: |c| c.dubber_widget_hide(3, true),
+}
+
+endpoint! {
+    dubber_widget_unhide: "GET" "/type/widget/unhide/3",
+    token: true,
+    reply: ack(),
+    call: |c| c.dubber_widget_unhide(3),
+}
+
+endpoint! {
+    profile_list_of: "GET" "/profile/list/all/5/1/0",
+    token: true,
+    reply: page(),
+    call: |c| c.profile_list_of(5, ProfileList::Watching, 0, None),
 }

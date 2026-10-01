@@ -24,7 +24,7 @@ mod preference;
 mod release;
 
 pub use account::SignInError;
-pub use episode::EpisodeSort;
+pub use episode::{DubberChannel, EpisodeSort};
 
 /// Mirrors `PageableResponse<T>`. Pages are 0-based.
 #[derive(Deserialize)]

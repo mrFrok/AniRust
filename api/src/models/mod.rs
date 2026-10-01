@@ -20,10 +20,13 @@ mod feed;
 mod profile;
 mod release;
 
-pub use episode::{Dubber, Episode, Source};
+pub use episode::{Dubber, Episode, EpisodeUpdate, Source};
 pub use feed::{Article, ArticleBlock, ArticlePayload, Channel, ProfileSlim};
 pub use profile::{Profile, ProfileList, ProfileToken};
-pub use release::{Filter, FilterSort, Release, ReleaseCategory, ReleaseStatus, SearchBy};
+pub use release::{
+    Filter, FilterSort, Related, Release, ReleaseCategory, ReleaseStatus, SearchBy,
+    StreamingPlatform,
+};
 
 /// One page of a paged collection. Pages are 0-based.
 #[derive(Debug, Clone, Default)]

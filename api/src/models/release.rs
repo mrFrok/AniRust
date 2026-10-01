@@ -152,6 +152,14 @@ pub struct Release {
     pub collection_count: i64,
     #[serde(deserialize_with = "nullable")]
     pub related_count: i64,
+    /// The franchise this release belongs to, when it belongs to one. Its `id`
+    /// — not the release's — is what [`crate::Client::related`] takes.
+    #[serde(deserialize_with = "nullable")]
+    pub related: Option<Related>,
+    /// The franchise's other releases, inlined when the release was fetched
+    /// with `extended_mode`.
+    #[serde(deserialize_with = "nullable")]
+    pub related_releases: Vec<Release>,
 
     #[serde(deserialize_with = "nullable")]
     pub age_rating: i32,
@@ -354,4 +362,36 @@ impl SearchBy {
     pub fn raw(self) -> i32 {
         self as i32
     }
+}
+
+/// A franchise: the releases that belong together — seasons, films, specials.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "snake_case")]
+pub struct Related {
+    #[serde(deserialize_with = "nullable")]
+    pub id: i64,
+    #[serde(deserialize_with = "nullable")]
+    pub name_ru: String,
+    #[serde(deserialize_with = "nullable")]
+    pub description: String,
+    #[serde(deserialize_with = "nullable")]
+    pub image: String,
+    #[serde(deserialize_with = "nullable")]
+    pub images: Vec<String>,
+    #[serde(deserialize_with = "nullable")]
+    pub release_count: i64,
+}
+
+/// Somewhere a release can be watched legally, outside this client.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "snake_case")]
+pub struct StreamingPlatform {
+    #[serde(deserialize_with = "nullable")]
+    pub id: i64,
+    #[serde(deserialize_with = "nullable")]
+    pub name: String,
+    #[serde(deserialize_with = "nullable")]
+    pub icon: String,
+    #[serde(deserialize_with = "nullable")]
+    pub url: String,
 }
