@@ -82,6 +82,7 @@ export component ReleasePage inherits Rectangle {
     in property <[PickerOption]> sources;
     in property <int> source: 0;
     in property <[EpisodeItem]> episodes;
+    in property <bool> all-watched: false;
     /// Episode to resume, or 0 when nothing was started.
     in property <int> resume-episode: 0;
     /// Episode in the player, or 0 when nothing is loaded.
@@ -117,6 +118,8 @@ export component ReleasePage inherits Rectangle {
     callback select-source(int);
     callback play-episode(int);
     callback download-episode(int);
+    callback toggle-watched(int);
+    callback toggle-all-watched();
     callback go-back();
 
     background: MaterialPalette.surface;
@@ -343,6 +346,9 @@ export component ReleasePage inherits Rectangle {
                     select-source(i) => { root.select-source(i); }
                     play-episode(p) => { root.play-episode(p); }
                 download-episode(p) => { root.download-episode(p); }
+                toggle-watched(p) => { root.toggle-watched(p); }
+                toggle-all-watched => { root.toggle-all-watched(); }
+                all-watched: root.all-watched;
                 }
 
                 // ---- the release itself ----------------------------------
@@ -440,6 +446,9 @@ export component ReleasePage inherits Rectangle {
                 select-source(i) => { root.select-source(i); }
                 play-episode(p) => { root.play-episode(p); }
                 download-episode(p) => { root.download-episode(p); }
+                toggle-watched(p) => { root.toggle-watched(p); }
+                toggle-all-watched => { root.toggle-all-watched(); }
+                all-watched: root.all-watched;
             }
         }
     }

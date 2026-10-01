@@ -69,6 +69,7 @@ export component MainWindow inherits Window {
     in property <[PickerOption]> sources: [];
     in property <int> source: 0;
     in property <[EpisodeItem]> episodes: [];
+    in property <bool> all-episodes-watched: false;
     in property <int> resume-episode: 0;
     /// The last attempt to start an episode failed.
     in property <bool> episode-failed: false;
@@ -80,6 +81,8 @@ export component MainWindow inherits Window {
     callback set-release-list(int);
     callback toggle-release-favourite();
     callback set-release-vote(int);
+    callback toggle-watched(int);
+    callback toggle-all-watched();
 
     callback select-dubber(int);
     callback select-source(int);
@@ -383,6 +386,7 @@ export component MainWindow inherits Window {
         sources: root.sources;
         source: root.source;
         episodes: root.episodes;
+        all-watched: root.all-episodes-watched;
         resume-episode: root.resume-episode;
         failed: root.episode-failed;
         current-episode: root.current-episode;
@@ -397,6 +401,8 @@ export component MainWindow inherits Window {
         set-list(i) => { root.set-release-list(i); }
         toggle-favourite => { root.toggle-release-favourite(); }
         set-vote(n) => { root.set-release-vote(n); }
+        toggle-watched(p) => { root.toggle-watched(p); }
+        toggle-all-watched => { root.toggle-all-watched(); }
         sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
         select-dubber(i) => { root.select-dubber(i); }
         select-source(i) => { root.select-source(i); }

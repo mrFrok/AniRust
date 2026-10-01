@@ -28,6 +28,9 @@
 //! `feed-signed-out`, `feed-empty`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
+//! `ANIRUST_SHOT_POINTER=x,y` parks the pointer anywhere, for the states
+//! that only show under it.
+//!
 //! `home-hover-account` parks the pointer on the account button, which is the
 //! only way to see what it offers: the action it performs is in a tooltip,
 //! and a tooltip is drawn for a pointer that is not there in a screenshot.
@@ -244,6 +247,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if state == "home-hover-account" {
         window.dispatch_event(WindowEvent::PointerMoved {
             position: LogicalPosition::new(width as f32 - 62.0, 36.0),
+        });
+    }
+    // A pointer anywhere, for hover states that only show under it:
+    // `ANIRUST_SHOT_POINTER=x,y`.
+    if let Some((x, y)) = std::env::var("ANIRUST_SHOT_POINTER").ok().and_then(|at| {
+        let (x, y) = at.split_once(',')?;
+        Some((x.trim().parse::<f32>().ok()?, y.trim().parse::<f32>().ok()?))
+    }) {
+        window.dispatch_event(WindowEvent::PointerMoved {
+            position: LogicalPosition::new(x, y),
         });
     }
     draw(&window);

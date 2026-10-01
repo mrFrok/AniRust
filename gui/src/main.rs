@@ -528,6 +528,24 @@ fn wire_release(window: &MainWindow, app: &Rc<App>) {
         }
     });
 
+    window.on_toggle_watched({
+        let app = Rc::clone(&app);
+        let weak = window.as_weak();
+        move |position| {
+            let Some(window) = weak.upgrade() else { return };
+            release::toggle_watched(&window, &app.release, &app.client, position);
+        }
+    });
+
+    window.on_toggle_all_watched({
+        let app = Rc::clone(&app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            release::toggle_all_watched(&window, &app.release, &app.client);
+        }
+    });
+
     window.on_go_back(move || {
         let Some(window) = weak.upgrade() else { return };
         window.set_screen("home".into());

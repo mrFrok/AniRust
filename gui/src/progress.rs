@@ -132,6 +132,35 @@ impl Store {
         newly_finished
     }
 
+    /// Says outright whether an episode was watched, as a viewer does by hand.
+    ///
+    /// Watched keeps the position and sets the flag. Not watched forgets the
+    /// episode altogether: someone taking the tick off is starting it again,
+    /// and offering to resume twenty-two minutes in would contradict them.
+    pub fn set_finished(&mut self, release_id: i64, position: i32, finished: bool) {
+        let key = Self::key(release_id, position);
+        if finished {
+            self.entries.entry(key).or_default().finished = true;
+        } else {
+            self.entries.remove(&key);
+        }
+        self.dirty = true;
+    }
+
+    /// Puts back what was there before a change that the server refused.
+    pub fn restore(&mut self, release_id: i64, position: i32, entry: Option<Entry>) {
+        let key = Self::key(release_id, position);
+        match entry {
+            Some(entry) => {
+                self.entries.insert(key, entry);
+            }
+            None => {
+                self.entries.remove(&key);
+            }
+        }
+        self.dirty = true;
+    }
+
     /// Writes the store out, if anything changed.
     pub fn flush(&mut self) {
         if !self.dirty {
@@ -212,6 +241,40 @@ mod tests {
         let mut store = Store::default();
         assert!(!store.record(1, 1, Duration::from_secs(9_000), None));
         assert!(store.get(1, 1).is_some_and(|e| !e.finished));
+    }
+
+    #[test]
+    fn taking_the_tick_off_forgets_the_episode() {
+        let mut store = Store::default();
+        let duration = Some(Duration::from_secs(1_440));
+        store.record(1, 3, Duration::from_secs(1_400), duration);
+        assert!(store.get(1, 3).is_some_and(|e| e.finished));
+
+        store.set_finished(1, 3, false);
+        assert!(
+            store.get(1, 3).is_none(),
+            "nothing left to resume from either"
+        );
+    }
+
+    #[test]
+    fn ticking_by_hand_keeps_the_place() {
+        let mut store = Store::default();
+        store.record(1, 3, Duration::from_secs(600), None);
+        store.set_finished(1, 3, true);
+        let entry = store.get(1, 3).expect("still there");
+        assert!(entry.finished);
+        assert_eq!(entry.position_ms, 600_000);
+    }
+
+    #[test]
+    fn a_refused_change_is_put_back_exactly() {
+        let mut store = Store::default();
+        store.record(1, 3, Duration::from_secs(600), None);
+        let before = store.get(1, 3);
+        store.set_finished(1, 3, false);
+        store.restore(1, 3, before);
+        assert_eq!(store.get(1, 3).map(|e| e.position_ms), Some(600_000));
     }
 
     #[test]

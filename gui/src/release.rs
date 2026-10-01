@@ -497,6 +497,144 @@ pub fn set_vote(
     );
 }
 
+/// Ticks one episode as watched, or takes the tick off.
+///
+/// Recorded on this machine always, and on the account when there is one: a
+/// viewer without an account still keeps their place, so the tick has to
+/// mean something for them too.
+pub fn toggle_watched(
+    window: &MainWindow,
+    state: &Rc<RefCell<ReleaseState>>,
+    client: &Client,
+    position: i32,
+) {
+    let Some(change) = mark(state, &[position], None) else {
+        return;
+    };
+    show_episodes(window, &state.borrow());
+    send_marks(window, state, client, change, Some(position));
+}
+
+/// Ticks every episode, or takes every tick off when they are all ticked.
+pub fn toggle_all_watched(window: &MainWindow, state: &Rc<RefCell<ReleaseState>>, client: &Client) {
+    let (positions, all) = {
+        let state = state.borrow();
+        let positions = state.positions();
+        let all = !state.episodes.is_empty() && state.episodes.iter().all(|e| state.watched(e));
+        (positions, all)
+    };
+    let Some(change) = mark(state, &positions, Some(!all)) else {
+        return;
+    };
+    show_episodes(window, &state.borrow());
+    send_marks(window, state, client, change, None);
+}
+
+/// What a tick changed, kept so it can be put back.
+struct MarkChange {
+    release_id: i64,
+    source_id: Option<i64>,
+    /// The new state — what was asked for.
+    watched: bool,
+    /// Each episode as it was: the account's flag and this machine's entry.
+    before: Vec<(i32, bool, Option<crate::progress::Entry>)>,
+}
+
+/// Sets the episodes at `positions` watched or not, on screen and on this
+/// machine. With `to` unset, the one episode flips.
+fn mark(
+    state: &Rc<RefCell<ReleaseState>>,
+    positions: &[i32],
+    to: Option<bool>,
+) -> Option<MarkChange> {
+    let mut state = state.borrow_mut();
+    let release_id = state.release_id;
+    let source_id = state.selected_source().map(|source| source.id);
+    let watched = match to {
+        Some(watched) => watched,
+        None => {
+            let episode = state.episode_at(*positions.first()?)?;
+            !state.watched(episode)
+        }
+    };
+
+    let progress = Rc::clone(&state.progress);
+    let mut store = progress.borrow_mut();
+    let mut before = Vec::with_capacity(positions.len());
+    for episode in state
+        .episodes
+        .iter_mut()
+        .filter(|e| positions.contains(&e.position))
+    {
+        before.push((
+            episode.position,
+            episode.is_watched,
+            store.get(release_id, episode.position),
+        ));
+        episode.is_watched = watched;
+        store.set_finished(release_id, episode.position, watched);
+    }
+    store.flush();
+
+    Some(MarkChange {
+        release_id,
+        source_id,
+        watched,
+        before,
+    })
+}
+
+/// Tells the account, and puts everything back if it refuses.
+fn send_marks(
+    window: &MainWindow,
+    state: &Rc<RefCell<ReleaseState>>,
+    client: &Client,
+    change: MarkChange,
+    position: Option<i32>,
+) {
+    // Without an account the tick lives on this machine only, which is
+    // already done.
+    let Some(source_id) = change.source_id.filter(|_| client.is_authenticated()) else {
+        return;
+    };
+
+    let api = client.clone();
+    let (release_id, watched) = (change.release_id, change.watched);
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    tasks::spawn(
+        async move {
+            match (position, watched) {
+                (Some(at), true) => api.mark_watched(release_id, source_id, at).await,
+                (Some(at), false) => api.mark_unwatched(release_id, source_id, at).await,
+                (None, true) => api.mark_all_watched(release_id, source_id).await,
+                (None, false) => api.mark_all_unwatched(release_id, source_id).await,
+            }
+        },
+        move |result| {
+            let Err(error) = result else { return };
+            tracing::warn!(%error, release_id, "the watched state was not changed");
+            let Some(window) = weak.upgrade() else { return };
+            let mut guard = state.borrow_mut();
+            if guard.release_id != change.release_id {
+                return;
+            }
+            let progress = Rc::clone(&guard.progress);
+            let mut store = progress.borrow_mut();
+            for (at, flag, entry) in change.before {
+                if let Some(episode) = guard.episodes.iter_mut().find(|e| e.position == at) {
+                    episode.is_watched = flag;
+                }
+                store.restore(change.release_id, at, entry);
+            }
+            store.flush();
+            drop(store);
+            drop(guard);
+            show_episodes(&window, &state.borrow());
+        },
+    );
+}
+
 /// The rating after a click on `stars`: that many, or none if it was already
 /// that many.
 fn next_vote(before: i32, stars: i32) -> i32 {
@@ -591,7 +729,9 @@ fn show_episodes(window: &MainWindow, state: &ReleaseState) {
         })
         .collect();
 
+    let all_watched = !items.is_empty() && items.iter().all(|item| item.watched);
     window.set_episodes(slint::ModelRc::new(VecModel::from(items)));
+    window.set_all_episodes_watched(all_watched);
 
     let resume = state.resume_position();
     window.set_resume_episode(resume);
