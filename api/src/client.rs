@@ -212,6 +212,31 @@ impl Client {
         self.read_token().map(|_| ()).ok_or(Error::Unauthenticated)
     }
 
+    /// Sends a request by path and answers with the body exactly as it came.
+    ///
+    /// For capturing responses as test fixtures and for looking at an endpoint
+    /// before it has a method of its own. The token goes along when the client
+    /// has one; no retries, no mirrors, and no decoding — what is returned is
+    /// what the server said, including a refusal.
+    pub async fn raw(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        query: &[(String, String)],
+    ) -> Result<String> {
+        let base = self.base_urls.first().ok_or(Error::Status {
+            status: reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        })?;
+        let mut req = self
+            .http
+            .request(method, base.join(path.trim_start_matches('/'))?)
+            .query(query);
+        if let Some(token) = self.read_token() {
+            req = req.query(&[("token", token)]);
+        }
+        Ok(req.send().await?.text().await?)
+    }
+
     /// Starts a request. `path` is relative and must not begin with `/`, so it
     /// resolves against the base URL's trailing slash.
     pub(crate) fn get(&self, path: impl Into<Cow<'static, str>>) -> RequestSpec {
@@ -290,6 +315,7 @@ impl Client {
             Body::Empty => req,
             Body::Json(value) => req.json(value),
             Body::Form(fields) => req.form(fields),
+            Body::Multipart(upload) => req.multipart(upload.form()?),
         };
 
         let response = req.send().await?;
@@ -340,6 +366,33 @@ enum Body {
     Empty,
     Json(serde_json::Value),
     Form(Vec<(&'static str, String)>),
+    Multipart(Upload),
+}
+
+/// A file going up in a multipart body, kept as bytes rather than as a
+/// `reqwest` form: a form is consumed by sending it, and a request that is
+/// retried has to be able to build its body again.
+pub(crate) struct Upload {
+    /// The part's name — what the server reads the file from.
+    pub part: &'static str,
+    pub file_name: String,
+    pub mime: &'static str,
+    pub bytes: Vec<u8>,
+    /// Plain-text parts sent alongside the file.
+    pub fields: Vec<(&'static str, String)>,
+}
+
+impl Upload {
+    fn form(&self) -> Result<reqwest::multipart::Form> {
+        let part = reqwest::multipart::Part::bytes(self.bytes.clone())
+            .file_name(self.file_name.clone())
+            .mime_str(self.mime)?;
+        let mut form = reqwest::multipart::Form::new().part(self.part, part);
+        for (name, value) in &self.fields {
+            form = form.text(*name, value.clone());
+        }
+        Ok(form)
+    }
 }
 
 /// A request being assembled. Header and parameter names are `&'static str`
@@ -405,6 +458,13 @@ impl RequestSpec {
         V: Into<String>,
     {
         self.body = Body::Form(fields.into_iter().map(|(k, v)| (k, v.into())).collect());
+        self
+    }
+
+    /// A multipart body carrying one file.
+    #[must_use]
+    pub(crate) fn upload(mut self, upload: Upload) -> Self {
+        self.body = Body::Multipart(upload);
         self
     }
 

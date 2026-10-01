@@ -20,3 +20,7 @@ url.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "time"] }
+# Every endpoint is checked against a local server that knows the path, the
+# method and the parameters it should receive — the protocol is verified
+# without touching theirs.
+wiremock = "0.6"

@@ -20,6 +20,7 @@ use crate::models::Page;
 mod account;
 mod episode;
 mod feed;
+mod preference;
 mod release;
 
 pub use account::SignInError;

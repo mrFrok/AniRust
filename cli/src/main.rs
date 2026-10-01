@@ -118,6 +118,20 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         page: i32,
     },
+    /// Send any request by path and print the body as it came.
+    ///
+    /// For capturing responses as fixtures, redirected into
+    /// `api/tests/fixtures/`. The token goes along when one is set; nothing is
+    /// decoded.
+    Raw {
+        /// GET or POST.
+        method: String,
+        /// Relative to the API root, e.g. `profile/5`.
+        path: String,
+        /// Query parameters, `key=value`, repeatable.
+        #[arg(long = "query", short = 'q', value_parser = key_value)]
+        query: Vec<(String, String)>,
+    },
     /// List the hosts an extractor is implemented for.
     Hosts,
     /// Resolve an embed URL to a directly playable stream.
@@ -292,8 +306,26 @@ async fn main() -> Result<()> {
     run(&client, &cli, lang).await
 }
 
+/// `key=value`, for `raw --query`.
+fn key_value(text: &str) -> std::result::Result<(String, String), String> {
+    text.split_once('=')
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .ok_or_else(|| format!("expected key=value, got `{text}`"))
+}
+
 async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
     match &cli.command {
+        Command::Raw {
+            method,
+            path,
+            query,
+        } => {
+            let method: reqwest::Method = method
+                .to_ascii_uppercase()
+                .parse()
+                .context("the method must be GET or POST")?;
+            println!("{}", client.raw(method, path, query).await?);
+        }
         Command::Search { query, by, page } => {
             let hits = client.search_releases(query, (*by).into(), *page).await?;
             if cli.json {

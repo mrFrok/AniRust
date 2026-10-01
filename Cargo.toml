@@ -41,6 +41,9 @@ reqwest = { version = "0.13", default-features = false, features = [
     "gzip",
     "brotli",
     "stream",
+    # Pictures go up as multipart: an avatar, a collection's cover, a channel's
+    # avatar and cover. Four requests, but there is no other way to send a file.
+    "multipart",
     # Some embed hosts hand out a cookie on the first request and require it
     # on the follow-up.
     "cookies",
