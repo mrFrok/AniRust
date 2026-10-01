@@ -62,11 +62,17 @@ export component Dropdown inherits Rectangle {
             vertical-alignment: center;
         }
 
-        Image {
-            source: @image-url("../icons/chevron-down.svg");
-            colorize: MaterialPalette.on-surface-variant;
-            width: 18px;
-            height: 18px;
+        // In a column of its own: a fixed-size image in a row sits at the top
+        // of it, not on the row's centre line.
+        VerticalLayout {
+            alignment: center;
+
+            Image {
+                source: @image-url("../icons/chevron-down.svg");
+                colorize: MaterialPalette.on-surface-variant;
+                width: 18px;
+                height: 18px;
+            }
         }
     }
 

@@ -115,6 +115,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         ])));
     }
+    // The account's view of a release: in a list, a favourite, rated.
+    if state == "release-rated" {
+        ui.set_signed_in(true);
+        ui.set_release_list(2);
+        ui.set_release_favourite(true);
+        ui.set_release_vote(4);
+    }
     if state == "failed" {
         ui.set_episode_failed(true);
     }

@@ -17,7 +17,46 @@ import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { PickerOption, EpisodeItem } from "../structs.slint";
-import { EpisodePicker, Poster } from "../components/release-parts.slint";
+import { EpisodePicker, Poster, Dropdown } from "../components/release-parts.slint";
+
+/// Five stars, the account's rating lit, and a hover preview of the one a
+/// click would give.
+component Rating inherits HorizontalLayout {
+    in property <int> vote: 0;
+    callback clicked(int);
+
+    /// The star under the pointer, or 0 with none.
+    property <int> hovered: 0;
+
+    alignment: center;
+    spacing: 0px;
+
+    for i in 5: Rectangle {
+        width: 26px;
+        height: 32px;
+
+        Text {
+            text: "★";
+            font-size: 20px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: 100%;
+            height: 100%;
+            color: (root.hovered > 0 ? i < root.hovered : i < root.vote)
+                ? MaterialPalette.tertiary
+                : MaterialPalette.outline-variant;
+        }
+
+        touch := TouchArea {
+            mouse-cursor: pointer;
+            changed has-hover => {
+                if (self.has-hover) { root.hovered = i + 1; }
+                else if (root.hovered == i + 1) { root.hovered = 0; }
+            }
+            clicked => { root.clicked(i + 1); }
+        }
+    }
+}
 
 export component ReleasePage inherits Rectangle {
     // ---- from Rust -------------------------------------------------------
@@ -58,7 +97,22 @@ export component ReleasePage inherits Rectangle {
     /// than quietly going back to the invitation to try again.
     in property <bool> failed: false;
 
+    // ---- the account's view of it ---------------------------------------
+    in property <bool> signed-in: false;
+    /// Which of the account's lists it is in: 0 none, then the five lists in
+    /// the bookmarks' order.
+    in property <int> list: 0;
+    in property <bool> favourite: false;
+    /// The account's rating, 1 to 5, or 0 for none.
+    in property <int> vote: 0;
+
     // ---- to Rust ---------------------------------------------------------
+    callback set-list(int);
+    callback toggle-favourite();
+    /// A star was clicked. Clicking the rating already given takes it back.
+    callback set-vote(int);
+    /// Asked for any of the three above without an account.
+    callback sign-in();
     callback select-dubber(int);
     callback select-source(int);
     callback play-episode(int);
@@ -130,6 +184,58 @@ export component ReleasePage inherits Rectangle {
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                     overflow: elide;
+                }
+
+                // What the account thinks of it. All three are offered without
+                // an account too, and lead to signing in: a control that does
+                // nothing when clicked is worse than one that says why.
+                // Shown at every width. The title gives way instead — it elides,
+                // and a rating that disappears below some width is a feature
+                // that disappears with it.
+                VerticalLayout {
+                    alignment: center;
+
+                    Rating {
+                        vote: root.vote;
+                        clicked(n) => {
+                            if (root.signed-in) { root.set-vote(n); } else { root.sign-in(); }
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+
+                    IconButton {
+                        icon: @image-url("../icons/heart.svg");
+                        checked-icon: @image-url("../icons/heart-filled.svg");
+                        checkable: true;
+                        checked: root.favourite;
+                        tooltip: root.favourite ? Tr.remove-from-favourites : Tr.add-to-favourites;
+                        clicked => {
+                            if (root.signed-in) { root.toggle-favourite(); } else { root.sign-in(); }
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+
+                    Dropdown {
+                        width: 190px;
+                        model: [
+                            { label: Tr.not-in-list },
+                            { label: Tr.list-watching },
+                            { label: Tr.list-planned },
+                            { label: Tr.list-watched },
+                            { label: Tr.list-hold },
+                            { label: Tr.list-dropped },
+                        ];
+                        current: root.list;
+                        selected(i) => {
+                            if (root.signed-in) { root.set-list(i); } else { root.sign-in(); }
+                        }
+                    }
                 }
             }
         }

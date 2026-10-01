@@ -73,6 +73,14 @@ export component MainWindow inherits Window {
     /// The last attempt to start an episode failed.
     in property <bool> episode-failed: false;
 
+    /// The account's view of the release on screen.
+    in property <int> release-list: 0;
+    in property <bool> release-favourite: false;
+    in property <int> release-vote: 0;
+    callback set-release-list(int);
+    callback toggle-release-favourite();
+    callback set-release-vote(int);
+
     callback select-dubber(int);
     callback select-source(int);
     callback play-episode(int);
@@ -381,7 +389,15 @@ export component MainWindow inherits Window {
         current-index: root.current-index;
         playing: root.playing;
         theatre: root.theatre;
+        signed-in: root.signed-in;
+        list: root.release-list;
+        favourite: root.release-favourite;
+        vote: root.release-vote;
 
+        set-list(i) => { root.set-release-list(i); }
+        toggle-favourite => { root.toggle-release-favourite(); }
+        set-vote(n) => { root.set-release-vote(n); }
+        sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
         select-dubber(i) => { root.select-dubber(i); }
         select-source(i) => { root.select-source(i); }
         play-episode(p) => { root.play-episode(p); }

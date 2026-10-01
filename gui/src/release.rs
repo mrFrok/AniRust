@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use slint::{ComponentHandle, VecModel};
 
-use anirust_api::{Client, Dubber, Episode, EpisodeSort, Release, Source};
+use anirust_api::{Client, Dubber, Episode, EpisodeSort, ProfileList, Release, Source};
 
 use crate::progress::Store;
 
@@ -360,6 +360,190 @@ fn show_release(window: &MainWindow, release: &Release) {
     window.set_release_episodes_label(
         format!("{}/{}", release.episodes_released, release.episodes_total).into(),
     );
+    show_account_view(window, release);
+}
+
+/// What the account thinks of the release: its list, favourite, rating.
+fn show_account_view(window: &MainWindow, release: &Release) {
+    window.set_release_list(list_index(release.list()));
+    window.set_release_favourite(release.is_favorite);
+    window.set_release_vote(release.your_vote.clamp(0, 5));
+}
+
+/// A list as the header's dropdown counts it: 0 for none, then the five lists
+/// in the order `ProfileList::ALL` gives them — which is also the order of
+/// their numbers on the wire, so the two cannot drift apart.
+fn list_index(list: Option<ProfileList>) -> i32 {
+    list.map_or(0, ProfileList::raw)
+}
+
+/// The list at a position of the dropdown, or none for position 0.
+fn list_at(index: i32) -> Option<ProfileList> {
+    usize::try_from(index)
+        .ok()
+        .and_then(|at| at.checked_sub(1))
+        .and_then(|at| ProfileList::ALL.get(at).copied())
+}
+
+// ---------------------------------------------------------------------------
+// What the account does to a release
+// ---------------------------------------------------------------------------
+//
+// All three change the screen first and the server second, and put the screen
+// back if the server refuses. The control is under the pointer; a second of
+// nothing reads as a click that did not land.
+
+/// Moves the release into a list, or out of every list with position 0.
+pub fn set_list(
+    window: &MainWindow,
+    state: &Rc<RefCell<ReleaseState>>,
+    client: &Client,
+    index: i32,
+) {
+    let Some((release_id, before)) = current(state, |r| r.list()) else {
+        return;
+    };
+    let after = list_at(index);
+    if after == before {
+        return;
+    }
+
+    remember(state, |r| {
+        r.profile_list_status = after.map_or(0, ProfileList::raw)
+    });
+    window.set_release_list(list_index(after));
+
+    let api = client.clone();
+    let undo = undo_with(window, state, move |r| {
+        r.profile_list_status = before.map_or(0, ProfileList::raw);
+    });
+    tasks::spawn(
+        async move {
+            match (before, after) {
+                // Out of every list: only the one it is in knows it.
+                (Some(old), None) => api.profile_list_delete(old, release_id).await,
+                (_, Some(new)) => api.profile_list_add(new, release_id).await,
+                (None, None) => Ok(()),
+            }
+        },
+        move |result| {
+            if let Err(error) = result {
+                tracing::warn!(%error, release_id, "the list was not changed");
+                undo();
+            }
+        },
+    );
+}
+
+/// Adds the release to the favourites, or takes it out.
+pub fn toggle_favourite(window: &MainWindow, state: &Rc<RefCell<ReleaseState>>, client: &Client) {
+    let Some((release_id, before)) = current(state, |r| r.is_favorite) else {
+        return;
+    };
+    let after = !before;
+
+    remember(state, |r| r.is_favorite = after);
+    window.set_release_favourite(after);
+
+    let api = client.clone();
+    let undo = undo_with(window, state, move |r| r.is_favorite = before);
+    tasks::spawn(
+        async move {
+            if after {
+                api.favorite_add(release_id).await
+            } else {
+                api.favorite_delete(release_id).await
+            }
+        },
+        move |result| {
+            if let Err(error) = result {
+                tracing::warn!(%error, release_id, "the favourite was not changed");
+                undo();
+            }
+        },
+    );
+}
+
+/// Rates the release. The rating it already has, clicked again, is withdrawn.
+pub fn set_vote(
+    window: &MainWindow,
+    state: &Rc<RefCell<ReleaseState>>,
+    client: &Client,
+    stars: i32,
+) {
+    let Some((release_id, before)) = current(state, |r| r.your_vote) else {
+        return;
+    };
+    let after = next_vote(before, stars);
+
+    remember(state, |r| r.your_vote = after);
+    window.set_release_vote(after);
+
+    let api = client.clone();
+    let undo = undo_with(window, state, move |r| r.your_vote = before);
+    tasks::spawn(
+        async move {
+            match u8::try_from(after) {
+                Ok(stars @ 1..=5) => api.release_vote(release_id, stars).await,
+                _ => api.release_vote_delete(release_id).await,
+            }
+        },
+        move |result| {
+            if let Err(error) = result {
+                tracing::warn!(%error, release_id, "the rating was not changed");
+                undo();
+            }
+        },
+    );
+}
+
+/// The rating after a click on `stars`: that many, or none if it was already
+/// that many.
+fn next_vote(before: i32, stars: i32) -> i32 {
+    let stars = stars.clamp(1, 5);
+    if before == stars { 0 } else { stars }
+}
+
+/// The release on screen and one thing about it, if one is loaded.
+fn current<T>(
+    state: &Rc<RefCell<ReleaseState>>,
+    read: impl FnOnce(&Release) -> T,
+) -> Option<(i64, T)> {
+    let state = state.borrow();
+    let release = state.release.as_ref()?;
+    Some((release.id, read(release)))
+}
+
+/// Writes a change into the loaded release.
+fn remember(state: &Rc<RefCell<ReleaseState>>, write: impl FnOnce(&mut Release)) {
+    if let Some(release) = state.borrow_mut().release.as_mut() {
+        write(release);
+    }
+}
+
+/// What puts a change back: writes `restore` into the release — if it is still
+/// the one on screen — and shows the result.
+fn undo_with(
+    window: &MainWindow,
+    state: &Rc<RefCell<ReleaseState>>,
+    restore: impl FnOnce(&mut Release) + 'static,
+) -> impl FnOnce() + 'static {
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    let release_id = state.borrow().release_id;
+    move || {
+        let Some(window) = weak.upgrade() else { return };
+        let mut guard = state.borrow_mut();
+        // The viewer may have opened another release while the request was
+        // out; undoing then would write one release's state into another's.
+        if guard.release_id != release_id {
+            return;
+        }
+        if let Some(release) = guard.release.as_mut() {
+            restore(release);
+            show_account_view(&window, release);
+        }
+    }
 }
 
 fn show_dubbers(window: &MainWindow, state: &ReleaseState) {
@@ -450,6 +634,24 @@ fn says_only_the_number(name: &str, position: i32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_dropdown_position_names_the_same_list_back() {
+        assert_eq!(list_at(0), None);
+        for list in ProfileList::ALL {
+            assert_eq!(list_at(list_index(Some(list))), Some(list));
+        }
+        assert_eq!(list_at(6), None);
+        assert_eq!(list_at(-1), None);
+    }
+
+    #[test]
+    fn clicking_the_rating_already_given_takes_it_back() {
+        assert_eq!(next_vote(0, 4), 4);
+        assert_eq!(next_vote(4, 4), 0);
+        assert_eq!(next_vote(4, 2), 2);
+        assert_eq!(next_vote(0, 9), 5);
+    }
 
     fn episode(position: i32, watched: bool, playback_position: i64) -> Episode {
         Episode {

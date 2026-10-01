@@ -501,6 +501,33 @@ fn wire_release(window: &MainWindow, app: &Rc<App>) {
     });
 
     let app = Rc::clone(app);
+    window.on_set_release_list({
+        let app = Rc::clone(&app);
+        let weak = window.as_weak();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            release::set_list(&window, &app.release, &app.client, index);
+        }
+    });
+
+    window.on_toggle_release_favourite({
+        let app = Rc::clone(&app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            release::toggle_favourite(&window, &app.release, &app.client);
+        }
+    });
+
+    window.on_set_release_vote({
+        let app = Rc::clone(&app);
+        let weak = window.as_weak();
+        move |stars| {
+            let Some(window) = weak.upgrade() else { return };
+            release::set_vote(&window, &app.release, &app.client, stars);
+        }
+    });
+
     window.on_go_back(move || {
         let Some(window) = weak.upgrade() else { return };
         window.set_screen("home".into());
