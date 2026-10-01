@@ -12,7 +12,7 @@
 // that owns the video texture is declared once, in the window.
 
 import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, IconButton, FloatingActionButton, FABStyle, TonalButton, ActionChip } from "@material";
+import { MaterialPalette, IconButton, FloatingActionButton, FABStyle, TonalButton, ActionChip, OutlineButton } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -126,6 +126,8 @@ export component ReleasePage inherits Rectangle {
     in property <bool> failed: false;
 
     /// The franchise's other releases, and the services carrying this one.
+    in property <int> comment-count: 0;
+    callback open-comments();
     in property <[LinkItem]> related: [];
     in property <[LinkItem]> platforms: [];
     callback open-related(int);
@@ -467,6 +469,17 @@ export component ReleasePage inherits Rectangle {
                             // thirty releases, and a row of names reads at a
                             // glance where a row of covers needs scrolling and
                             // thirty more downloads.
+                            HorizontalLayout {
+                                alignment: start;
+                                padding-top: Spacing.tight;
+
+                                OutlineButton {
+                                    icon: @image-url("../icons/comment.svg");
+                                    text: Tr.comments-title + (root.comment-count > 0 ? " · " + root.comment-count : "");
+                                    clicked => { root.open-comments(); }
+                                }
+                            }
+
                             if root.related.length > 0: LinkRow {
                                 heading: Tr.franchise;
                                 items: root.related;

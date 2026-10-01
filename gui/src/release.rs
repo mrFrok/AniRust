@@ -484,6 +484,7 @@ pub fn open_in_browser(url: &str) {
 
 /// What the account thinks of the release: its list, favourite, rating.
 fn show_account_view(window: &MainWindow, release: &Release) {
+    window.set_release_comment_count(i32::try_from(release.comments()).unwrap_or(i32::MAX));
     window.set_release_list(list_index(release.list()));
     window.set_release_favourite(release.is_favorite);
     window.set_release_vote(release.your_vote.clamp(0, 5));

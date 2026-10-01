@@ -135,3 +135,35 @@ export struct LinkItem {
     /// A quieter second part — a year, a kind of release.
     detail: string,
 }
+
+/// One comment, or one reply under it, as the thread shows it.
+///
+/// Replies are rows of the same list, marked and indented, rather than a list
+/// inside a list: a thread is read top to bottom either way, and one flat
+/// model scrolls as one.
+export struct CommentItem {
+    author: string,
+    avatar: image,
+    avatar-loaded: bool,
+    /// How long ago, in minutes; the wording is the interface's.
+    minutes-ago: int,
+    text: string,
+    spoiler: bool,
+    /// Whether a spoiler has been opened. Kept with the row so it survives
+    /// the row being redrawn.
+    revealed: bool,
+    edited: bool,
+    deleted: bool,
+    /// Up votes less down votes.
+    score: int,
+    /// This account's vote: 0 none, 1 down, 2 up.
+    my-vote: int,
+    /// Replies under it, and whether they are shown. Top-level rows only.
+    replies: int,
+    expanded: bool,
+    is-reply: bool,
+    /// Written by this account, so it can be edited and deleted.
+    mine: bool,
+    /// The episode a release comment was written at, or 0.
+    episode: int,
+}

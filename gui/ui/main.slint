@@ -10,7 +10,8 @@ import { SignInSheet } from "components/sign-in.slint";
 import { DownloadsPage } from "pages/downloads.slint";
 import { ProfilePage } from "pages/profile.slint";
 import { FeedPage } from "pages/feed.slint";
-import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem } from "structs.slint";
+import { CommentsSheet } from "components/comments.slint";
+import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -215,6 +216,39 @@ export component MainWindow inherits Window {
     /// toolbar's badge counts.
     in property <int> downloads-working: 0;
 
+    // ---- comments --------------------------------------------------------
+    /// The thread open in the sheet, if one is.
+    in-out property <bool> comments-open: false;
+    in property <string> comments-title;
+    in property <[CommentItem]> comments: [];
+    in property <int> comments-total: 0;
+    in property <bool> comments-loading: false;
+    in property <bool> comments-has-more: false;
+    in property <int> comments-sort: 0;
+    in property <string> comments-reply-to;
+    in property <bool> comments-editing: false;
+    in property <bool> comments-sending: false;
+    in property <string> comments-error;
+    in-out property <string> comment-draft;
+    in-out property <bool> comment-draft-spoiler: false;
+    /// The comment count of the release on screen, for the button that opens
+    /// its thread.
+    in property <int> release-comment-count: 0;
+
+    callback open-release-comments();
+    callback open-post-comments(int);
+    callback close-comments();
+    callback select-comments-sort(int);
+    callback load-more-comments();
+    callback send-comment();
+    callback cancel-comment-reply();
+    callback vote-comment(int, int);
+    callback reply-to-comment(int);
+    callback edit-comment(int);
+    callback delete-comment(int);
+    callback toggle-comment-replies(int);
+    callback reveal-comment(int);
+
     // ---- feed ------------------------------------------------------------
     in property <[FeedPost]> posts: [];
     in property <bool> feed-loading: false;
@@ -299,6 +333,7 @@ export component MainWindow inherits Window {
 
             select-tab(i) => { root.select-feed-tab(i); }
             toggle-subscription(i) => { root.toggle-subscription(i); }
+            open-comments(i) => { root.open-post-comments(i); }
             sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
         }
 
@@ -411,6 +446,8 @@ export component MainWindow inherits Window {
         related: root.release-related;
         platforms: root.release-platforms;
         open-related(i) => { root.open-related(i); }
+        comment-count: root.release-comment-count;
+        open-comments => { root.open-release-comments(); }
         open-platform(i) => { root.open-platform(i); }
         toggle-watched(p) => { root.toggle-watched(p); }
         toggle-all-watched => { root.toggle-all-watched(); }
@@ -476,6 +513,38 @@ export component MainWindow inherits Window {
         }
     }
 
+    // Under the sign-in form, which the sheet itself can ask for.
+    if root.comments-open: CommentsSheet {
+        width: 100%;
+        height: 100%;
+        title: root.comments-title;
+        comments: root.comments;
+        total: root.comments-total;
+        loading: root.comments-loading;
+        has-more: root.comments-has-more;
+        signed-in: root.signed-in;
+        sort: root.comments-sort;
+        reply-to: root.comments-reply-to;
+        editing: root.comments-editing;
+        sending: root.comments-sending;
+        error: root.comments-error;
+        draft <=> root.comment-draft;
+        draft-spoiler <=> root.comment-draft-spoiler;
+
+        close => { root.close-comments(); }
+        select-sort(i) => { root.select-comments-sort(i); }
+        load-more => { root.load-more-comments(); }
+        send => { root.send-comment(); }
+        cancel-reply => { root.cancel-comment-reply(); }
+        vote(i, v) => { root.vote-comment(i, v); }
+        reply(i) => { root.reply-to-comment(i); }
+        edit(i) => { root.edit-comment(i); }
+        delete(i) => { root.delete-comment(i); }
+        toggle-replies(i) => { root.toggle-comment-replies(i); }
+        reveal(i) => { root.reveal-comment(i); }
+        sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
+    }
+
     if root.show-sign-in: SignInSheet {
         width: 100%;
         height: 100%;
@@ -496,7 +565,11 @@ export component MainWindow inherits Window {
     // upscaling, interpolation — take letters YouTube leaves free.
     keys := FocusScope {
         key-pressed(event) => {
-            if (root.show-sign-in || !root.playing) { return reject; }
+            if (root.comments-open && event.text == Key.Escape) {
+                root.close-comments();
+                return accept;
+            }
+            if (root.show-sign-in || root.comments-open || !root.playing) { return reject; }
 
             // ---- transport ----
             if (event.text == " " || event.text == "k") { root.toggle-pause(); return accept; }

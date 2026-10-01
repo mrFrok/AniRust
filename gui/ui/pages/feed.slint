@@ -50,6 +50,7 @@ component Tally inherits HorizontalLayout {
 component PostCard inherits Rectangle {
     in property <FeedPost> post;
     callback toggle-subscription();
+    callback open-comments();
 
     /// Folded by default when the post is long enough to need it. Each card
     /// keeps its own: unfolding one post is not a reason to unfold them all.
@@ -171,9 +172,23 @@ component PostCard inherits Rectangle {
                 value: root.post.votes;
             }
 
-            Tally {
-                icon: @image-url("../icons/comment.svg");
-                value: root.post.comments;
+            // The comment count opens the thread; the vote count is only a
+            // count until votes are something this screen casts.
+            Rectangle {
+                width: comments-tally.preferred-width + Spacing.small;
+                border-radius: Shape.small;
+                background: comments-touch.has-hover ? MaterialPalette.surface-container-high : transparent;
+
+                comments-tally := Tally {
+                    x: Spacing.tight;
+                    icon: @image-url("../icons/comment.svg");
+                    value: root.post.comments;
+                }
+
+                comments-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.open-comments(); }
+                }
             }
         }
     }
@@ -212,6 +227,7 @@ export component FeedPage inherits Rectangle {
 
     callback select-tab(int);
     callback toggle-subscription(int);
+    callback open-comments(int);
     callback sign-in();
 
     background: MaterialPalette.surface;
@@ -325,6 +341,7 @@ export component FeedPage inherits Rectangle {
                 for post[index] in root.posts: PostCard {
                     post: post;
                     toggle-subscription => { root.toggle-subscription(index); }
+                    open-comments => { root.open-comments(index); }
                 }
             }
         }

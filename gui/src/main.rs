@@ -10,6 +10,7 @@
 //! Nothing here blocks the event loop. Every lookup and every extractor run
 //! goes through [`tasks`] and comes back on the UI thread.
 
+mod comments;
 mod downloads;
 mod feed;
 mod home;
@@ -90,6 +91,7 @@ fn main() -> Result<()> {
         ))))),
         home: Rc::new(RefCell::new(HomeState::default())),
         feed: Rc::new(RefCell::new(feed::FeedState::default())),
+        comments: Rc::new(RefCell::new(comments::CommentsState::default())),
         queue: Rc::new(RefCell::new(downloads::Queue::default())),
         account: Rc::new(RefCell::new(Session::default())),
         playing: Rc::new(RefCell::new(None)),
@@ -98,6 +100,7 @@ fn main() -> Result<()> {
 
     wire_home(&window, &app);
     wire_feed(&window, &app);
+    wire_comments(&window, &app);
     wire_account(&window, &app);
     wire_release(&window, &app);
     let advance = wire_player(&window, &app);
@@ -140,6 +143,7 @@ struct App {
     release: Rc<RefCell<ReleaseState>>,
     home: Rc<RefCell<HomeState>>,
     feed: Rc<RefCell<feed::FeedState>>,
+    comments: Rc<RefCell<comments::CommentsState>>,
     queue: Rc<RefCell<downloads::Queue>>,
     account: Rc<RefCell<Session>>,
     /// The stream currently loaded, so the quality menu and the skip button
@@ -246,6 +250,155 @@ fn show_appearance(window: &MainWindow, chosen: preferences::Appearance) {
 // ---------------------------------------------------------------------------
 // Browsing
 // ---------------------------------------------------------------------------
+
+/// What the comment thread needs to know about whoever is reading it.
+fn viewer(app: &App) -> comments::Viewer {
+    comments::Viewer {
+        profile_id: app.account.borrow().id,
+        http: app.http.clone(),
+    }
+}
+
+/// A window callback that receives a row index and hands it on, if it is one.
+macro_rules! on_row {
+    ($window:expr, $app:expr, $setter:ident, |$w:ident, $a:ident, $i:ident| $body:expr) => {{
+        let app = Rc::clone($app);
+        let weak = $window.as_weak();
+        $window.$setter(move |index| {
+            let Some($w) = weak.upgrade() else { return };
+            let Ok($i) = usize::try_from(index) else {
+                return;
+            };
+            let $a = &app;
+            $body;
+        });
+    }};
+}
+
+fn wire_comments(window: &MainWindow, app: &Rc<App>) {
+    window.on_open_release_comments({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            let found = app
+                .release
+                .borrow()
+                .release
+                .as_ref()
+                .map(|r| (r.id, r.title().to_owned()));
+            let Some((id, title)) = found else { return };
+            comments::open(
+                &window,
+                &app.comments,
+                &app.client,
+                viewer(&app),
+                anirust_api::CommentTarget::Release,
+                id,
+                &title,
+            );
+        }
+    });
+
+    on_row!(window, app, on_open_post_comments, |window, app, index| {
+        if let Some((id, title)) = feed::article_at(&app.feed, index) {
+            comments::open(
+                &window,
+                &app.comments,
+                &app.client,
+                viewer(app),
+                anirust_api::CommentTarget::Article,
+                id,
+                &title,
+            );
+        }
+    });
+
+    window.on_close_comments({
+        let weak = window.as_weak();
+        move || {
+            if let Some(window) = weak.upgrade() {
+                comments::close(&window);
+            }
+        }
+    });
+
+    window.on_select_comments_sort({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            comments::select_sort(&window, &app.comments, &app.client, viewer(&app), index);
+        }
+    });
+
+    window.on_load_more_comments({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            comments::load_more(&window, &app.comments, &app.client, viewer(&app));
+        }
+    });
+
+    window.on_send_comment({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            comments::send(&window, &app.comments, &app.client, viewer(&app));
+        }
+    });
+
+    window.on_cancel_comment_reply({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            comments::cancel(&window, &app.comments);
+        }
+    });
+
+    window.on_vote_comment({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move |index, vote| {
+            let Some(window) = weak.upgrade() else { return };
+            let Ok(index) = usize::try_from(index) else {
+                return;
+            };
+            comments::vote(
+                &window,
+                &app.comments,
+                &app.client,
+                viewer(&app),
+                index,
+                vote,
+            );
+        }
+    });
+
+    on_row!(window, app, on_reply_to_comment, |window, app, index| {
+        comments::reply(&window, &app.comments, index)
+    });
+    on_row!(window, app, on_edit_comment, |window, app, index| {
+        comments::edit(&window, &app.comments, index)
+    });
+    on_row!(window, app, on_delete_comment, |window, app, index| {
+        comments::delete(&window, &app.comments, &app.client, viewer(app), index)
+    });
+    on_row!(
+        window,
+        app,
+        on_toggle_comment_replies,
+        |window, app, index| {
+            comments::toggle_replies(&window, &app.comments, &app.client, viewer(app), index)
+        }
+    );
+    on_row!(window, app, on_reveal_comment, |window, app, index| {
+        comments::reveal(&window, &app.comments, viewer(app), index)
+    });
+}
 
 fn wire_feed(window: &MainWindow, app: &Rc<App>) {
     let weak = window.as_weak();

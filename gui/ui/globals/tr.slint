@@ -126,6 +126,33 @@ export global Tr {
     out property <string> watch-elsewhere: lang == "ru" ? "Где ещё смотреть" : "Also on";
     out property <string> pin-dubber: lang == "ru" ? "Открывать с этой озвучкой" : "Always open with this voice-over";
     out property <string> unpin-dubber: lang == "ru" ? "Открепить озвучку" : "Unpin this voice-over";
+    out property <string> comments-title: lang == "ru" ? "Комментарии" : "Comments";
+    out property <string> sort-newest: lang == "ru" ? "Новые" : "Newest";
+    out property <string> sort-oldest: lang == "ru" ? "Старые" : "Oldest";
+    out property <string> sort-popular: lang == "ru" ? "Популярные" : "Popular";
+    out property <string> write-comment: lang == "ru" ? "Написать комментарий…" : "Write a comment…";
+    out property <string> send: lang == "ru" ? "Отправить" : "Send";
+    out property <string> save: lang == "ru" ? "Сохранить" : "Save";
+    out property <string> spoiler: lang == "ru" ? "Спойлер" : "Spoiler";
+    out property <string> show-spoiler: lang == "ru" ? "Спойлер — показать" : "Spoiler — show";
+    out property <string> reply: lang == "ru" ? "Ответить" : "Reply";
+    out property <string> edit: lang == "ru" ? "Изменить" : "Edit";
+    out property <string> delete: lang == "ru" ? "Удалить" : "Delete";
+    out property <string> edited-mark: lang == "ru" ? "изменён" : "edited";
+    out property <string> deleted-comment: lang == "ru" ? "Комментарий удалён" : "Comment deleted";
+    out property <string> load-more: lang == "ru" ? "Загрузить ещё" : "Load more";
+    out property <string> no-comments: lang == "ru" ? "Комментариев пока нет." : "No comments yet.";
+    out property <string> sign-in-to-comment: lang == "ru" ? "Войдите, чтобы комментировать" : "Sign in to comment";
+    out property <string> replying-to: lang == "ru" ? "Ответ для" : "Replying to";
+    out property <string> editing-comment: lang == "ru" ? "Изменение комментария" : "Editing a comment";
+    out property <string> at-episode: lang == "ru" ? "на серии" : "at episode";
+    public pure function replies-label(n: int, open: bool) -> string {
+        open
+            ? (root.lang == "ru" ? "Скрыть ответы" : "Hide replies")
+            : (root.lang == "ru"
+                ? n + " " + root.plural(n, "ответ", "ответа", "ответов")
+                : n + (n == 1 ? " reply" : " replies"))
+    }
     out property <string> not-in-list: lang == "ru" ? "Не в списке" : "Not in a list";
     out property <string> add-to-favourites: lang == "ru" ? "В избранное" : "Add to favourites";
     out property <string> remove-from-favourites: lang == "ru" ? "Убрать из избранного" : "Remove from favourites";

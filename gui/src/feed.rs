@@ -109,6 +109,20 @@ pub fn open(
     );
 }
 
+/// The post a row of the feed stands for: its id and a title for the
+/// comment sheet — the channel's name, which is what heads the post.
+#[must_use]
+pub fn article_at(state: &Rc<RefCell<FeedState>>, index: usize) -> Option<(i64, String)> {
+    let state = state.borrow();
+    let article = state.articles.get(index)?;
+    let name = if article.channel.is_blog && !article.author.login.is_empty() {
+        article.author.login.clone()
+    } else {
+        article.channel.title.clone()
+    };
+    Some((article.id, name))
+}
+
 /// Switches between the account's own feed and the latest from everywhere.
 pub fn select_tab(
     window: &MainWindow,

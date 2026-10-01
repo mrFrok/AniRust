@@ -1,0 +1,490 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// A comment thread, as a sheet along the right edge of the window.
+//
+// One sheet for everything that has comments — a release, a post — rather
+// than a thread squeezed into each screen: comments are read beside the thing
+// they are about, and the release screen has no room left to give them that
+// is not the picture's.
+
+import { ScrollView } from "std-widgets.slint";
+import { MaterialPalette, IconButton, TextButton, FilledButton, OutlineButton, CircularProgressIndicator } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+import { CommentItem, PickerOption } from "../structs.slint";
+import { Dropdown } from "release-parts.slint";
+
+/// A vote button: an arrow that lights when it is the account's vote.
+component VoteArrow inherits Rectangle {
+    in property <bool> up;
+    in property <bool> active;
+    callback clicked;
+
+    width: 26px;
+    height: 26px;
+    border-radius: 13px;
+    background: touch.has-hover ? MaterialPalette.surface-container-highest : transparent;
+
+    Text {
+        text: root.up ? "▲" : "▼";
+        font-size: 11px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%;
+        height: 100%;
+        color: root.active
+            ? (root.up ? MaterialPalette.primary : MaterialPalette.error)
+            : MaterialPalette.on-surface-variant;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// One comment.
+component CommentRow inherits Rectangle {
+    in property <CommentItem> item;
+    in property <bool> signed-in;
+    callback vote(int);
+    callback reply();
+    callback edit();
+    callback delete();
+    callback toggle-replies();
+    callback reveal();
+
+    background: transparent;
+
+    layout := HorizontalLayout {
+        padding-left: root.item.is-reply ? 44px : 0px;
+        padding-top: Spacing.small;
+        padding-bottom: Spacing.small;
+        spacing: Spacing.medium;
+
+        VerticalLayout {
+            alignment: start;
+
+            Rectangle {
+                width: root.item.is-reply ? 28px : 36px;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: MaterialPalette.primary-container;
+                clip: true;
+
+                Image {
+                    source: root.item.avatar;
+                    image-fit: cover;
+                    width: 100%;
+                    height: 100%;
+                    visible: root.item.avatar-loaded;
+                }
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: Spacing.tight;
+
+            HorizontalLayout {
+                spacing: Spacing.small;
+
+                Text {
+                    text: root.item.author;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-small-size;
+                    font-weight: Typography.title-small-weight-em;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: Tr.ago(root.item.minutes-ago)
+                        + (root.item.episode > 0 ? " · " + Tr.at-episode + " " + root.item.episode : "")
+                        + (root.item.edited ? " · " + Tr.edited-mark : "");
+                    color: MaterialPalette.on-surface-variant;
+                    font-size: Typography.label-medium-size;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+
+            // A spoiler is a button until it is opened. The text is not
+            // drawn underneath at all — a blur is something a screenshot can
+            // be squinted at.
+            if root.item.deleted: Text {
+                text: Tr.deleted-comment;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.body-medium-size;
+                font-italic: true;
+            }
+
+            if !root.item.deleted && root.item.spoiler && !root.item.revealed: Rectangle {
+                height: 32px;
+                border-radius: Shape.small;
+                background: MaterialPalette.surface-container-highest;
+
+                Text {
+                    text: Tr.show-spoiler;
+                    color: MaterialPalette.on-surface-variant;
+                    font-size: Typography.label-large-size;
+                    x: Spacing.medium;
+                    vertical-alignment: center;
+                    height: 100%;
+                }
+
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.reveal(); }
+                }
+            }
+
+            if !root.item.deleted && (!root.item.spoiler || root.item.revealed): Text {
+                text: root.item.text;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+            }
+
+            // A deleted comment has nothing left to vote on or answer; its
+            // row stays only so the replies under it keep their place.
+            if !root.item.deleted: HorizontalLayout {
+                spacing: Spacing.tight;
+                alignment: start;
+
+                VoteArrow {
+                    up: true;
+                    active: root.item.my-vote == 2;
+                    clicked => { root.vote(root.item.my-vote == 2 ? 0 : 2); }
+                }
+
+                Text {
+                    text: root.item.score;
+                    color: root.item.score > 0
+                        ? MaterialPalette.primary
+                        : (root.item.score < 0 ? MaterialPalette.error : MaterialPalette.on-surface-variant);
+                    font-size: Typography.label-large-size;
+                    vertical-alignment: center;
+                    min-width: 20px;
+                    horizontal-alignment: center;
+                }
+
+                VoteArrow {
+                    up: false;
+                    active: root.item.my-vote == 1;
+                    clicked => { root.vote(root.item.my-vote == 1 ? 0 : 1); }
+                }
+
+                TextButton {
+                    text: Tr.reply;
+                    clicked => { root.reply(); }
+                }
+
+                if root.item.mine: TextButton {
+                    text: Tr.edit;
+                    clicked => { root.edit(); }
+                }
+
+                if root.item.mine: TextButton {
+                    text: Tr.delete;
+                    clicked => { root.delete(); }
+                }
+            }
+
+            if !root.item.is-reply && root.item.replies > 0: HorizontalLayout {
+                alignment: start;
+
+                TextButton {
+                    text: Tr.replies-label(root.item.replies, root.item.expanded);
+                    clicked => { root.toggle-replies(); }
+                }
+            }
+        }
+    }
+
+    height: layout.preferred-height;
+}
+
+export component CommentsSheet inherits Rectangle {
+    in property <string> title;
+    in property <[CommentItem]> comments: [];
+    in property <int> total: 0;
+    in property <bool> loading: false;
+    in property <bool> has-more: false;
+    in property <bool> signed-in: false;
+    /// 0 newest, 1 oldest, 2 popular — the order of the sort menu.
+    in property <int> sort: 0;
+    /// Whom the comment being written answers, or empty for a new one.
+    in property <string> reply-to;
+    in property <bool> editing: false;
+    in property <bool> sending: false;
+    /// Why the last comment was refused, already worded, or empty.
+    in property <string> error;
+    in-out property <string> draft;
+    in-out property <bool> draft-spoiler: false;
+
+    callback close();
+    callback select-sort(int);
+    callback load-more();
+    callback send();
+    callback cancel-reply();
+    callback vote(int, int);
+    callback reply(int);
+    callback edit(int);
+    callback delete(int);
+    callback toggle-replies(int);
+    callback reveal(int);
+    callback sign-in();
+
+    // The page behind stays visible and dimmed; a click on it closes the
+    // sheet, as a click outside every sheet does.
+    background: #00000066;
+
+    TouchArea {
+        clicked => { root.close(); }
+    }
+
+    sheet := Rectangle {
+        x: parent.width - self.width;
+        width: min(560px, parent.width);
+        height: 100%;
+        background: MaterialPalette.surface-container-low;
+
+        // Swallows clicks so they do not reach the scrim behind.
+        TouchArea {}
+
+        VerticalLayout {
+            // ---- heading, order ----------------------------------------------
+            HorizontalLayout {
+                padding: Spacing.base;
+                padding-right: Spacing.small;
+                spacing: Spacing.small;
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+
+                    Text {
+                        text: Tr.comments-title + (root.total > 0 ? " · " + root.total : "");
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.title-large-size;
+                        font-weight: Typography.title-large-weight-em;
+                    }
+
+                    if root.title != "": Text {
+                        text: root.title;
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.body-medium-size;
+                        overflow: elide;
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+
+                    Dropdown {
+                        width: 170px;
+                        model: [
+                            { label: Tr.sort-newest },
+                            { label: Tr.sort-oldest },
+                            { label: Tr.sort-popular },
+                        ];
+                        current: root.sort;
+                        selected(i) => { root.select-sort(i); }
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+
+                    IconButton {
+                        icon: @image-url("../icons/close.svg");
+                        clicked => { root.close(); }
+                    }
+                }
+            }
+
+            // ---- the thread --------------------------------------------------
+            if root.loading && root.comments.length == 0: HorizontalLayout {
+                vertical-stretch: 1;
+                alignment: center;
+
+                VerticalLayout {
+                    alignment: center;
+
+                    // Sized here: the indicator takes its width from its height.
+                    CircularProgressIndicator {
+                        indeterminate: true;
+                        width: 40px;
+                        height: 40px;
+                    }
+                }
+            }
+
+            if !root.loading && root.comments.length == 0: Text {
+                vertical-stretch: 1;
+                text: root.error != "" ? root.error : Tr.no-comments;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.body-large-size;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            if root.comments.length > 0: ScrollView {
+                vertical-stretch: 1;
+                content-height: thread.preferred-height + Spacing.base;
+
+                thread := VerticalLayout {
+                    x: Spacing.base;
+                    width: parent.width - 2 * Spacing.base;
+                    alignment: start;
+
+                    for item[index] in root.comments: CommentRow {
+                        item: item;
+                        signed-in: root.signed-in;
+                        vote(v) => {
+                            if (root.signed-in) { root.vote(index, v); } else { root.sign-in(); }
+                        }
+                        reply => {
+                            if (root.signed-in) { root.reply(index); } else { root.sign-in(); }
+                        }
+                        edit => { root.edit(index); }
+                        delete => { root.delete(index); }
+                        toggle-replies => { root.toggle-replies(index); }
+                        reveal => { root.reveal(index); }
+                    }
+
+                    if root.has-more: HorizontalLayout {
+                        alignment: center;
+                        padding: Spacing.small;
+
+                        OutlineButton {
+                            text: root.loading ? Tr.loading : Tr.load-more;
+                            enabled: !root.loading;
+                            clicked => { root.load-more(); }
+                        }
+                    }
+                }
+            }
+
+            // ---- writing one -------------------------------------------------
+            Rectangle {
+                background: MaterialPalette.surface-container;
+                height: composer.preferred-height;
+
+                composer := VerticalLayout {
+                    padding: Spacing.base;
+                    spacing: Spacing.small;
+
+                    if !root.signed-in: HorizontalLayout {
+                        alignment: center;
+
+                        FilledButton {
+                            text: Tr.sign-in-to-comment;
+                            clicked => { root.sign-in(); }
+                        }
+                    }
+
+                    if root.signed-in && (root.reply-to != "" || root.editing): HorizontalLayout {
+                        spacing: Spacing.small;
+
+                        Text {
+                            text: root.editing ? Tr.editing-comment : Tr.replying-to + " " + root.reply-to;
+                            color: MaterialPalette.primary;
+                            font-size: Typography.label-large-size;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+
+                        IconButton {
+                            inline: true;
+                            icon: @image-url("../icons/close.svg");
+                            clicked => { root.cancel-reply(); }
+                        }
+                    }
+
+                    // Built from a bare text input rather than the widget
+                    // set's editor: the widget set draws its text in the
+                    // desktop's colours, and a dark window on a light desktop
+                    // would write black on black. This one takes the app's.
+                    if root.signed-in: Rectangle {
+                        height: 88px;
+                        border-radius: Shape.small;
+                        border-width: editor.has-focus ? 2px : 1px;
+                        border-color: editor.has-focus ? MaterialPalette.primary : MaterialPalette.outline;
+                        background: MaterialPalette.surface-container-low;
+                        clip: true;
+
+                        if root.draft == "": Text {
+                            x: Spacing.medium;
+                            y: Spacing.small;
+                            text: Tr.write-comment;
+                            color: MaterialPalette.on-surface-variant;
+                            font-size: Typography.body-large-size;
+                        }
+
+                        editor := TextInput {
+                            x: Spacing.medium;
+                            y: Spacing.small;
+                            width: parent.width - 2 * Spacing.medium;
+                            height: parent.height - 2 * Spacing.small;
+                            text <=> root.draft;
+                            single-line: false;
+                            wrap: word-wrap;
+                            color: MaterialPalette.on-surface;
+                            selection-background-color: MaterialPalette.secondary-container;
+                            selection-foreground-color: MaterialPalette.on-secondary-container;
+                            font-size: Typography.body-large-size;
+                        }
+                    }
+
+                    if root.signed-in && root.error != "" && root.comments.length > 0: Text {
+                        text: root.error;
+                        color: MaterialPalette.error;
+                        font-size: Typography.body-small-size;
+                        wrap: word-wrap;
+                    }
+
+                    if root.signed-in: HorizontalLayout {
+                        spacing: Spacing.small;
+
+                        // A spoiler is the writer's call, made before sending
+                        // and shown plainly — not a setting buried in a menu.
+                        spoiler-chip := Rectangle {
+                            height: 32px;
+                            width: spoiler-text.preferred-width + 2 * Spacing.medium;
+                            border-radius: Shape.small;
+                            border-width: 1px;
+                            border-color: root.draft-spoiler ? MaterialPalette.tertiary : MaterialPalette.outline-variant;
+                            background: root.draft-spoiler ? MaterialPalette.tertiary-container : transparent;
+
+                            spoiler-text := Text {
+                                text: (root.draft-spoiler ? "✓ " : "") + Tr.spoiler;
+                                color: root.draft-spoiler ? MaterialPalette.on-tertiary-container : MaterialPalette.on-surface-variant;
+                                font-size: Typography.label-large-size;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: 100%;
+                                height: 100%;
+                            }
+
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.draft-spoiler = !root.draft-spoiler; }
+                            }
+                        }
+
+                        Rectangle { horizontal-stretch: 1; }
+
+                        FilledButton {
+                            text: root.sending ? Tr.loading : (root.editing ? Tr.save : Tr.send);
+                            enabled: !root.sending && root.draft != "";
+                            clicked => { root.send(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

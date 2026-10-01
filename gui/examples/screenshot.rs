@@ -25,7 +25,8 @@
 //! `theatre`, `downloads`, `sign-in`, `failed`, `saved`, `loading`,
 //! `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`,
 //! `profile-light`, `home-downloading`, `feed`, `feed-latest`,
-//! `feed-signed-out`, `feed-empty`, `light` or `amoled`. Narrow is a width, not a state: pass
+//! `feed-signed-out`, `feed-empty`, `comments`, `comments-replying`,
+//! `comments-signed-out`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
 //! `ANIRUST_SHOT_POINTER=x,y` parks the pointer anywhere, for the states
@@ -122,6 +123,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // it are in view without scrolling the panel.
     if state == "release-links" {
         ui.set_release_description("Короткое описание.".into());
+    }
+    // The comment sheet over the release, with every kind of row in it.
+    if state.starts_with("comments") {
+        ui.set_signed_in(state != "comments-signed-out");
+        ui.set_comments_open(true);
+        ui.set_comments_title("Демоны старшей школы".into());
+        ui.set_comments_total(1241);
+        ui.set_comments_sort(2);
+        ui.set_comments_has_more(true);
+        ui.set_comments(slint::ModelRc::new(
+            slint::VecModel::from(sample_comments()),
+        ));
+        if state == "comments-replying" {
+            ui.set_comments_reply_to("user2".into());
+            ui.set_comment_draft("Согласен, но вторая половина сезона сильнее.".into());
+        }
     }
     // The account's view of a release: in a list, a favourite, rated.
     if state == "release-rated" {
@@ -502,6 +519,75 @@ fn sample_posts() -> Vec<FeedPost> {
         FeedPost {
             can_subscribe: false,
             ..post("mrFrok", 6_300, "Запись из личного блога: на блог не подписываются, поэтому кнопки нет.")
+        },
+    ]
+}
+
+/// A thread with one of each kind of row: plain, a spoiler, the account's
+/// own, an opened reply chain, and a deleted comment. Invented wording.
+fn sample_comments() -> Vec<CommentItem> {
+    let base = |author: &str, minutes: i32, text: &str| CommentItem {
+        author: author.into(),
+        avatar: stand_in_avatar(),
+        avatar_loaded: true,
+        minutes_ago: minutes,
+        text: text.into(),
+        spoiler: false,
+        revealed: false,
+        edited: false,
+        deleted: false,
+        score: 0,
+        my_vote: 0,
+        replies: 0,
+        expanded: false,
+        is_reply: false,
+        mine: false,
+        episode: 0,
+    };
+    vec![
+        CommentItem {
+            score: 884,
+            my_vote: 2,
+            replies: 2,
+            expanded: true,
+            ..base(
+                "user1",
+                60 * 24 * 300,
+                "Комментарий с высоким рейтингом. Текст длиной в несколько строк, чтобы было видно, как он переносится в узкой панели и как под ним стоят голоса и действия.",
+            )
+        },
+        CommentItem {
+            is_reply: true,
+            score: 12,
+            ..base(
+                "user2",
+                60 * 24 * 290,
+                "Ответ на него — с отступом, аватар меньше.",
+            )
+        },
+        CommentItem {
+            is_reply: true,
+            mine: true,
+            edited: true,
+            score: -3,
+            my_vote: 0,
+            ..base(
+                "mrfrok",
+                60 * 5,
+                "Свой ответ: его можно изменить и удалить.",
+            )
+        },
+        CommentItem {
+            spoiler: true,
+            score: 45,
+            replies: 7,
+            episode: 12,
+            ..base("user3", 60 * 26, "Скрытый текст спойлера.")
+        },
+        CommentItem {
+            deleted: true,
+            replies: 3,
+            ..base("user4", 60 * 24 * 3, "")
         },
     ]
 }
