@@ -239,6 +239,7 @@ export component MainWindow inherits Window {
     /// What the account watched lately, and opening one of them.
     in property <[HistoryItem]> recent: [];
     callback open-recent(int);
+    callback remove-recent(int);
     in-out property <bool> show-sign-in: false;
     in-out property <string> login;
     in-out property <string> password;
@@ -309,6 +310,7 @@ export component MainWindow inherits Window {
             select-appearance(i) => { root.select-appearance(i); }
             open-list(i) => { root.open-list(i); }
             open-recent(i) => { root.open-recent(i); }
+            remove-recent(i) => { root.remove-recent(i); }
         }
 
         if root.destination < 3: HomePage {

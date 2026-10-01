@@ -316,6 +316,7 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
             // The profile is not a grid, so nothing above fetches anything for
             // it. What it shows goes stale as soon as an episode is watched.
             if index == PROFILE_DESTINATION {
+                session::refresh_profile(&window, &app.account, &app.client, app.http.clone());
                 session::load_recent(
                     &window,
                     &app.account,
@@ -371,6 +372,24 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
                 Rc::clone(&app.client),
                 app.http.clone(),
                 release_id,
+            );
+        }
+    });
+
+    window.on_remove_recent({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            let Ok(index) = usize::try_from(index) else {
+                return;
+            };
+            session::remove_recent(
+                &window,
+                &app.account,
+                Rc::clone(&app.client),
+                app.http.clone(),
+                index,
             );
         }
     });

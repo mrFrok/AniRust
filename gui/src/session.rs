@@ -101,6 +101,80 @@ pub fn restore(
     });
 }
 
+/// Fetches the account's profile again and puts it on screen.
+///
+/// Called on arriving at the profile. Every count on it moves the moment a
+/// release changes list or an episode is ticked, and the profile fetched at
+/// sign-in would go on showing the numbers from then. A failure leaves the
+/// last numbers up: stale counts are better than none, and a token that has
+/// actually expired is found out by the next request that needs it.
+pub fn refresh_profile(
+    window: &MainWindow,
+    session: &Rc<RefCell<Session>>,
+    client: &Client,
+    http: reqwest::Client,
+) {
+    let id = {
+        let session = session.borrow();
+        if !session.authenticated || session.id <= 0 {
+            return;
+        }
+        session.id
+    };
+    let weak = window.as_weak();
+    let api = client.clone();
+    tasks::spawn(async move { api.profile(id).await }, move |profile| {
+        let Some(window) = weak.upgrade() else { return };
+        match profile {
+            Ok(profile) => show_profile(&window, &profile, http),
+            Err(error) => tracing::debug!(%error, "the profile could not be refreshed"),
+        }
+    });
+}
+
+/// Takes a release out of the account's history, from the profile's list of
+/// what was watched lately, and fetches that list again.
+///
+/// The row goes at once and comes back if the server refuses. Fetching again
+/// afterwards rather than trusting the removal: the history is the server's
+/// list, and the next one along should move up into the place left.
+pub fn remove_recent(
+    window: &MainWindow,
+    session: &Rc<RefCell<Session>>,
+    client: Rc<Client>,
+    http: reqwest::Client,
+    index: usize,
+) {
+    let Some(release_id) = session.borrow().recent_at(index).map(|release| release.id) else {
+        return;
+    };
+
+    // Off the screen now; the fetch below puts the true list up.
+    let model = window.get_recent();
+    if let Some(rows) = model.as_any().downcast_ref::<VecModel<HistoryItem>>()
+        && index < rows.row_count()
+    {
+        rows.remove(index);
+    }
+    session.borrow_mut().recent.remove(index);
+
+    let weak = window.as_weak();
+    let session = Rc::clone(session);
+    let api = (*client).clone();
+    tasks::spawn(
+        async move { api.history_delete(release_id).await },
+        move |result| {
+            let Some(window) = weak.upgrade() else { return };
+            if let Err(error) = &result {
+                tracing::warn!(%error, release_id, "the release was not removed from the history");
+            }
+            // Either way the list is fetched again: removed, it closes the gap;
+            // refused, it brings the row back.
+            load_recent(&window, &session, client, http);
+        },
+    );
+}
+
 /// Signs in and, if that works, remembers the token.
 pub fn sign_in(
     window: &MainWindow,

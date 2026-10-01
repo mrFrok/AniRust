@@ -11,7 +11,7 @@
 // can act on is decoration, and this client has no room for decoration it
 // cannot click.
 
-import { MaterialPalette, ListTile, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton, FilledCard } from "@material";
+import { MaterialPalette, ListTile, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton, FilledCard, IconButton } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -196,6 +196,7 @@ export component ProfilePage inherits Rectangle {
     /// What was watched lately, newest first, and opening one of them.
     in property <[HistoryItem]> recent: [];
     callback open-recent(int);
+    callback remove-recent(int);
 
     // One colour per list, shared by the ring and the legend beside it — the
     // legend is only readable because the two agree. The scheme is one family
@@ -549,7 +550,7 @@ export component ProfilePage inherits Rectangle {
             for item[index] in root.recent: Rectangle {
                 height: 64px;
                 border-radius: Shape.medium;
-                background: row-touch.has-hover
+                background: row-touch.has-hover || remove.has-hover
                     ? MaterialPalette.surface-container
                     : transparent;
 
@@ -599,9 +600,32 @@ export component ProfilePage inherits Rectangle {
                             overflow: elide;
                         }
                     }
+
+                    // Taking a release out of the history is the official
+                    // client's long-press; on a desktop it is a button that
+                    // shows under the pointer.
+                    Rectangle {
+                        width: 40px;
+
+                        if row-touch.has-hover || remove.has-hover: VerticalLayout {
+                            alignment: center;
+
+                            IconButton {
+                                icon: @image-url("../icons/close.svg");
+                                tooltip: Tr.remove-from-history;
+                                clicked => { root.remove-recent(index); }
+                            }
+                        }
+
+                        remove := TouchArea {
+                            z: -1;
+                        }
+                    }
                 }
 
+                // Beneath the remove button, so the button gets its click.
                 row-touch := TouchArea {
+                    z: -1;
                     mouse-cursor: pointer;
                     clicked => { root.open-recent(index); }
                 }
