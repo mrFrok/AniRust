@@ -198,3 +198,24 @@ pub struct CommentModeration {
     pub ban_expires: Option<i64>,
     pub ban_reason: Option<String>,
 }
+
+/// An account as one channel sees it: its member's standing there.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "snake_case")]
+pub struct ChannelProfile {
+    #[serde(flatten)]
+    pub profile: ProfileCompact,
+    #[serde(deserialize_with = "nullable")]
+    pub channel_id: i64,
+    /// Their permission level in the channel.
+    #[serde(deserialize_with = "nullable")]
+    pub permission: i32,
+    #[serde(deserialize_with = "nullable")]
+    pub is_blocked: bool,
+    #[serde(deserialize_with = "nullable")]
+    pub is_perm_blocked: bool,
+    #[serde(deserialize_with = "nullable")]
+    pub block_reason: String,
+    #[serde(deserialize_with = "nullable")]
+    pub block_expire_date: Option<i64>,
+}

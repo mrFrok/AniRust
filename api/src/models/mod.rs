@@ -16,14 +16,17 @@
 // wins and the spec's spelling is kept as a `serde(alias)`.
 
 mod comment;
+mod discover;
 mod episode;
 mod feed;
 mod profile;
 mod release;
 
 pub use comment::{
-    Comment, CommentModeration, CommentSort, CommentTarget, CommentVote, Embedded, ProfileCompact,
+    ChannelProfile, Comment, CommentModeration, CommentSort, CommentTarget, CommentVote, Embedded,
+    ProfileCompact,
 };
+pub use discover::{Collection, FeedSearch, Interesting, Schedule};
 pub use episode::{Dubber, Episode, EpisodeUpdate, Source};
 pub use feed::{Article, ArticleBlock, ArticlePayload, Channel, ProfileSlim};
 pub use profile::{Profile, ProfileList, ProfileToken};

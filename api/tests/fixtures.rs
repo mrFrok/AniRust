@@ -50,3 +50,32 @@ fn release_comments_carry_their_release_once_and_then_by_reference() {
     assert_eq!(first.profile.login, "user1");
     assert!(!first.is_spoiler);
 }
+
+/// `GET schedule`, one release kept per day. Sunday has one more item added by
+/// hand: a reference to Monday's release, as the service writes a release it
+/// has given already in the same response. It is dropped, not fatal.
+#[test]
+fn the_schedule_has_seven_days_and_survives_a_repeat() {
+    let schedule: anirust_api::Schedule = load("schedule.json");
+    let days = schedule.days();
+    assert!(
+        days.iter().all(|day| day.len() == 1),
+        "one release a day, the reference dropped"
+    );
+    assert!(
+        days.iter()
+            .all(|day| day[0].id > 0 && !day[0].title().is_empty())
+    );
+}
+
+/// `POST discover/interesting`, two cards. Every card seen was kind 1, a
+/// release id written as a string.
+#[test]
+fn interesting_cards_lead_to_releases() {
+    let page: Paged<anirust_api::Interesting> = load("interesting.json");
+    assert_eq!(page.content.len(), 2);
+    for card in &page.content {
+        assert!(card.release_id().is_some_and(|id| id > 0), "{card:?}");
+        assert!(!card.title.is_empty());
+    }
+}

@@ -894,3 +894,145 @@ async fn suggestions_name_the_channel_in_the_body() {
         .await
         .expect("suggestions");
 }
+
+// ---- A2: discovery, schedule, config, search -----------------------------
+
+endpoint! {
+    discover_interesting: "POST" "/discover/interesting",
+    token: false,
+    reply: page(),
+    call: |c| c.discover_interesting(),
+}
+
+endpoint! {
+    discover_comments: "POST" "/discover/comments",
+    token: false,
+    reply: page(),
+    call: |c| c.discover_comments(),
+}
+
+endpoint! {
+    schedule: "GET" "/schedule",
+    token: false,
+    reply: json!({ "code": 0, "monday": [] }),
+    call: |c| c.schedule(),
+}
+
+endpoint! {
+    config_player: "GET" "/config/anixplayer",
+    token: false,
+    reply: json!({ "code": 0 }),
+    call: |c| c.config_player(),
+}
+
+endpoint! {
+    config_toggles: "GET" "/config/toggles",
+    token: true,
+    ["version_code" = "25100"] ["is_beta" = "false"] ["is_api_alt" = "false"]
+    reply: json!({ "code": 0 }),
+    call: |c| c.config_toggles(25100, false, false),
+}
+
+endpoint! {
+    config_urls: "GET" "/config/urls",
+    token: true,
+    ["version_code" = "25100"] ["is_beta" = "false"]
+    reply: json!({ "code": 0 }),
+    call: |c| c.config_urls(25100, false),
+}
+
+endpoint! {
+    search_profiles: "POST" "/search/profiles/0",
+    token: true,
+    reply: page(),
+    call: |c| c.search_profiles("mrfrok", 0),
+}
+
+endpoint! {
+    search_articles: "POST" "/search/articles/0",
+    token: true,
+    reply: page(),
+    call: |c| c.search_articles("re:zero", None, 0),
+}
+
+endpoint! {
+    search_channels: "POST" "/search/channels/0",
+    token: true,
+    reply: page(),
+    call: |c| c.search_channels("news", &anirust_api::ChannelSearch::default(), 0),
+}
+
+endpoint! {
+    search_subscribers: "POST" "/search/channel/4/subscribers/0",
+    token: true,
+    reply: page(),
+    call: |c| c.search_subscribers(4, "a", 0),
+}
+
+endpoint! {
+    search_collections: "POST" "/search/collections/0",
+    token: true,
+    reply: page(),
+    call: |c| c.search_collections("isekai", 0),
+}
+
+endpoint! {
+    search_favorite_collections: "POST" "/search/favoriteCollections/0",
+    token: true,
+    reply: page(),
+    call: |c| c.search_favorite_collections("", 0),
+}
+
+endpoint! {
+    search_profile_collections: "POST" "/search/profileCollections/5/0",
+    token: true,
+    ["release_id" = "7"]
+    reply: page(),
+    call: |c| c.search_profile_collections(5, 7, "", 0),
+}
+
+endpoint! {
+    search_favorites: "POST" "/search/favorites/0",
+    token: true,
+    reply: page(),
+    call: |c| c.search_favorites("re", 0),
+}
+
+endpoint! {
+    search_history: "POST" "/search/history/0",
+    token: true,
+    reply: page(),
+    call: |c| c.search_history("re", 0),
+}
+
+endpoint! {
+    search_list: "POST" "/search/profile/list/2/0",
+    token: true,
+    reply: page(),
+    call: |c| c.search_list(ProfileList::Planned, "re", 0),
+}
+
+endpoint! {
+    search_feed: "POST" "/search/feed/0",
+    token: true,
+    reply: json!({ "code": 0, "articles": { "content": [] }, "channels": null }),
+    call: |c| c.search_feed("re", 0),
+}
+
+/// A post search names the channel in the body, 0 meaning anywhere.
+#[tokio::test]
+async fn search_articles_in_one_channel() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/search/articles/0"))
+        .and(body_json(json!({ "query": "клип", "channel_id": 4 })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(page()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    client(&server)
+        .search_articles("клип", Some(4), 0)
+        .await
+        .expect("a search");
+}

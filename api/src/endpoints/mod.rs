@@ -20,6 +20,7 @@ use crate::models::Page;
 mod account;
 mod article;
 mod comment;
+mod discover;
 mod episode;
 mod feed;
 mod preference;
@@ -27,6 +28,7 @@ mod release;
 
 pub use account::SignInError;
 pub use article::{ArticleEntryPoint, ArticleEventKind};
+pub use discover::ChannelSearch;
 pub use episode::{DubberChannel, EpisodeSort};
 
 /// Mirrors `PageableResponse<T>`. Pages are 0-based.

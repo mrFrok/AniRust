@@ -59,11 +59,14 @@ pub mod models;
 pub(crate) mod serde_ext;
 
 pub use client::{Ack, Client, ClientBuilder, DEFAULT_BASE_URL};
-pub use endpoints::{ArticleEntryPoint, ArticleEventKind, DubberChannel, EpisodeSort, SignInError};
+pub use endpoints::{
+    ArticleEntryPoint, ArticleEventKind, ChannelSearch, DubberChannel, EpisodeSort, SignInError,
+};
 pub use error::{ApiCode, Error, Result};
 pub use models::{
-    Article, ArticleBlock, ArticlePayload, Channel, Comment, CommentModeration, CommentSort,
-    CommentTarget, CommentVote, Dubber, Embedded, Episode, EpisodeUpdate, Filter, FilterSort, Page,
-    Profile, ProfileCompact, ProfileList, ProfileSlim, ProfileToken, Related, Release,
-    ReleaseCategory, ReleaseStatus, SearchBy, Source, StreamingPlatform,
+    Article, ArticleBlock, ArticlePayload, Channel, ChannelProfile, Collection, Comment,
+    CommentModeration, CommentSort, CommentTarget, CommentVote, Dubber, Embedded, Episode,
+    EpisodeUpdate, FeedSearch, Filter, FilterSort, Interesting, Page, Profile, ProfileCompact,
+    ProfileList, ProfileSlim, ProfileToken, Related, Release, ReleaseCategory, ReleaseStatus,
+    Schedule, SearchBy, Source, StreamingPlatform,
 };

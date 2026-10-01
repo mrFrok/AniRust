@@ -1,0 +1,28 @@
+{
+ "code": 0,
+ "content": [
+  {
+   "@id": 1,
+   "id": 8013049,
+   "title": "Сасаки и Пи 2",
+   "description": "Всю жизнь работал, теперь путешествует по разным мирам🕊️",
+   "image": "https://s3.anixmirai.com/banner/f2520047-e96c-40aa-941b-596a8756c9c5.webp",
+   "type": 1,
+   "action": "19829",
+   "is_hidden": false
+  },
+  {
+   "@id": 2,
+   "id": 8013055,
+   "title": "Монолог фармацевта 3",
+   "description": "Маомао и Жэньши и отправляются на запад в новые горизонты!💊",
+   "image": "https://s3.anixmirai.com/banner/b318e575-f6b4-417e-b33b-1b35433b6940.webp",
+   "type": 1,
+   "action": "20397",
+   "is_hidden": false
+  }
+ ],
+ "total_count": 23,
+ "total_page_count": 0,
+ "current_page": 0
+}
