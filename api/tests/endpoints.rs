@@ -732,3 +732,165 @@ async fn comment_edit() {
         .await
         .expect("an edit");
 }
+
+// ---- A4: posts and suggestions -------------------------------------------
+
+endpoint! {
+    article: "GET" "/article/9",
+    token: true,
+    reply: json!({ "code": 0, "article": { "id": 9 } }),
+    call: |c| c.article(9),
+}
+
+endpoint! {
+    article_vote: "GET" "/article/vote/9/2",
+    token: true,
+    reply: ack(),
+    call: |c| c.article_vote(9, CommentVote::Up),
+}
+
+endpoint! {
+    article_votes: "POST" "/article/votes/9/0",
+    token: true,
+    ["sort" = "0"]
+    reply: page(),
+    call: |c| c.article_votes(9, 0, 0),
+}
+
+endpoint! {
+    article_reposts: "GET" "/article/reposts/9/0",
+    token: true,
+    ["sort" = "0"]
+    reply: page(),
+    call: |c| c.article_reposts(9, 0, 0),
+}
+
+endpoint! {
+    article_mute: "GET" "/article/mute/9",
+    token: true,
+    reply: ack(),
+    call: |c| c.article_mute(9),
+}
+
+endpoint! {
+    article_unmute: "GET" "/article/unmute/9",
+    token: true,
+    reply: ack(),
+    call: |c| c.article_unmute(9),
+}
+
+endpoint! {
+    article_pin: "GET" "/article/edit/pinned/9",
+    token: true,
+    ["is_pinned" = "true"]
+    reply: ack(),
+    call: |c| c.article_pin(9, true),
+}
+
+endpoint! {
+    article_delete: "POST" "/article/delete/9",
+    token: true,
+    reply: ack(),
+    call: |c| c.article_delete(9),
+}
+
+endpoint! {
+    suggestion: "GET" "/article/suggestion/9",
+    token: true,
+    reply: json!({ "code": 0, "article": {} }),
+    call: |c| c.suggestion(9),
+}
+
+endpoint! {
+    suggestion_delete: "POST" "/article/suggestion/delete/9",
+    token: true,
+    reply: ack(),
+    call: |c| c.suggestion_delete(9),
+}
+
+endpoint! {
+    suggestion_publish: "POST" "/article/suggestion/publish/9",
+    token: true,
+    ["is_signed" = "false"]
+    reply: json!({ "code": 0, "article": {} }),
+    call: |c| c.suggestion_publish(9, false),
+}
+
+#[tokio::test]
+async fn article_event() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/article/event"))
+        .and(body_json(
+            json!({ "articles": [9, 10], "type": "VIEW", "entry_point": "FEED" }),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(ack()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    client(&server)
+        .article_event(
+            &[9, 10],
+            anirust_api::ArticleEventKind::View,
+            anirust_api::ArticleEntryPoint::Feed,
+        )
+        .await
+        .expect("a view event");
+}
+
+/// The post goes up as a JSON *string* inside the JSON body, which is what
+/// the app's `writeValueAsString` produces. Checked by decoding it back.
+#[tokio::test]
+async fn article_create_sends_the_body_as_a_string() {
+    use wiremock::Request;
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/article/create/4"))
+        .and(query_param("token", TOKEN))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "code": 0, "article": { "id": 77 } })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let payload = anirust_api::ArticlePayload {
+        blocks: vec![anirust_api::ArticleBlock {
+            kind: "paragraph".into(),
+            data: json!({ "text": "привет" }),
+        }],
+        ..anirust_api::ArticlePayload::default()
+    };
+    let created = client(&server)
+        .article_create(4, &payload, true, None)
+        .await
+        .expect("a post");
+    assert_eq!(created.id, 77);
+
+    let sent: Vec<Request> = server.received_requests().await.unwrap_or_default();
+    let body: serde_json::Value = serde_json::from_slice(&sent[0].body).expect("a JSON body");
+    assert_eq!(body["is_signed"], json!(true));
+    assert_eq!(body["repost_article_id"], json!(null));
+    let inner = body["payload"].as_str().expect("the payload is a string");
+    let decoded: serde_json::Value = serde_json::from_str(inner).expect("holding JSON");
+    assert_eq!(decoded["blocks"][0]["data"]["text"], json!("привет"));
+}
+
+#[tokio::test]
+async fn suggestions_name_the_channel_in_the_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/article/suggestion/all/0"))
+        .and(body_json(json!({ "channel_id": 4 })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(page()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    client(&server)
+        .suggestions(4, 0)
+        .await
+        .expect("suggestions");
+}

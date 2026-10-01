@@ -124,6 +124,12 @@ impl ArticleBlock {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct ArticlePayload {
+    /// When the body was written, in milliseconds — the editor's own stamp.
+    #[serde(deserialize_with = "nullable")]
+    pub time: i64,
+    /// The editor's format version, sent back as it came.
+    #[serde(deserialize_with = "nullable")]
+    pub version: String,
     #[serde(deserialize_with = "nullable")]
     pub blocks: Vec<ArticleBlock>,
 }
@@ -151,6 +157,15 @@ pub struct Article {
     pub vote_count: i64,
     #[serde(deserialize_with = "nullable")]
     pub is_pinned: bool,
+    /// This account's vote on it: 0 none, 1 down, 2 up — the scale every vote
+    /// in the service shares.
+    #[serde(deserialize_with = "nullable")]
+    pub vote: i32,
+    #[serde(deserialize_with = "nullable")]
+    pub is_muted: bool,
+    /// Published with the author's name rather than only the channel's.
+    #[serde(deserialize_with = "nullable")]
+    pub is_signed: bool,
     #[serde(deserialize_with = "nullable")]
     pub is_deleted: bool,
     /// The post this one reposts, when it is a repost.
@@ -265,6 +280,7 @@ mod feed_tests {
                         serde_json::json!({ "text": "второй", "level": 2 }),
                     ),
                 ],
+                ..ArticlePayload::default()
             },
             ..Article::default()
         };
@@ -282,6 +298,7 @@ mod feed_tests {
                         serde_json::json!({ "items": [{ "url": "" }, { "url": "https://a/1.jpg" }] }),
                     ),
                 ],
+                ..ArticlePayload::default()
             },
             ..Article::default()
         };
