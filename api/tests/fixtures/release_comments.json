@@ -1,0 +1,77 @@
+{
+  "code": 0,
+  "content": [
+    {
+      "id": 163696,
+      "profile": {
+        "id": 1001,
+        "login": "user1",
+        "avatar": "",
+        "ban_expires": 0,
+        "ban_reason": null,
+        "privilege_level": 0,
+        "badge_id": null,
+        "badge_name": null,
+        "badge_type": null,
+        "badge_url": null,
+        "is_banned": false,
+        "is_sponsor": false,
+        "is_verified": false
+      },
+      "message": "Текст комментария 1, заменён: в репозитории не хранятся чужие слова.",
+      "timestamp": 1608821813,
+      "type": 0,
+      "vote": 0,
+      "release": {
+        "@id": 1,
+        "id": 2999
+      },
+      "parent_comment_id": null,
+      "vote_count": 884,
+      "likes_count": 884,
+      "is_spoiler": false,
+      "is_edited": false,
+      "is_deleted": false,
+      "is_reply": false,
+      "reply_count": 20,
+      "can_like": true,
+      "posted_at_episode": null
+    },
+    {
+      "id": 572832,
+      "profile": {
+        "id": 1002,
+        "login": "user2",
+        "avatar": "",
+        "ban_expires": 0,
+        "ban_reason": null,
+        "privilege_level": 0,
+        "badge_id": null,
+        "badge_name": null,
+        "badge_type": null,
+        "badge_url": null,
+        "is_banned": false,
+        "is_sponsor": false,
+        "is_verified": false
+      },
+      "message": "Текст комментария 2, заменён: в репозитории не хранятся чужие слова.",
+      "timestamp": 1617467245,
+      "type": 0,
+      "vote": 0,
+      "release": 1,
+      "parent_comment_id": null,
+      "vote_count": 703,
+      "likes_count": 703,
+      "is_spoiler": false,
+      "is_edited": false,
+      "is_deleted": false,
+      "is_reply": false,
+      "reply_count": 19,
+      "can_like": true,
+      "posted_at_episode": null
+    }
+  ],
+  "total_count": 2939,
+  "total_page_count": 117,
+  "current_page": 0
+}

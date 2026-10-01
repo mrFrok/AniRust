@@ -18,6 +18,7 @@ use serde::Deserialize;
 use crate::models::Page;
 
 mod account;
+mod comment;
 mod episode;
 mod feed;
 mod preference;

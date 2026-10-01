@@ -12,9 +12,12 @@
 // what a response looks like is tested against fixtures where one has been
 // captured. These tests are about what goes out.
 
-use anirust_api::{Client, EpisodeSort, Filter, FilterSort, ProfileList, SearchBy};
+use anirust_api::{
+    Client, CommentModeration, CommentSort, CommentTarget, CommentVote, EpisodeSort, Filter,
+    FilterSort, ProfileList, SearchBy,
+};
 use serde_json::{Value, json};
-use wiremock::matchers::{body_string_contains, header, method, path, query_param};
+use wiremock::matchers::{body_json, body_string_contains, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const TOKEN: &str = "test-token";
@@ -459,4 +462,273 @@ endpoint! {
     token: true,
     reply: page(),
     call: |c| c.profile_list_of(5, ProfileList::Watching, 0, None),
+}
+
+// ---- A3: comments, on all three targets ----------------------------------
+
+endpoint! {
+    release_comments: "GET" "/release/comment/all/7/0",
+    token: true,
+    ["sort" = "3"]
+    reply: page(),
+    call: |c| c.comments(CommentTarget::Release, 7, 0, CommentSort::Popular),
+}
+
+endpoint! {
+    release_comment: "GET" "/release/comment/55",
+    token: true,
+    reply: json!({ "code": 0, "id": 55 }),
+    call: |c| c.comment(CommentTarget::Release, 55),
+}
+
+endpoint! {
+    release_comment_replies: "POST" "/release/comment/replies/55/0",
+    token: true,
+    ["sort" = "2"]
+    reply: page(),
+    call: |c| c.comment_replies(CommentTarget::Release, 55, 0, CommentSort::Oldest),
+}
+
+endpoint! {
+    release_profile_comments: "GET" "/release/comment/all/profile/5/0",
+    token: true,
+    ["sort" = "0"]
+    reply: page(),
+    call: |c| c.profile_comments(CommentTarget::Release, 5, 0, CommentSort::Newest),
+}
+
+endpoint! {
+    release_comment_delete: "GET" "/release/comment/delete/55",
+    token: true,
+    reply: ack(),
+    call: |c| c.comment_delete(CommentTarget::Release, 55),
+}
+
+endpoint! {
+    release_comment_vote: "GET" "/release/comment/vote/55/2",
+    token: true,
+    reply: ack(),
+    call: |c| c.comment_vote(CommentTarget::Release, 55, CommentVote::Up),
+}
+
+endpoint! {
+    release_comment_votes: "GET" "/release/comment/votes/55/0",
+    token: true,
+    reply: page(),
+    call: |c| c.comment_votes(CommentTarget::Release, 55, 0),
+}
+
+endpoint! {
+    release_comment_moderate: "POST" "/release/comment/process/55",
+    token: true,
+    reply: ack(),
+    call: |c| c.comment_moderate(CommentTarget::Release, 55, &CommentModeration::default()),
+}
+
+endpoint! {
+    article_comments: "GET" "/article/comment/all/7/0",
+    token: true,
+    ["sort" = "3"]
+    reply: page(),
+    call: |c| c.comments(CommentTarget::Article, 7, 0, CommentSort::Popular),
+}
+
+endpoint! {
+    article_comment: "GET" "/article/comment/55",
+    token: true,
+    reply: json!({ "code": 0, "id": 55 }),
+    call: |c| c.comment(CommentTarget::Article, 55),
+}
+
+endpoint! {
+    article_comment_replies: "POST" "/article/comment/replies/55/0",
+    token: true,
+    ["sort" = "2"]
+    reply: page(),
+    call: |c| c.comment_replies(CommentTarget::Article, 55, 0, CommentSort::Oldest),
+}
+
+endpoint! {
+    article_profile_comments: "GET" "/article/comment/all/profile/5/0",
+    token: true,
+    ["sort" = "0"]
+    reply: page(),
+    call: |c| c.profile_comments(CommentTarget::Article, 5, 0, CommentSort::Newest),
+}
+
+endpoint! {
+    article_comment_delete: "GET" "/article/comment/delete/55",
+    token: true,
+    reply: ack(),
+    call: |c| c.comment_delete(CommentTarget::Article, 55),
+}
+
+endpoint! {
+    article_comment_vote: "GET" "/article/comment/vote/55/2",
+    token: true,
+    reply: ack(),
+    call: |c| c.comment_vote(CommentTarget::Article, 55, CommentVote::Up),
+}
+
+endpoint! {
+    article_comment_votes: "POST" "/article/comment/votes/55/0",
+    token: true,
+    reply: page(),
+    call: |c| c.comment_votes(CommentTarget::Article, 55, 0),
+}
+
+endpoint! {
+    article_comment_moderate: "POST" "/article/comment/process/55",
+    token: true,
+    reply: ack(),
+    call: |c| c.comment_moderate(CommentTarget::Article, 55, &CommentModeration::default()),
+}
+
+endpoint! {
+    collection_comments: "GET" "/collection/comment/all/7/0",
+    token: true,
+    ["sort" = "3"]
+    reply: page(),
+    call: |c| c.comments(CommentTarget::Collection, 7, 0, CommentSort::Popular),
+}
+
+endpoint! {
+    collection_comment: "GET" "/collection/comment/55",
+    token: true,
+    reply: json!({ "code": 0, "id": 55 }),
+    call: |c| c.comment(CommentTarget::Collection, 55),
+}
+
+endpoint! {
+    collection_comment_replies: "POST" "/collection/comment/replies/55/0",
+    token: true,
+    ["sort" = "2"]
+    reply: page(),
+    call: |c| c.comment_replies(CommentTarget::Collection, 55, 0, CommentSort::Oldest),
+}
+
+endpoint! {
+    collection_profile_comments: "GET" "/collection/comment/all/profile/5/0",
+    token: true,
+    ["sort" = "0"]
+    reply: page(),
+    call: |c| c.profile_comments(CommentTarget::Collection, 5, 0, CommentSort::Newest),
+}
+
+endpoint! {
+    collection_comment_delete: "GET" "/collection/comment/delete/55",
+    token: true,
+    reply: ack(),
+    call: |c| c.comment_delete(CommentTarget::Collection, 55),
+}
+
+endpoint! {
+    collection_comment_vote: "GET" "/collection/comment/vote/55/2",
+    token: true,
+    reply: ack(),
+    call: |c| c.comment_vote(CommentTarget::Collection, 55, CommentVote::Up),
+}
+
+endpoint! {
+    collection_comment_votes: "GET" "/collection/comment/votes/55/0",
+    token: true,
+    reply: page(),
+    call: |c| c.comment_votes(CommentTarget::Collection, 55, 0),
+}
+
+endpoint! {
+    collection_comment_moderate: "POST" "/collection/comment/process/55",
+    token: true,
+    reply: ack(),
+    call: |c| c.comment_moderate(CommentTarget::Collection, 55, &CommentModeration::default()),
+}
+
+endpoint! {
+    article_comments_popular: "GET" "/article/comment/all/9/popular",
+    token: true,
+    reply: page(),
+    call: |c| c.article_comments_popular(9),
+}
+
+/// The body is the request here, so it is checked whole: a reply names both
+/// the comment it answers and that comment's author.
+#[tokio::test]
+async fn comment_add_as_a_reply() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/release/comment/add/7"))
+        .and(query_param("token", TOKEN))
+        .and(body_json(json!({
+            "message": "согласен",
+            "spoiler": true,
+            "parent_comment_id": 55,
+            "reply_to_profile_id": 1001,
+        })))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "code": 0, "comment": { "id": 56 } })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let added = client(&server)
+        .comment_add(
+            CommentTarget::Release,
+            7,
+            "согласен",
+            true,
+            Some((55, 1001)),
+        )
+        .await
+        .expect("the reply is the request the server expects");
+    assert_eq!(added.id, 56);
+}
+
+/// A comment that is not a reply sends both reply fields as null, which is
+/// what the app's request object serialises to.
+#[tokio::test]
+async fn comment_add_on_its_own() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/collection/comment/add/3"))
+        .and(body_json(json!({
+            "message": "хорошая подборка",
+            "spoiler": false,
+            "parent_comment_id": null,
+            "reply_to_profile_id": null,
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "code": 0, "comment": {} })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    client(&server)
+        .comment_add(
+            CommentTarget::Collection,
+            3,
+            "хорошая подборка",
+            false,
+            None,
+        )
+        .await
+        .expect("a top-level comment");
+}
+
+#[tokio::test]
+async fn comment_edit() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/article/comment/edit/55"))
+        .and(body_json(
+            json!({ "message": "исправлено", "spoiler": false }),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(ack()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    client(&server)
+        .comment_edit(CommentTarget::Article, 55, "исправлено", false)
+        .await
+        .expect("an edit");
 }
