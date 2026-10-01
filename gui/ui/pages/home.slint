@@ -241,12 +241,12 @@ export component HomePage inherits Rectangle {
         // each other.
         if !root.searching && root.tabs.length > 0: tab-strip := Flickable {
             height: 48px;
-            interactive: self.viewport-width > self.width;
-            viewport-width: max(self.width, root.tab-width * root.tabs.length + 2 * Spacing.base);
+            interactive: self.content-width > self.width;
+            content-width: max(self.width, root.tab-width * root.tabs.length + 2 * Spacing.base);
 
             SecondaryTabBar {
                 x: Spacing.base;
-                width: tab-strip.viewport-width - 2 * Spacing.base;
+                width: tab-strip.content-width - 2 * Spacing.base;
                 height: 100%;
                 items: root.tabs;
 
@@ -269,9 +269,9 @@ export component HomePage inherits Rectangle {
             /// or as near as the ends allow. A selected tab out of sight is a
             /// question nobody can see the answer to.
             function reveal(index: int) {
-                let division = (self.viewport-width - 2 * Spacing.base) / root.tabs.length;
+                let division = (self.content-width - 2 * Spacing.base) / root.tabs.length;
                 let centre = Spacing.base + division * (index + 0.5);
-                self.viewport-x = clamp(self.width / 2 - centre, self.width - self.viewport-width, 0px);
+                self.content-x = clamp(self.width / 2 - centre, self.width - self.content-width, 0px);
             }
         }
 
