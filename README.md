@@ -33,6 +33,9 @@ Working:
   goes to the platform's secret store. The profile screen shows the account
   itself: what is in each list as a ring, what it has had to say, and what was
   watched lately — each of them a way into the list or the release behind it.
+- **A release, from the account's side** — its list, favourite and rating
+  out of five; episodes ticked by hand, one or all; the voice-over it opens
+  with; the rest of its franchise, and the services that also carry it.
 - **The feed** — posts from the channels the account follows, and the latest
   from every channel; following a channel from one of its posts.
 - **Appearance** — light, dark, AMOLED, or whatever the desktop is set to,
@@ -44,7 +47,11 @@ mean reading someone else's implementation. Allvideo, StudioMir, Myvi, VKVideo,
 OK, RuTube and MailRu are listed by the official client but did not appear in
 the sampled catalogue.
 
-Still to come: packaged builds.
+The aim is parity with the official client. Its interface declares 286
+distinct endpoints; **47** are implemented, each checked against a local
+server by `api/tests/endpoints.rs`. The rest are being added area by area —
+comments, discovery, notifications, people, channels, collections, settings
+— and then packaged builds.
 
 ## Building
 
