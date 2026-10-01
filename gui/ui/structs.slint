@@ -16,6 +16,9 @@ export struct PickerOption {
     episodes: int,
     /// Subtitles rather than a dub. Only voice-overs set this.
     is-sub: bool,
+    /// The voice-over the account opens this release with. Only voice-overs
+    /// set this.
+    pinned: bool,
 }
 
 /// A release as a browsing screen shows it.

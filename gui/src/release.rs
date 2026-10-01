@@ -223,7 +223,15 @@ pub fn load(
                         state.dubber = 0;
                     }
                     show_dubbers(&window, &state.borrow());
-                    select_dubber(&window, &state, client, 0);
+                    // The voice-over the account pinned, if it pinned one; the
+                    // most watched otherwise, which the server lists first.
+                    let first = state
+                        .borrow()
+                        .dubbers
+                        .iter()
+                        .position(|dubber| dubber.pinned)
+                        .unwrap_or(0);
+                    select_dubber(&window, &state, client, first);
                 }
                 (Err(error), _) | (_, Err(error)) => {
                     tracing::error!(%error, release_id, "could not load the release");
@@ -608,6 +616,58 @@ pub fn set_vote(
     );
 }
 
+/// Pins the voice-over on screen as the one this release opens with, or
+/// unpins it.
+///
+/// One per release: pinning one unpins whichever was pinned before, which is
+/// how the server keeps it, so the screen does the same rather than showing
+/// two pins until the next fetch.
+pub fn toggle_pin(window: &MainWindow, state: &Rc<RefCell<ReleaseState>>, client: &Client) {
+    let (release_id, dubber_id, before, pins) = {
+        let state = state.borrow();
+        let Some(dubber) = state.selected_dubber() else {
+            return;
+        };
+        let pins: Vec<bool> = state.dubbers.iter().map(|d| d.pinned).collect();
+        (state.release_id, dubber.id, dubber.pinned, pins)
+    };
+    let pinning = !before;
+
+    set_pins(state, |id| pinning && id == dubber_id);
+    show_dubbers(window, &state.borrow());
+
+    let api = client.clone();
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    tasks::spawn(
+        async move {
+            if pinning {
+                api.dubber_pin(release_id, dubber_id).await
+            } else {
+                api.dubber_unpin(release_id, dubber_id).await
+            }
+        },
+        move |result| {
+            let Err(error) = result else { return };
+            tracing::warn!(%error, release_id, dubber_id, "the voice-over was not pinned");
+            let Some(window) = weak.upgrade() else { return };
+            if state.borrow().release_id != release_id {
+                return;
+            }
+            for (dubber, pinned) in state.borrow_mut().dubbers.iter_mut().zip(pins) {
+                dubber.pinned = pinned;
+            }
+            show_dubbers(&window, &state.borrow());
+        },
+    );
+}
+
+fn set_pins(state: &Rc<RefCell<ReleaseState>>, pinned: impl Fn(i64) -> bool) {
+    for dubber in &mut state.borrow_mut().dubbers {
+        dubber.pinned = pinned(dubber.id);
+    }
+}
+
 /// Ticks one episode as watched, or takes the tick off.
 ///
 /// Recorded on this machine always, and on the account when there is one: a
@@ -803,6 +863,7 @@ fn show_dubbers(window: &MainWindow, state: &ReleaseState) {
             label: d.name.as_str().into(),
             episodes: d.episodes_count as i32,
             is_sub: d.is_sub,
+            pinned: d.pinned,
         })
         .collect();
 
@@ -817,6 +878,7 @@ fn show_sources(window: &MainWindow, state: &ReleaseState) {
             label: s.name.as_str().into(),
             episodes: s.episodes_count as i32,
             is_sub: false,
+            pinned: false,
         })
         .collect();
 

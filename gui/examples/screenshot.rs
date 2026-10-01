@@ -521,5 +521,6 @@ fn option(label: &str, episodes: i32, is_sub: bool) -> PickerOption {
         label: label.into(),
         episodes,
         is_sub,
+        pinned: false,
     }
 }

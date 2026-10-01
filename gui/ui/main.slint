@@ -87,6 +87,7 @@ export component MainWindow inherits Window {
     callback open-platform(int);
     callback toggle-watched(int);
     callback toggle-all-watched();
+    callback toggle-dubber-pin();
 
     callback select-dubber(int);
     callback select-source(int);
@@ -413,6 +414,7 @@ export component MainWindow inherits Window {
         open-platform(i) => { root.open-platform(i); }
         toggle-watched(p) => { root.toggle-watched(p); }
         toggle-all-watched => { root.toggle-all-watched(); }
+        toggle-pin => { root.toggle-dubber-pin(); }
         sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
         select-dubber(i) => { root.select-dubber(i); }
         select-source(i) => { root.select-source(i); }

@@ -153,6 +153,7 @@ export component ReleasePage inherits Rectangle {
     callback download-episode(int);
     callback toggle-watched(int);
     callback toggle-all-watched();
+    callback toggle-pin();
     callback go-back();
 
     background: MaterialPalette.surface;
@@ -381,6 +382,7 @@ export component ReleasePage inherits Rectangle {
                 download-episode(p) => { root.download-episode(p); }
                 toggle-watched(p) => { root.toggle-watched(p); }
                 toggle-all-watched => { root.toggle-all-watched(); }
+                toggle-pin => { root.toggle-pin(); }
                 all-watched: root.all-watched;
                 }
 
@@ -497,6 +499,7 @@ export component ReleasePage inherits Rectangle {
                 download-episode(p) => { root.download-episode(p); }
                 toggle-watched(p) => { root.toggle-watched(p); }
                 toggle-all-watched => { root.toggle-all-watched(); }
+                toggle-pin => { root.toggle-pin(); }
                 all-watched: root.all-watched;
             }
         }

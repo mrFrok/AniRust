@@ -580,6 +580,22 @@ fn wire_release(window: &MainWindow, app: &Rc<App>) {
         }
     });
 
+    window.on_toggle_dubber_pin({
+        let app = Rc::clone(&app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            // Pinning is the account's, so without one it is a reason to sign
+            // in rather than a click that does nothing.
+            if !app.client.is_authenticated() {
+                window.set_sign_in_error("".into());
+                window.set_show_sign_in(true);
+                return;
+            }
+            release::toggle_pin(&window, &app.release, &app.client);
+        }
+    });
+
     window.on_toggle_watched({
         let app = Rc::clone(&app);
         let weak = window.as_weak();
