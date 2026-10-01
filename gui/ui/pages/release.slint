@@ -12,12 +12,39 @@
 // that owns the video texture is declared once, in the window.
 
 import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, IconButton, FloatingActionButton, FABStyle, TonalButton } from "@material";
+import { MaterialPalette, IconButton, FloatingActionButton, FABStyle, TonalButton, ActionChip } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
-import { PickerOption, EpisodeItem } from "../structs.slint";
+import { PickerOption, EpisodeItem, LinkItem } from "../structs.slint";
 import { EpisodePicker, Poster, Dropdown } from "../components/release-parts.slint";
+
+/// A heading and a wrapping row of chips under it.
+component LinkRow inherits VerticalLayout {
+    in property <string> heading;
+    in property <[LinkItem]> items;
+    callback picked(int);
+
+    spacing: Spacing.tight;
+    padding-top: Spacing.small;
+
+    Text {
+        text: root.heading;
+        color: MaterialPalette.on-surface-variant;
+        font-size: Typography.label-medium-size;
+    }
+
+    FlexboxLayout {
+        flex-wrap: wrap;
+        alignment: start;
+        spacing: Spacing.small;
+
+        for item[index] in root.items: ActionChip {
+            text: item.detail != "" ? item.label + " · " + item.detail : item.label;
+            clicked => { root.picked(index); }
+        }
+    }
+}
 
 /// Five stars, the account's rating lit, and a hover preview of the one a
 /// click would give.
@@ -97,6 +124,12 @@ export component ReleasePage inherits Rectangle {
     /// Set when an episode could not be resolved, so the screen says so rather
     /// than quietly going back to the invitation to try again.
     in property <bool> failed: false;
+
+    /// The franchise's other releases, and the services carrying this one.
+    in property <[LinkItem]> related: [];
+    in property <[LinkItem]> platforms: [];
+    callback open-related(int);
+    callback open-platform(int);
 
     // ---- the account's view of it ---------------------------------------
     in property <bool> signed-in: false;
@@ -426,6 +459,22 @@ export component ReleasePage inherits Rectangle {
                                 color: MaterialPalette.on-surface;
                                 font-size: Typography.body-medium-size;
                                 wrap: word-wrap;
+                            }
+
+                            // Chips rather than posters: a franchise can run to
+                            // thirty releases, and a row of names reads at a
+                            // glance where a row of covers needs scrolling and
+                            // thirty more downloads.
+                            if root.related.length > 0: LinkRow {
+                                heading: Tr.franchise;
+                                items: root.related;
+                                picked(i) => { root.open-related(i); }
+                            }
+
+                            if root.platforms.length > 0: LinkRow {
+                                heading: Tr.watch-elsewhere;
+                                items: root.platforms;
+                                picked(i) => { root.open-platform(i); }
                             }
                         }
                     }

@@ -118,6 +118,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         ])));
     }
+    // A description short enough that the franchise and the platforms under
+    // it are in view without scrolling the panel.
+    if state == "release-links" {
+        ui.set_release_description("Короткое описание.".into());
+    }
     // The account's view of a release: in a list, a favourite, rated.
     if state == "release-rated" {
         ui.set_signed_in(true);
@@ -301,6 +306,20 @@ fn populate(ui: &MainWindow) {
             .into(),
     );
     ui.set_release_loading(false);
+    let link = |label: &str, detail: &str| LinkItem {
+        label: label.into(),
+        detail: detail.into(),
+    };
+    ui.set_release_related(slint::ModelRc::new(slint::VecModel::from(vec![
+        link("Демоны старшей школы: Новая", "2013"),
+        link("Демоны старшей школы: Рожденные", "2015"),
+        link("Демоны старшей школы: Герой", "2018"),
+        link("OVA", "2012"),
+    ])));
+    ui.set_release_platforms(slint::ModelRc::new(slint::VecModel::from(vec![
+        link("Crunchyroll", ""),
+        link("Wink", ""),
+    ])));
 
     ui.set_dubbers(slint::ModelRc::new(slint::VecModel::from(vec![
         option("AniLibria", 14, false),

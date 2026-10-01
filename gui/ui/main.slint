@@ -10,7 +10,7 @@ import { SignInSheet } from "components/sign-in.slint";
 import { DownloadsPage } from "pages/downloads.slint";
 import { ProfilePage } from "pages/profile.slint";
 import { FeedPage } from "pages/feed.slint";
-import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost } from "structs.slint";
+import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -81,6 +81,10 @@ export component MainWindow inherits Window {
     callback set-release-list(int);
     callback toggle-release-favourite();
     callback set-release-vote(int);
+    in property <[LinkItem]> release-related: [];
+    in property <[LinkItem]> release-platforms: [];
+    callback open-related(int);
+    callback open-platform(int);
     callback toggle-watched(int);
     callback toggle-all-watched();
 
@@ -403,6 +407,10 @@ export component MainWindow inherits Window {
         set-list(i) => { root.set-release-list(i); }
         toggle-favourite => { root.toggle-release-favourite(); }
         set-vote(n) => { root.set-release-vote(n); }
+        related: root.release-related;
+        platforms: root.release-platforms;
+        open-related(i) => { root.open-related(i); }
+        open-platform(i) => { root.open-platform(i); }
         toggle-watched(p) => { root.toggle-watched(p); }
         toggle-all-watched => { root.toggle-all-watched(); }
         sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }

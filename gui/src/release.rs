@@ -18,7 +18,7 @@ use anirust_api::{Client, Dubber, Episode, EpisodeSort, ProfileList, Release, So
 
 use crate::progress::Store;
 
-use crate::{EpisodeItem, MainWindow, PickerOption, tasks};
+use crate::{EpisodeItem, LinkItem, MainWindow, PickerOption, tasks};
 
 /// What the release screen is showing.
 ///
@@ -34,6 +34,10 @@ pub struct ReleaseState {
     pub sources: Vec<Source>,
     pub source: usize,
     pub episodes: Vec<Episode>,
+    /// The franchise's other releases, in the order their chips are shown.
+    pub related: Vec<Release>,
+    /// Where each of the platform chips leads.
+    pub platforms: Vec<String>,
     /// What this machine remembers, which fills in what an unauthenticated
     /// account cannot.
     pub progress: Rc<RefCell<Store>>,
@@ -167,7 +171,17 @@ pub fn load(
     release_id: i64,
 ) {
     window.set_release_loading(true);
-    state.borrow_mut().release_id = release_id;
+    {
+        let mut state = state.borrow_mut();
+        state.release_id = release_id;
+        state.related.clear();
+        state.platforms.clear();
+    }
+    // The last release's links would otherwise sit under this one's title
+    // until its own arrive.
+    window.set_release_related(slint::ModelRc::new(VecModel::<LinkItem>::default()));
+    window.set_release_platforms(slint::ModelRc::new(VecModel::<LinkItem>::default()));
+    load_platforms(window, state, &client, release_id);
 
     let weak = window.as_weak();
     let state = Rc::clone(state);
@@ -178,7 +192,8 @@ pub fn load(
     let api = (*fetch_client).clone();
     tasks::spawn(
         async move {
-            let release = api.release(release_id, false).await;
+            // Extended, so the franchise comes inlined in the same answer.
+            let release = api.release(release_id, true).await;
             let dubbers = api.dubbers(release_id).await;
             (release, dubbers)
         },
@@ -188,6 +203,7 @@ pub fn load(
             match (release, dubbers) {
                 (Ok(release), Ok(dubbers)) => {
                     show_release(&window, &release);
+                    show_related(&window, &state, &release);
                     // Decorative, so these load on their own: the screen is
                     // usable before either image arrives.
                     load_poster(&window, http.clone(), release.poster_url());
@@ -361,6 +377,101 @@ fn show_release(window: &MainWindow, release: &Release) {
         format!("{}/{}", release.episodes_released, release.episodes_total).into(),
     );
     show_account_view(window, release);
+}
+
+/// The franchise's other releases, as chips under the description.
+fn show_related(window: &MainWindow, state: &Rc<RefCell<ReleaseState>>, release: &Release) {
+    let others: Vec<Release> = release
+        .related_releases
+        .iter()
+        .filter(|other| other.id != release.id)
+        .cloned()
+        .collect();
+    let items: Vec<LinkItem> = others
+        .iter()
+        .map(|other| LinkItem {
+            label: other.title().into(),
+            detail: other.year.as_str().into(),
+        })
+        .collect();
+    window.set_release_related(slint::ModelRc::new(VecModel::from(items)));
+    state.borrow_mut().related = others;
+}
+
+/// The services carrying the release. Anonymous, and on its own: the page is
+/// complete without it, and it should not hold the release up.
+fn load_platforms(
+    window: &MainWindow,
+    state: &Rc<RefCell<ReleaseState>>,
+    client: &Client,
+    release_id: i64,
+) {
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    let api = client.clone();
+    tasks::spawn(
+        async move { api.streaming_platforms(release_id).await },
+        move |platforms| {
+            let Some(window) = weak.upgrade() else { return };
+            if state.borrow().release_id != release_id {
+                return;
+            }
+            let platforms = match platforms {
+                Ok(platforms) => platforms,
+                Err(error) => {
+                    tracing::debug!(%error, release_id, "no streaming platforms");
+                    return;
+                }
+            };
+            let platforms: Vec<_> = platforms
+                .into_iter()
+                .filter(|platform| is_web_link(&platform.url))
+                .collect();
+            let items: Vec<LinkItem> = platforms
+                .iter()
+                .map(|platform| LinkItem {
+                    label: platform.name.as_str().into(),
+                    detail: "".into(),
+                })
+                .collect();
+            window.set_release_platforms(slint::ModelRc::new(VecModel::from(items)));
+            state.borrow_mut().platforms = platforms.into_iter().map(|p| p.url).collect();
+        },
+    );
+}
+
+/// Whether a link is one a browser should be handed: http or https and
+/// nothing else, since anything else could be a command.
+pub fn is_web_link(url: &str) -> bool {
+    let url = url.trim();
+    url.starts_with("https://") || url.starts_with("http://")
+}
+
+/// Opens a web page in the desktop's browser.
+///
+/// The URL goes to the platform's opener as a single argument, never through
+/// a shell, and only if it is a web link — a server-supplied string is not
+/// something to run.
+pub fn open_in_browser(url: &str) {
+    if !is_web_link(url) {
+        tracing::warn!(url, "not opening a link that is not a web page");
+        return;
+    }
+    #[cfg(target_os = "linux")]
+    let opened = std::process::Command::new("xdg-open").arg(url).spawn();
+    #[cfg(target_os = "macos")]
+    let opened = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(target_os = "windows")]
+    let opened = std::process::Command::new("rundll32")
+        .args(["url.dll,FileProtocolHandler", url])
+        .spawn();
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    let opened: std::io::Result<std::process::Child> =
+        Err(std::io::Error::other("no browser opener on this platform"));
+
+    if let Err(error) = opened {
+        tracing::warn!(%error, url, "the browser could not be opened");
+    }
 }
 
 /// What the account thinks of the release: its list, favourite, rating.
@@ -783,6 +894,16 @@ mod tests {
         }
         assert_eq!(list_at(6), None);
         assert_eq!(list_at(-1), None);
+    }
+
+    #[test]
+    fn only_web_pages_are_handed_to_the_browser() {
+        assert!(is_web_link("https://www.crunchyroll.com/series/x"));
+        assert!(is_web_link("http://example.org"));
+        assert!(!is_web_link("file:///etc/passwd"));
+        assert!(!is_web_link("javascript:alert(1)"));
+        assert!(!is_web_link("--help"));
+        assert!(!is_web_link(""));
     }
 
     #[test]

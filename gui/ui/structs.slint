@@ -124,3 +124,11 @@ export struct FeedPost {
     votes: int,
     pinned: bool,
 }
+
+/// Something on the release page that leads somewhere else: another release
+/// of the franchise, or a service carrying this one.
+export struct LinkItem {
+    label: string,
+    /// A quieter second part — a year, a kind of release.
+    detail: string,
+}

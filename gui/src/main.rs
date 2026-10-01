@@ -547,6 +547,39 @@ fn wire_release(window: &MainWindow, app: &Rc<App>) {
         }
     });
 
+    window.on_open_related({
+        let app = Rc::clone(&app);
+        let weak = window.as_weak();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            let Some(release_id) = usize::try_from(index)
+                .ok()
+                .and_then(|at| app.release.borrow().related.get(at).map(|r| r.id))
+            else {
+                return;
+            };
+            release::load(
+                &window,
+                &app.release,
+                Rc::clone(&app.client),
+                app.http.clone(),
+                release_id,
+            );
+        }
+    });
+
+    window.on_open_platform({
+        let app = Rc::clone(&app);
+        move |index| {
+            let url = usize::try_from(index)
+                .ok()
+                .and_then(|at| app.release.borrow().platforms.get(at).cloned());
+            if let Some(url) = url {
+                release::open_in_browser(&url);
+            }
+        }
+    });
+
     window.on_toggle_watched({
         let app = Rc::clone(&app);
         let weak = window.as_weak();
