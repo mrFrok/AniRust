@@ -1,0 +1,92 @@
+# A tag `v*` builds the packages and drafts a release with them. Nothing is
+# published until the draft is looked at and published by hand.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libmpv-dev libxkbcommon-dev libfontconfig-dev
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-deb --locked
+      - run: cargo build --release -p anirust-gui -p anirust-cli
+      - name: .deb
+        run: cargo deb -p anirust-gui --no-build --output dist/
+      - name: Tarball
+        run: |
+          name="anirust-${GITHUB_REF_NAME#v}-linux-x86_64"
+          mkdir -p "stage/$name"
+          cp target/release/anirust target/release/anirust-cli README.md README.ru.md LICENSE "stage/$name/"
+          cp -r packaging/linux packaging/icons "stage/$name/"
+          tar -C stage -czf "dist/$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: ilammy/msvc-dev-cmd@v1
+      - shell: pwsh
+        run: ./packaging/windows/fetch-libmpv.ps1 -Destination mpv
+      - name: Build and pack
+        shell: pwsh
+        run: |
+          $env:MPV_SOURCE = "$PWD\mpv"
+          $env:LIB = "$PWD\mpv;$env:LIB"
+          cargo build --release -p anirust-gui -p anirust-cli
+          $name = "anirust-$($env:GITHUB_REF_NAME.TrimStart('v'))-windows-x86_64"
+          New-Item -ItemType Directory -Force "stage\$name" | Out-Null
+          Copy-Item target\release\anirust.exe, target\release\anirust-cli.exe, mpv\libmpv-2.dll, README.md, README.ru.md, LICENSE "stage\$name\"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path "stage\$name" -DestinationPath "dist\$name.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: brew install mpv dylibbundler librsvg
+      - uses: Swatinem/rust-cache@v2
+      - name: Build and pack
+        run: |
+          export LIBRARY_PATH="$(brew --prefix)/lib:$LIBRARY_PATH"
+          cargo build --release -p anirust-gui -p anirust-cli
+          ./packaging/macos/bundle.sh "${GITHUB_REF_NAME#v}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*
+
+  draft:
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: dist/*

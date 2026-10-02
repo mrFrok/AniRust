@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.mrfrok.AniRust</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>AniRust</name>
+  <summary>Desktop client for Anixart with a player of its own</summary>
+  <summary xml:lang="ru">Клиент Anixart для компьютера со своим плеером</summary>
+  <developer id="io.github.mrfrok">
+    <name>mrfrok</name>
+  </developer>
+  <description>
+    <p>
+      AniRust is an unofficial desktop client for Anixart. It browses and
+      searches the catalogue, plays episodes in an mpv-based player with
+      hardware decoding, subtitles, Anime4K upscaling and frame
+      interpolation, and keeps lists, history and progress in step with an
+      Anixart account.
+    </p>
+    <p>
+      It also reads the feed and channels, comments, collections and
+      notifications, and writes posts — the whole of the official client,
+      on a computer.
+    </p>
+    <p>
+      AniRust is not affiliated with the developers of Anixart.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.mrfrok.AniRust.desktop</launchable>
+  <url type="homepage">https://github.com/mrfrok/AniRust</url>
+  <url type="bugtracker">https://github.com/mrfrok/AniRust/issues</url>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
+  <provides>
+    <binary>anirust</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-10-02"/>
+  </releases>
+</component>

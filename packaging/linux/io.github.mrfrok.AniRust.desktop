@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=AniRust
+GenericName=Anime player
+GenericName[ru]=Аниме-плеер
+Comment=Desktop client for Anixart with a player of its own
+Comment[ru]=Клиент Anixart для компьютера со своим плеером
+Exec=anirust %u
+Icon=io.github.mrfrok.AniRust
+Terminal=false
+Categories=AudioVideo;Video;Player;
+Keywords=anime;anixart;player;mpv;аниме;
+StartupWMClass=AniRust

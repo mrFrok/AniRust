@@ -782,50 +782,73 @@ fn dump_framebuffer(gl: &glow::Context, surface: &Surface, path: &str) {
 /// the GL context APIs from this callback (e.g. glXGetProcAddressARB or
 /// wglGetProcAddress)".
 ///
+/// On Windows the resolver is WGL's, with the GL 1.1 functions it does not
+/// answer for taken from opengl32.dll directly; on macOS there is no resolver,
+/// and every function is looked up in the OpenGL framework by name.
+///
 /// The libraries are opened by soname, so the dynamic linker's search path —
 /// `LD_LIBRARY_PATH` included — decides which file is loaded. That is not a
 /// trust boundary worth defending: anyone who can set that variable for this
 /// process can already do anything the process can.
 pub struct GlLoader {
-    _library: libloading::Library,
-    get_proc_address: unsafe extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_void,
+    library: libloading::Library,
+    /// The platform's resolver, where it has one. macOS has none: every GL
+    /// function is an ordinary export of its OpenGL framework.
+    get_proc_address: Option<GetProcAddress>,
 }
 
+type GetProcAddress = unsafe extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_void;
+
 impl GlLoader {
-    /// Libraries to try, in order, with the symbol each exposes.
+    /// Libraries to try, in order, with the resolver each exposes.
     ///
     /// EGL comes first because Slint's winit backend prefers it on Linux, and
     /// it is the only option under Wayland. GLX is the X11 fallback.
-    const CANDIDATES: &'static [(&'static str, &'static [u8])] = &[
-        ("libEGL.so.1", b"eglGetProcAddress\0"),
-        ("libGLX.so.0", b"glXGetProcAddressARB\0"),
-        ("libGL.so.1", b"glXGetProcAddressARB\0"),
+    #[cfg(all(unix, not(target_os = "macos")))]
+    const CANDIDATES: &'static [(&'static str, Option<&'static [u8]>)] = &[
+        ("libEGL.so.1", Some(b"eglGetProcAddress\0")),
+        ("libGLX.so.0", Some(b"glXGetProcAddressARB\0")),
+        ("libGL.so.1", Some(b"glXGetProcAddressARB\0")),
     ];
+
+    /// WGL is what a desktop GL context on Windows is made with; EGL only
+    /// where ANGLE has been put beside the program.
+    #[cfg(windows)]
+    const CANDIDATES: &'static [(&'static str, Option<&'static [u8]>)] = &[
+        ("opengl32.dll", Some(b"wglGetProcAddress\0")),
+        ("libEGL.dll", Some(b"eglGetProcAddress\0")),
+    ];
+
+    #[cfg(target_os = "macos")]
+    const CANDIDATES: &'static [(&'static str, Option<&'static [u8]>)] =
+        &[("/System/Library/Frameworks/OpenGL.framework/OpenGL", None)];
 
     fn open() -> Result<Self> {
         let mut attempts = Vec::new();
 
         for &(library, symbol) in Self::CANDIDATES {
-            // SAFETY: loading a system GL library by its canonical soname.
+            // SAFETY: loading a system GL library by its canonical name.
             // Opening a library runs its initialisers, which is expected here
             // — the process has already loaded GL by the time Slint renders.
             match unsafe { libloading::Library::new(library) } {
                 Ok(lib) => {
-                    // SAFETY: the symbol's signature is fixed by the EGL and
-                    // GLX specifications, and both spell it identically.
-                    let found = unsafe {
-                        lib.get::<unsafe extern "C" fn(
-                            *const std::ffi::c_char,
-                        ) -> *mut std::ffi::c_void>(symbol)
+                    let Some(symbol) = symbol else {
+                        return Ok(Self {
+                            library: lib,
+                            get_proc_address: None,
+                        });
                     };
+                    // SAFETY: the symbol's signature is fixed by the EGL, GLX
+                    // and WGL specifications, and all three spell it alike.
+                    let found = unsafe { lib.get::<GetProcAddress>(symbol) };
                     match found {
                         Ok(symbol) => {
                             // SAFETY: the pointer stays valid as long as the
                             // library, which is kept alive in the same struct.
                             let get_proc_address = unsafe { *symbol.into_raw() };
                             return Ok(Self {
-                                _library: lib,
-                                get_proc_address,
+                                library: lib,
+                                get_proc_address: Some(get_proc_address),
                             });
                         }
                         Err(error) => attempts.push(format!("{library}: {error}")),
@@ -845,9 +868,24 @@ impl GlLoader {
         let Ok(symbol) = std::ffi::CString::new(name) else {
             return std::ptr::null_mut();
         };
-        // SAFETY: `symbol` is a valid NUL-terminated string, and the function
-        // pointer came from a library this struct keeps loaded.
-        unsafe { (self.get_proc_address)(symbol.as_ptr()) }
+        if let Some(get_proc_address) = self.get_proc_address {
+            // SAFETY: `symbol` is a valid NUL-terminated string, and the
+            // function pointer came from a library this struct keeps loaded.
+            let found = unsafe { get_proc_address(symbol.as_ptr()) };
+            // WGL answers only for what came after GL 1.1, and says "no"
+            // with 0, 1, 2, 3 or -1; the rest are plain exports of
+            // opengl32.dll, looked up below like everything on macOS.
+            if !matches!(found as isize, -1..=3) {
+                return found;
+            }
+        }
+        // SAFETY: looked up by name in a GL library this struct keeps loaded;
+        // the address is handed to mpv, which knows each function's type.
+        unsafe {
+            self.library
+                .get::<*mut std::ffi::c_void>(symbol.as_bytes_with_nul())
+                .map_or(std::ptr::null_mut(), |found| *found)
+        }
     }
 }
 

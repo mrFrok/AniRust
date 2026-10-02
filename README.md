@@ -23,46 +23,84 @@ own, so choosing the next episode never means leaving what you are watching.
 
 Working:
 
-- **Browsing** — what other people are watching, and search by title.
+- **Browsing** — the catalogue cut by popularity, rating, films and
+  announcements, narrowed by genre; the front page's curated cards,
+  recommendations, what is being watched and discussed; the week's schedule;
+  a random release. The search looks through whatever tab is up — a list,
+  the history, collections — and from anywhere else finds releases, people
+  and channels at once.
 - **Playback** — Kodik, AniLibria and Sibnet resolved to direct streams;
   hardware decoding; quality, speed, subtitle and audio track selection;
   Anime4K upscaling and frame interpolation; skip the opening.
 - **Continuing** — where an episode was left off is remembered, the list opens
   there, and an episode that ends is followed by the next one.
-- **An account** — signing in syncs watched episodes and history; the token
-  goes to the platform's secret store. The profile screen shows the account
-  itself: what is in each list as a ring, what it has had to say, and what was
-  watched lately — each of them a way into the list or the release behind it.
 - **A release, from the account's side** — its list, favourite and rating
   out of five; episodes ticked by hand, one or all; the voice-over it opens
-  with; the rest of its franchise, and the services that also carry it.
-- **The feed** — posts from the channels the account follows, and the latest
-  from every channel; following a channel from one of its posts.
+  with; the rest of its franchise, the services that also carry it, its
+  trailers and openings, and putting it in a collection.
+- **Comments** — on releases, posts and collections: sorted, threaded,
+  spoilers hidden, voted on, written, changed and deleted.
+- **The feed and channels** — posts from followed channels and the latest
+  from all of them; channel pages; following, muting; writing posts in a
+  block editor, changing, pinning and deleting them; suggesting posts to
+  other channels; making a channel or a blog and running it — settings,
+  pictures, the suggestion queue, administrators, blocks.
+- **Collections** — everybody's and the account's own; favourited,
+  commented, made, changed, given a cover, deleted.
+- **People** — profiles of others, friends and requests, blocking.
+- **Notifications** — a bell with a count, the list by kind, and which kinds
+  arrive at all.
+- **The account** — signing in, registering and restoring a password by
+  emailed code; the token goes to the platform's secret store. Picture,
+  status, privacy, incognito, social links, login, password and email;
+  standing with the service and appeals; bookmarks in from Shikimori and out
+  as CSV; deleting the account, asked for twice.
+- **Reports** — on releases, comments, posts, channels, collections and
+  people, with the service's own reasons.
 - **Appearance** — light, dark, AMOLED, or whatever the desktop is set to,
-  chosen on the profile screen and kept in `~/.config/anirust/settings.json`.
+  kept in the platform's config directory.
 
 Not covered: SovetRomantica, whose host is unreachable from the network this
 was developed on, so its protocol could not be observed — and guessing it would
 mean reading someone else's implementation. Allvideo, StudioMir, Myvi, VKVideo,
 OK, RuTube and MailRu are listed by the official client but did not appear in
-the sampled catalogue.
+the sampled catalogue. Signing in through Google, VK, Telegram or Yandex is in
+the API layer but not in the interface: those take a token their own SDKs give
+only to the official app. Pictures inside posts are kept when a post is
+changed, but not added: they go up through an upload this client has no way
+into.
 
-The aim is parity with the official client. Its interface declares 286
-distinct endpoints; **47** are implemented, each checked against a local
-server by `api/tests/endpoints.rs`. The rest are being added area by area —
-comments, discovery, notifications, people, channels, collections, settings
-— and then packaged builds.
+The official client's interface declares 286 distinct endpoints; **all 286**
+are implemented, each checked against a local server by
+`api/tests/endpoints.rs`, and `api/tests/parity.rs` fails if one goes missing.
+
+## Installing
+
+Tagged releases build a `.deb`, a Linux tarball, a Windows zip with libmpv
+beside the program, and a macOS disk image; Arch has a PKGBUILD in
+`packaging/arch/`.
 
 ## Building
 
-Needs Rust 1.90+ and, for the player, `libmpv` >= 2. On Debian and Ubuntu that
-is `libmpv-dev`; on Arch, `mpv`.
+Needs Rust 1.90+ and, for the player, `libmpv` >= 2.
+
+- **Linux** — `libmpv-dev` on Debian and Ubuntu, `mpv` on Arch. The file
+  chooser goes through the desktop portal (`xdg-desktop-portal`), and the
+  token through the Secret Service.
+- **macOS** — `brew install mpv`, and `LIBRARY_PATH="$(brew --prefix)/lib"`
+  for the build.
+- **Windows** — a libmpv build with an MSVC import library;
+  `packaging/windows/fetch-libmpv.ps1` makes one from a Developer PowerShell,
+  and `libmpv-2.dll` goes next to `anirust.exe`.
 
 ```sh
 cargo build --release
 ./target/release/anirust            # browse
 ./target/release/anirust 2999       # straight into a release
 ```
+
+Packages: `cargo deb -p anirust-gui` for Debian, `makepkg -si` in
+`packaging/arch/`, `packaging/macos/bundle.sh VERSION` for an app bundle.
 
 ### Looking at the interface without a display
 
@@ -73,14 +111,13 @@ renders to a PNG with the software renderer, no window server involved:
 cargo run -p anirust-gui --example screenshot -- out.png 1440 900 release
 ```
 
-The last argument is one of `home`, `home-signed-in`, `home-hover-account`,
-`release`, `playing`, `theatre`, `downloads`, `sign-in`, `failed`, `saved`,
-`loading`, `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`,
-`profile-light`, `profile-en`, `home-downloading`, `feed`, `feed-latest`,
-`feed-signed-out`, `feed-empty`, `light` or `amoled`; a width below 900 gives
-the stacked layout. The states past the obvious ones are the ones worth having:
-each is a screen that is easy to leave untested and easy to get wrong —
-nothing loaded yet, nothing found, nothing to play.
+The last argument names a state; the full list is at the top of
+`gui/examples/screenshot.rs`. A width below 900 gives the stacked layout.
+`ANIRUST_SHOT_POINTER=x,y` parks the pointer, and `ANIRUST_SHOT_SCROLL=px`
+turns the wheel under it, for what is below a fold. The states past the
+obvious ones are the ones worth having: each is a screen that is easy to
+leave untested and easy to get wrong — nothing loaded yet, nothing found,
+nothing to play.
 
 One difference from the running application is worth knowing before a bug is
 chased that is not there: the software renderer clips to a rectangle and

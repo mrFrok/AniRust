@@ -53,5 +53,24 @@ slint = { version = "1.18", default-features = false, features = [
     "accessibility",
 ] }
 
+# `cargo deb -p anirust-gui` — a .deb for Debian and Ubuntu.
+[package.metadata.deb]
+name = "anirust"
+maintainer = "mrfrok"
+extended-description = """\
+An unofficial desktop client for Anixart: the catalogue, an mpv-based player \
+with hardware decoding, subtitles and Anime4K upscaling, and lists, history \
+and progress in step with an Anixart account."""
+section = "video"
+priority = "optional"
+depends = "$auto"
+recommends = "xdg-desktop-portal"
+assets = [
+    ["target/release/anirust", "usr/bin/", "755"],
+    ["../packaging/linux/io.github.mrfrok.AniRust.desktop", "usr/share/applications/", "644"],
+    ["../packaging/linux/io.github.mrfrok.AniRust.metainfo.xml", "usr/share/metainfo/", "644"],
+    ["../packaging/icons/anirust.svg", "usr/share/icons/hicolor/scalable/apps/io.github.mrfrok.AniRust.svg", "644"],
+]
+
 [build-dependencies]
 slint-build = "1.18"

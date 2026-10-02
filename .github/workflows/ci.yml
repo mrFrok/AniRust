@@ -1,0 +1,58 @@
+# Every push and pull request: formatting, lints and tests on Linux, and a
+# build on Windows and macOS so the client does not quietly stop working
+# where nobody develops it.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: libmpv and the windowing libraries
+        run: sudo apt-get update && sudo apt-get install -y libmpv-dev libxkbcommon-dev libfontconfig-dev
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: brew install mpv
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: |
+          export LIBRARY_PATH="$(brew --prefix)/lib:$LIBRARY_PATH"
+          cargo build --workspace
+      - run: cargo test -p anirust-api
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: libmpv
+        shell: pwsh
+        run: ./packaging/windows/fetch-libmpv.ps1 -Destination mpv
+      - name: Build
+        shell: pwsh
+        run: |
+          $env:MPV_SOURCE = "$PWD\mpv"
+          $env:LIB = "$PWD\mpv;$env:LIB"
+          cargo build --workspace
+      - run: cargo test -p anirust-api

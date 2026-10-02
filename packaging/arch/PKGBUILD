@@ -1,0 +1,52 @@
+# Maintainer: mrfrok
+#
+# Builds the tagged release from source. `makepkg -si` in this directory;
+# for the working tree instead, `makepkg -si -p PKGBUILD` after pointing
+# `source` at it.
+
+pkgname=anirust
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Desktop client for Anixart with a player of its own'
+arch=('x86_64' 'aarch64')
+url='https://github.com/mrfrok/AniRust'
+license=('GPL-3.0-or-later')
+depends=('mpv' 'gcc-libs' 'glibc' 'fontconfig' 'freetype2' 'libxkbcommon' 'wayland' 'libx11' 'libglvnd')
+optdepends=('xdg-desktop-portal: file chooser for pictures and bookmarks'
+            'gnome-keyring: a place for the session token (or any Secret Service)')
+makedepends=('cargo' 'git')
+options=('!lto')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "AniRust-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "AniRust-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release -p anirust-gui -p anirust-cli
+}
+
+check() {
+  cd "AniRust-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo test --frozen --release -p anirust-api
+}
+
+package() {
+  cd "AniRust-$pkgver"
+  install -Dm755 target/release/anirust "$pkgdir/usr/bin/anirust"
+  install -Dm755 target/release/anirust-cli "$pkgdir/usr/bin/anirust-cli"
+  install -Dm644 packaging/linux/io.github.mrfrok.AniRust.desktop \
+    "$pkgdir/usr/share/applications/io.github.mrfrok.AniRust.desktop"
+  install -Dm644 packaging/linux/io.github.mrfrok.AniRust.metainfo.xml \
+    "$pkgdir/usr/share/metainfo/io.github.mrfrok.AniRust.metainfo.xml"
+  install -Dm644 packaging/icons/anirust.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/io.github.mrfrok.AniRust.svg"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
