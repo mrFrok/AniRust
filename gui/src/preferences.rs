@@ -63,10 +63,56 @@ impl Appearance {
 }
 
 /// Everything this machine remembers about how the application should behave.
+/// The accent colour, in the order its swatches are shown.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Accent {
+    #[default]
+    Violet,
+    Blue,
+    Indigo,
+    Teal,
+    Green,
+    Amber,
+    Rose,
+}
+
+impl Accent {
+    pub const ALL: [Self; 7] = [
+        Self::Violet,
+        Self::Blue,
+        Self::Indigo,
+        Self::Teal,
+        Self::Green,
+        Self::Amber,
+        Self::Rose,
+    ];
+
+    #[must_use]
+    pub fn index(self) -> i32 {
+        Self::ALL
+            .iter()
+            .position(|&value| value == self)
+            .and_then(|at| i32::try_from(at).ok())
+            .unwrap_or(0)
+    }
+
+    #[must_use]
+    pub fn at(index: i32) -> Self {
+        usize::try_from(index)
+            .ok()
+            .and_then(|at| Self::ALL.get(at).copied())
+            .unwrap_or_default()
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
     pub appearance: Appearance,
+    pub accent: Accent,
+    /// The window's surfaces see-through.
+    pub translucent: bool,
     pub player: PlayerPreferences,
 }
 
@@ -228,5 +274,13 @@ mod tests {
         assert!((in_force.speed - 1.0).abs() < f64::EPSILON);
         assert_eq!(in_force.volume, 100);
         assert!(!in_force.remember);
+    }
+
+    #[test]
+    fn an_accent_names_the_same_place_back() {
+        for accent in Accent::ALL {
+            assert_eq!(Accent::at(accent.index()), accent);
+        }
+        assert_eq!(Accent::at(99), Accent::Violet);
     }
 }

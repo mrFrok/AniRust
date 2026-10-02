@@ -308,6 +308,10 @@ export global Tr {
     out property <string> remember-player-why: lang == "ru"
         ? "Скорость, громкость, апскейл, интерполяция и декодер останутся такими же при следующем запуске."
         : "Speed, volume, upscaling, interpolation and the decoder stay as they were at the next start.";
+    out property <string> translucent-window: lang == "ru" ? "Прозрачное окно" : "See-through window";
+    out property <string> translucent-why: lang == "ru"
+        ? "Фон окна становится полупрозрачным. Размытие под ним — дело оконного менеджера, если он это умеет."
+        : "The window's background turns half see-through. Any blur behind it is the window manager's, where it has one.";
     out property <string> tab-collections: lang == "ru" ? "Коллекции" : "Collections";
     out property <string> my-collections: lang == "ru" ? "Мои коллекции" : "My collections";
     out property <string> new-collection: lang == "ru" ? "Новая коллекция" : "New collection";

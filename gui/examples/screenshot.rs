@@ -29,7 +29,8 @@
 //! `collection-editor`, `collection-picker`, `search`, `sign-up`,
 //! `sign-up-code`, `restore-code`, `settings`, `settings-email`,
 //! `settings-standing`, `report`, `editor`, `feed-own`, `admin`, `admin-suggested`,
-//! `admin-new`, `sign-out`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
+//! `admin-new`, `sign-out`, `profile-teal`,
+//! `profile-teal-glass`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
 //! `comments-signed-out`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
@@ -281,6 +282,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .into(),
         );
         ui.set_email_code_pending(state == "settings-email");
+    }
+    // Another accent, and the window see-through.
+    if state.starts_with("profile-teal") {
+        ui.set_accent(Accent::Teal);
+        ui.set_accent_index(3);
+        ui.set_translucent(state == "profile-teal-glass");
     }
     // The question before signing out.
     if state == "sign-out" {

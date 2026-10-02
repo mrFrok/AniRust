@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { MaterialPalette, MaterialSchemes, NavigationRail } from "@material";
-import { Scheme, Appearance } from "globals/scheme.slint";
+import { Scheme, Appearance, Accent } from "globals/scheme.slint";
 import { Tr } from "globals/tr.slint";
 import { PlayerPage } from "pages/player.slint";
 import { ReleasePage } from "pages/release.slint";
@@ -41,6 +41,8 @@ export component MainWindow inherits Window {
     init => {
         Tr.lang = root.lang;
         Scheme.appearance = root.appearance;
+        Scheme.accent = root.accent;
+        Scheme.translucent = root.translucent;
         MaterialPalette.schemes = root.schemes;
         root.measure();
     }
@@ -50,6 +52,12 @@ export component MainWindow inherits Window {
     // to watch something is not a lit one.
     in property <Appearance> appearance: Appearance.dark;
     changed appearance => { Scheme.appearance = root.appearance; }
+    in property <Accent> accent: Accent.violet;
+    changed accent => { Scheme.accent = root.accent; }
+    in property <bool> translucent: false;
+    changed translucent => { Scheme.translucent = root.translucent; }
+    callback select-accent(int);
+    callback set-translucent(bool);
 
     // The scheme, mirrored here so it can be pushed.
     //
@@ -500,6 +508,8 @@ export component MainWindow inherits Window {
     /// Signing out is asked about first.
     in-out property <bool> confirm-sign-out: false;
     in property <bool> remember-player: true;
+    /// The accent as its place in the row of swatches.
+    in property <int> accent-index: 0;
     callback set-remember-player(bool);
     /// Someone's profile was opened from another screen.
     in property <bool> profile-can-go-back: false;
@@ -586,6 +596,10 @@ export component MainWindow inherits Window {
             open-settings => { root.open-settings(); }
             select-appearance(i) => { root.select-appearance(i); }
             remember-player: root.remember-player;
+            accent: root.accent-index;
+            translucent: root.translucent;
+            select-accent(i) => { root.select-accent(i); }
+            set-translucent(on) => { root.set-translucent(on); }
             set-remember-player(on) => { root.set-remember-player(on); }
             open-list(i) => { root.open-list(i); }
             open-recent(i) => { root.open-recent(i); }

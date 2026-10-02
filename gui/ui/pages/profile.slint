@@ -18,6 +18,7 @@ import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { Account, HistoryItem, PersonItem } from "../structs.slint";
 import { PersonChip } from "../components/person-chip.slint";
+import { Scheme, Accent } from "../globals/scheme.slint";
 
 /// One wedge of the ring.
 ///
@@ -289,6 +290,12 @@ export component ProfilePage inherits Rectangle {
     callback select-appearance(int);
     /// The player opens as it was left.
     in property <bool> remember-player: true;
+    /// Which accent is chosen, as its place in the row; and whether the
+    /// window is see-through.
+    in property <int> accent: 0;
+    in property <bool> translucent: false;
+    callback select-accent(int);
+    callback set-translucent(bool);
     callback set-remember-player(bool);
     /// One of the account's own lists, by its place in the bookmarks tabs.
     callback open-list(int);
@@ -1103,6 +1110,71 @@ export component ProfilePage inherits Rectangle {
                         changed wanted => { self.current-index = self.wanted; }
 
                         index-changed(i) => { root.select-appearance(i); }
+                    }
+                }
+
+                // The accent: a swatch of each, its own primary colour.
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: Spacing.small;
+
+                    for colour[i] in [
+                        Scheme.scheme-of(Accent.violet).dark.primary,
+                        Scheme.scheme-of(Accent.blue).dark.primary,
+                        Scheme.scheme-of(Accent.indigo).dark.primary,
+                        Scheme.scheme-of(Accent.teal).dark.primary,
+                        Scheme.scheme-of(Accent.green).dark.primary,
+                        Scheme.scheme-of(Accent.amber).dark.primary,
+                        Scheme.scheme-of(Accent.rose).dark.primary,
+                    ]: Rectangle {
+                        width: 36px;
+                        height: 36px;
+                        border-radius: 18px;
+                        background: colour;
+                        border-width: i == root.accent ? 3px : 0px;
+                        border-color: MaterialPalette.on-surface;
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.select-accent(i); }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Spacing.base;
+                    max-width: 560px;
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+
+                        Text {
+                            text: Tr.translucent-window;
+                            color: MaterialPalette.on-surface;
+                            font-size: Typography.body-large-size;
+                        }
+
+                        Text {
+                            text: Tr.translucent-why;
+                            color: MaterialPalette.on-surface-variant;
+                            font-size: Typography.body-medium-size;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+
+                        Switch {
+                            width: 52px;
+                            height: 32px;
+                            property <bool> wanted: root.translucent;
+                            init => { self.checked = root.translucent; }
+                            changed wanted => { self.checked = self.wanted; }
+                            changed checked => {
+                                if (self.checked != root.translucent) { root.set-translucent(self.checked); }
+                            }
+                        }
                     }
                 }
             }

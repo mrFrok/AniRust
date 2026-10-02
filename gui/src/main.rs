@@ -277,7 +277,34 @@ fn wire_account(window: &MainWindow, app: &Rc<App>) {
 fn wire_preferences(window: &MainWindow, held: &Rc<Cell<preferences::Preferences>>) {
     let preferences = held.get();
     show_appearance(window, preferences.appearance);
+    show_accent(window, preferences.accent);
+    window.set_translucent(preferences.translucent);
     window.set_remember_player(preferences.player.remember);
+
+    window.on_select_accent({
+        let held = Rc::clone(held);
+        let weak = window.as_weak();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            let mut preferences = held.get();
+            preferences.accent = preferences::Accent::at(index);
+            held.set(preferences);
+            show_accent(&window, preferences.accent);
+            preferences.save();
+        }
+    });
+    window.on_set_translucent({
+        let held = Rc::clone(held);
+        let weak = window.as_weak();
+        move |on| {
+            let Some(window) = weak.upgrade() else { return };
+            let mut preferences = held.get();
+            preferences.translucent = on;
+            held.set(preferences);
+            window.set_translucent(on);
+            preferences.save();
+        }
+    });
     let held = Rc::clone(held);
 
     window.on_set_remember_player({
@@ -308,6 +335,20 @@ fn wire_preferences(window: &MainWindow, held: &Rc<Cell<preferences::Preferences
         show_appearance(&window, chosen);
         preferences.save();
     });
+}
+
+fn show_accent(window: &MainWindow, chosen: preferences::Accent) {
+    use preferences::Accent as Kept;
+    window.set_accent(match chosen {
+        Kept::Violet => Accent::Violet,
+        Kept::Blue => Accent::Blue,
+        Kept::Indigo => Accent::Indigo,
+        Kept::Teal => Accent::Teal,
+        Kept::Green => Accent::Green,
+        Kept::Amber => Accent::Amber,
+        Kept::Rose => Accent::Rose,
+    });
+    window.set_accent_index(chosen.index());
 }
 
 fn show_appearance(window: &MainWindow, chosen: preferences::Appearance) {
