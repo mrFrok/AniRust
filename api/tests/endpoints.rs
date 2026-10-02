@@ -1486,3 +1486,228 @@ async fn friend_requests_read_their_own_codes() {
         "already blocked is what was asked for"
     );
 }
+
+// ---- A5: channels -----------------------------------------------------------
+
+endpoint! {
+    channel: "GET" "/channel/4",
+    token: true,
+    reply: json!({ "code": 0, "channel": { "id": 4 } }),
+    call: |c| c.channel(4),
+}
+
+endpoint! {
+    blog: "GET" "/channel/blog/5",
+    token: true,
+    reply: json!({ "code": 0, "channel": {} }),
+    call: |c| c.blog(5),
+}
+
+endpoint! {
+    channel_articles: "POST" "/channel/4/article/all/0",
+    token: true,
+    reply: page(),
+    call: |c| c.channel_articles(4, 0),
+}
+
+endpoint! {
+    channels: "POST" "/channel/all/0",
+    token: true,
+    reply: page(),
+    call: |c| c.channels(&anirust_api::ChannelFilter::default(), 0),
+}
+
+endpoint! {
+    channel_recommendations: "GET" "/channel/recommendations/0",
+    token: true,
+    ["is_blog" = "false"]
+    reply: page(),
+    call: |c| c.channel_recommendations(0, Some(false), None),
+}
+
+endpoint! {
+    subscriptions: "GET" "/channel/subscription/all/0",
+    token: true,
+    ["sort" = "1"]
+    reply: page(),
+    call: |c| c.subscriptions(0, 1),
+}
+
+endpoint! {
+    subscription_count: "GET" "/channel/subscription/count",
+    token: true,
+    reply: json!({ "code": 0, "subscription_count": 4 }),
+    call: |c| c.subscription_count(),
+}
+
+endpoint! {
+    channel_mute: "POST" "/channel/mute/4",
+    token: true,
+    reply: ack(),
+    call: |c| c.channel_mute(4),
+}
+
+endpoint! {
+    channel_unmute: "POST" "/channel/unmute/4",
+    token: true,
+    reply: ack(),
+    call: |c| c.channel_unmute(4),
+}
+
+endpoint! {
+    muted_channels: "GET" "/channel/mute/all/0",
+    token: true,
+    reply: page(),
+    call: |c| c.muted_channels(0),
+}
+
+endpoint! {
+    channel_create: "POST" "/channel/create",
+    token: true,
+    reply: json!({ "code": 0, "channel": { "id": 8 } }),
+    call: |c| c.channel_create(&anirust_api::ChannelSettings::default()),
+}
+
+endpoint! {
+    blog_create: "POST" "/channel/blog/create",
+    token: true,
+    reply: json!({ "code": 0, "channel": {} }),
+    call: |c| c.blog_create(),
+}
+
+endpoint! {
+    channel_edit: "POST" "/channel/edit/4",
+    token: true,
+    reply: json!({ "code": 0, "channel": {} }),
+    call: |c| c.channel_edit(4, &anirust_api::ChannelSettings::default()),
+}
+
+endpoint! {
+    channel_cover_delete: "POST" "/channel/cover/delete/4",
+    token: true,
+    reply: ack(),
+    call: |c| c.channel_cover_delete(4),
+}
+
+endpoint! {
+    editor_available: "GET" "/channel/4/editor/available",
+    token: true,
+    ["is_suggestion" = "false"] ["is_edit_mode" = "true"]
+    reply: json!({ "code": 0, "media_upload_token": "t" }),
+    call: |c| c.editor_available(4, false, true),
+}
+
+endpoint! {
+    editor_channels: "GET" "/channel/editor/available/all",
+    token: true,
+    reply: json!({ "code": 0, "channels": [] }),
+    call: |c| c.editor_channels(None),
+}
+
+endpoint! {
+    channel_members: "POST" "/channel/4/permission/all/0",
+    token: true,
+    reply: page(),
+    call: |c| c.channel_members(4, 1, 0),
+}
+
+endpoint! {
+    channel_blocked: "GET" "/channel/4/block/all/0",
+    token: true,
+    reply: page(),
+    call: |c| c.channel_blocked(4, 0),
+}
+
+endpoint! {
+    channel_block: "GET" "/channel/4/block/5",
+    token: true,
+    reply: json!({ "code": 0, "channel_block": null }),
+    call: |c| c.channel_block(4, 5),
+}
+
+#[tokio::test]
+async fn channel_management_bodies() {
+    let server = MockServer::start().await;
+    for (route, body) in [
+        (
+            "/channel/4/permission/manage",
+            json!({ "target_profile_id": 5, "permission": 2 }),
+        ),
+        (
+            "/channel/4/block/manage",
+            json!({
+                "target_profile_id": 5, "is_blocked": true, "is_perm_blocked": false,
+                "reason": "спам", "is_reason_showing_enabled": true, "expire_date": null
+            }),
+        ),
+        (
+            "/channel/create",
+            json!({
+                "title": "Канал", "description": "", "is_commenting_enabled": true,
+                "is_article_suggestion_enabled": false, "is_episode_channel_widget_enabled": null,
+                "episode_channel_widget_article_count": null,
+                "episode_channel_widget_popularity_period": null,
+                "episode_channel_widget_sort": null
+            }),
+        ),
+    ] {
+        Mock::given(method("POST"))
+            .and(path(route))
+            .and(body_json(body))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({ "code": 0, "channel": {} })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+    let c = client(&server);
+    c.channel_permission(4, 5, Some(2))
+        .await
+        .expect("a permission");
+    c.channel_block_manage(
+        4,
+        &anirust_api::ChannelBlockRequest {
+            target_profile_id: 5,
+            is_blocked: true,
+            reason: "спам".into(),
+            is_reason_showing_enabled: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("a block");
+    c.channel_create(&anirust_api::ChannelSettings {
+        title: "Канал".into(),
+        is_commenting_enabled: true,
+        ..Default::default()
+    })
+    .await
+    .expect("a channel");
+}
+
+#[tokio::test]
+async fn channel_pictures_go_up_as_the_image_part() {
+    let server = MockServer::start().await;
+    for route in ["/channel/avatar/upload/4", "/channel/cover/upload/4"] {
+        Mock::given(method("POST"))
+            .and(path(route))
+            .and(body_string_contains("name=\"image\"; filename=\"pic.png\""))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({ "code": 0, "url": "https://x/y.png" })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+    let c = client(&server);
+    let url = c
+        .channel_avatar_upload(4, "pic.png", "image/png", b"P".to_vec())
+        .await
+        .expect("an avatar");
+    assert_eq!(url, "https://x/y.png");
+    c.channel_cover_upload(4, "pic.png", "image/png", b"P".to_vec())
+        .await
+        .expect("a cover");
+}

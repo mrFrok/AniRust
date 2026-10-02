@@ -60,8 +60,9 @@ pub(crate) mod serde_ext;
 
 pub use client::{Ack, Client, ClientBuilder, DEFAULT_BASE_URL};
 pub use endpoints::{
-    ArticleEntryPoint, ArticleEventKind, Badge, ChannelSearch, DubberChannel, EpisodeSort,
-    FriendOutcome, LoginChange, ProfileInfo, SignInError, Socials,
+    ArticleEntryPoint, ArticleEventKind, Badge, ChannelBlock, ChannelBlockRequest, ChannelFilter,
+    ChannelSearch, ChannelSettings, DubberChannel, EpisodeSort, FriendOutcome, LoginChange,
+    ProfileInfo, SignInError, Socials,
 };
 pub use error::{ApiCode, Error, Result};
 pub use models::{

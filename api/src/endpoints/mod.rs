@@ -19,6 +19,7 @@ use crate::models::Page;
 
 mod account;
 mod article;
+mod channel;
 mod comment;
 mod discover;
 mod episode;
@@ -30,6 +31,7 @@ mod release;
 
 pub use account::SignInError;
 pub use article::{ArticleEntryPoint, ArticleEventKind};
+pub use channel::{ChannelBlock, ChannelBlockRequest, ChannelFilter, ChannelSettings};
 pub use discover::ChannelSearch;
 pub use episode::{DubberChannel, EpisodeSort};
 pub use people::{Badge, FriendOutcome, LoginChange, ProfileInfo, Socials};
