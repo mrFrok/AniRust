@@ -13,11 +13,12 @@ use std::rc::Rc;
 use slint::{ComponentHandle, Model, VecModel};
 
 use anirust_api::{
-    Client, Collection, CollectionSort, Filter, FilterSort, ProfileList, Release, SearchBy,
+    Channel, ChannelSearch, Client, Collection, CollectionSort, Filter, FilterSort, Profile,
+    ProfileList, Release, SearchBy,
 };
 
 use crate::session::Session;
-use crate::{MainWindow, ReleaseCard, tasks};
+use crate::{MainWindow, PersonItem, ReleaseCard, people, tasks};
 
 /// How many results one page of browsing shows.
 ///
@@ -223,6 +224,9 @@ pub struct HomeState {
     collections: Vec<Collection>,
     /// Who is signed in, for the tab of the account's own collections.
     account: Rc<RefCell<Session>>,
+    /// People and channels a search of the whole catalogue found.
+    found_people: Vec<Profile>,
+    found_channels: Vec<Channel>,
 }
 
 impl HomeState {
@@ -237,6 +241,16 @@ impl HomeState {
     pub(crate) fn next_generation(&mut self) -> u64 {
         self.generation += 1;
         self.generation
+    }
+
+    #[must_use]
+    pub fn found_person(&self, index: usize) -> Option<i64> {
+        self.found_people.get(index).map(|p| p.id)
+    }
+
+    #[must_use]
+    pub fn found_channel(&self, index: usize) -> Option<Channel> {
+        self.found_channels.get(index).cloned()
     }
 
     /// The collection a card stands for, when the grid is of collections.
@@ -264,6 +278,7 @@ pub fn open(
     window.set_searching(false);
     window.set_notice("".into());
     window.set_collection_open(false);
+    clear_found(window, state);
 
     let (destination, tab, genre, generation) = {
         let mut state = state.borrow_mut();
@@ -504,6 +519,40 @@ pub fn select_genre(
     open(window, state, client, http);
 }
 
+/// What a search looks through: the tab's own list where the tab is one,
+/// the whole catalogue otherwise.
+enum Scope {
+    /// Releases, and the people and channels by that name.
+    Everything,
+    List(ProfileList),
+    History,
+    Favourites,
+    Collections,
+    MyCollections,
+}
+
+fn scope_of(destination: Destination, tab: usize) -> Scope {
+    match (destination, tab) {
+        (Destination::Saved, 5) => Scope::History,
+        (Destination::Saved, 6) => Scope::Favourites,
+        (Destination::Saved, 7) => Scope::MyCollections,
+        (Destination::Saved, tab) => Scope::List(
+            ProfileList::ALL
+                .get(tab)
+                .copied()
+                .unwrap_or(ProfileList::Watching),
+        ),
+        (Destination::Browse, 4) => Scope::Collections,
+        _ => Scope::Everything,
+    }
+}
+
+/// What a search found.
+enum Found {
+    Releases(Vec<Release>, Vec<Profile>, Vec<Channel>),
+    Collections(Vec<Collection>),
+}
+
 /// Searches, or goes back to the default list when the query is emptied.
 pub fn search(
     window: &MainWindow,
@@ -518,8 +567,26 @@ pub fn search(
         return;
     }
 
+    let (scope, me) = {
+        let state = state.borrow();
+        let me = state.account.borrow().id;
+        (scope_of(state.destination, state.tab), me)
+    };
+    // The account's own lists are searched only with the account; without
+    // it, the search is of everything.
+    let scope = if client.is_authenticated() {
+        scope
+    } else {
+        match scope {
+            Scope::Collections => Scope::Collections,
+            _ => Scope::Everything,
+        }
+    };
+
     window.set_searching(true);
+    window.set_collection_open(false);
     window.set_results_loading(true);
+    clear_found(window, state);
 
     let weak = window.as_weak();
     let state = Rc::clone(state);
@@ -527,11 +594,62 @@ pub fn search(
     let generation = state.borrow_mut().next_generation();
 
     tasks::spawn(
-        async move { api.search_releases(&query, SearchBy::Title, 0).await },
+        async move {
+            let releases = |page: anirust_api::Result<anirust_api::Page<Release>>| {
+                page.map(|p| Found::Releases(p.content, Vec::new(), Vec::new()))
+            };
+            match scope {
+                Scope::Everything => {
+                    let releases = api.search_releases(&query, SearchBy::Title, 0).await?;
+                    // The others are extras: a failure there leaves them out
+                    // rather than failing the search.
+                    let people = api
+                        .search_profiles(&query, 0)
+                        .await
+                        .map(|p| p.content)
+                        .unwrap_or_default();
+                    let channels = api
+                        .search_channels(&query, &ChannelSearch::default(), 0)
+                        .await
+                        .map(|p| p.content)
+                        .unwrap_or_default();
+                    Ok(Found::Releases(releases, people, channels))
+                }
+                Scope::List(list) => releases(api.search_list(list, &query, 0).await),
+                Scope::History => releases(api.search_history(&query, 0).await),
+                Scope::Favourites => releases(api.search_favorites(&query, 0).await),
+                Scope::Collections => api
+                    .search_collections(&query, 0)
+                    .await
+                    .map(|p| Found::Collections(p.content)),
+                Scope::MyCollections => {
+                    let mut mine = api
+                        .search_profile_collections(me, 0, &query, 0)
+                        .await?
+                        .content;
+                    let favourites = api.search_favorite_collections(&query, 0).await;
+                    for collection in favourites.map(|p| p.content).unwrap_or_default() {
+                        if mine.iter().all(|c| c.id != collection.id) {
+                            mine.push(collection);
+                        }
+                    }
+                    Ok(Found::Collections(mine))
+                }
+            }
+        },
         move |found| {
             let Some(window) = weak.upgrade() else { return };
+            if state.borrow().generation != generation {
+                return;
+            }
             match found {
-                Ok(releases) => show(&window, &state, releases, generation, http),
+                Ok(Found::Releases(releases, people, channels)) => {
+                    show_found(&window, &state, people, channels, &http);
+                    show(&window, &state, releases, generation, http);
+                }
+                Ok(Found::Collections(collections)) => {
+                    show_collections(&window, &state, collections, generation, http);
+                }
                 Err(error) => {
                     tracing::error!(%error, "search failed");
                     window.set_results_loading(false);
@@ -539,6 +657,35 @@ pub fn search(
             }
         },
     );
+}
+
+fn clear_found(window: &MainWindow, state: &Rc<RefCell<HomeState>>) {
+    window.set_found_people(slint::ModelRc::new(VecModel::<PersonItem>::default()));
+    window.set_found_channels(slint::ModelRc::new(VecModel::<PersonItem>::default()));
+    let mut state = state.borrow_mut();
+    state.found_people.clear();
+    state.found_channels.clear();
+}
+
+fn show_found(
+    window: &MainWindow,
+    state: &Rc<RefCell<HomeState>>,
+    people: Vec<Profile>,
+    channels: Vec<Channel>,
+    http: &reqwest::Client,
+) {
+    let faces = people::people_model(&people, http);
+    window.set_found_people(slint::ModelRc::from(faces));
+    let faces = people::faces(
+        channels
+            .iter()
+            .map(|c| (c.title.as_str(), c.avatar.as_str(), false)),
+        http,
+    );
+    window.set_found_channels(slint::ModelRc::from(faces));
+    let mut state = state.borrow_mut();
+    state.found_people = people;
+    state.found_channels = channels;
 }
 
 /// Puts a list of releases on the screen and starts fetching their posters.

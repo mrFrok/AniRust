@@ -785,6 +785,30 @@ fn wire_collections(window: &MainWindow, app: &Rc<App>) {
 
 fn wire_home(window: &MainWindow, app: &Rc<App>) {
     let weak = window.as_weak();
+
+    on_row!(window, app, on_open_found_person, |window, app, index| {
+        let found = app.home.borrow().found_person(index);
+        if let Some(id) = found {
+            open_person(&window, app, id);
+        }
+    });
+
+    // A channel opens on the feed, which is where channels live.
+    on_row!(window, app, on_open_found_channel, |window, app, index| {
+        let found = app.home.borrow().found_channel(index);
+        if let Some(channel) = found {
+            window.set_screen("home".into());
+            home::select_destination(
+                &window,
+                &app.home,
+                Rc::clone(&app.client),
+                app.http.clone(),
+                FEED_DESTINATION as usize,
+            );
+            feed::open_found_channel(&window, &app.feed, &app.client, app.http.clone(), channel);
+        }
+    });
+
     window.on_search({
         let app = Rc::clone(app);
         let weak = weak.clone();

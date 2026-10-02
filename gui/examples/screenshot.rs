@@ -26,7 +26,7 @@
 //! `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`,
 //! `profile-light`, `home-downloading`, `feed`, `feed-latest`,
 //! `feed-signed-out`, `feed-empty`, `feed-channels`, `feed-channel`, `collections`, `collection`,
-//! `collection-editor`, `collection-picker`, `comments`, `comments-replying`,
+//! `collection-editor`, `collection-picker`, `search`, `comments`, `comments-replying`,
 //! `comments-signed-out`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
@@ -86,6 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || state == "schedule"
             || state.starts_with("notifications")
             || state.starts_with("collection")
+            || state == "search"
         {
             "home".into()
         } else {
@@ -236,6 +237,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|t| slint::SharedString::from(*t))
                 .collect::<Vec<_>>(),
         )));
+    }
+    // A search of everything: people and channels over the releases.
+    if state == "search" {
+        ui.set_query("демон".into());
+        ui.set_searching(true);
+        let face = |name: &str, online: bool| PersonItem {
+            login: name.into(),
+            avatar: slint::Image::default(),
+            avatar_loaded: false,
+            online,
+        };
+        ui.set_found_people(slint::ModelRc::new(slint::VecModel::from(vec![
+            face("demon_lord", true),
+            face("демонёнок", false),
+            face("issei_hyodo", false),
+        ])));
+        ui.set_found_channels(slint::ModelRc::new(slint::VecModel::from(vec![face(
+            "Демоны старшей школы — фан-канал",
+            false,
+        )])));
     }
     // The bell with a count, and its sheet open over the grid.
     if state.starts_with("notifications") {

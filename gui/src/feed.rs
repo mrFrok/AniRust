@@ -212,6 +212,17 @@ pub fn open_listed_channel(
     open_channel(window, state, client, http, channel);
 }
 
+/// Opens a channel's page from elsewhere: a search that found it.
+pub fn open_found_channel(
+    window: &MainWindow,
+    state: &Rc<RefCell<FeedState>>,
+    client: &Client,
+    http: reqwest::Client,
+    channel: Channel,
+) {
+    open_channel(window, state, client, http, channel);
+}
+
 fn open_channel(
     window: &MainWindow,
     state: &Rc<RefCell<FeedState>>,

@@ -287,25 +287,39 @@ fn reload(
 }
 
 /// Rows for a list of people, with their pictures fetched as they come.
-fn people_model(people: &[Profile], http: &reqwest::Client) -> Rc<VecModel<PersonItem>> {
-    let model = Rc::new(VecModel::from(
+pub(crate) fn people_model(people: &[Profile], http: &reqwest::Client) -> Rc<VecModel<PersonItem>> {
+    faces(
         people
             .iter()
-            .map(|p| PersonItem {
-                login: p.login.as_str().into(),
+            .map(|p| (p.login.as_str(), p.avatar.as_str(), p.is_online)),
+        http,
+    )
+}
+
+/// Rows of a name and a picture — people, or channels drawn the same way —
+/// with the pictures fetched as they come.
+pub(crate) fn faces<'a>(
+    rows: impl Iterator<Item = (&'a str, &'a str, bool)>,
+    http: &reqwest::Client,
+) -> Rc<VecModel<PersonItem>> {
+    let rows: Vec<_> = rows.collect();
+    let model = Rc::new(VecModel::from(
+        rows.iter()
+            .map(|(name, _, online)| PersonItem {
+                login: (*name).into(),
                 avatar: slint::Image::default(),
                 avatar_loaded: false,
-                online: p.is_online,
+                online: *online,
             })
             .collect::<Vec<_>>(),
     ));
-    for (index, person) in people.iter().enumerate() {
-        if !person.avatar.starts_with("http") {
+    for (index, (_, avatar, _)) in rows.iter().enumerate() {
+        if !avatar.starts_with("http") {
             continue;
         }
         let model = Rc::clone(&model);
         tasks::spawn(
-            tasks::fetch_image(http.clone(), person.avatar.clone()),
+            tasks::fetch_image(http.clone(), (*avatar).to_owned()),
             move |result| {
                 let Ok(buffer) = result else { return };
                 if let Some(mut row) = model.row_data(index) {

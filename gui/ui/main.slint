@@ -84,6 +84,12 @@ export component MainWindow inherits Window {
     callback set-release-list(int);
     callback toggle-release-favourite();
 
+    // ---- search beyond releases -------------------------------------------
+    in property <[PersonItem]> found-people: [];
+    in property <[PersonItem]> found-channels: [];
+    callback open-found-person(int);
+    callback open-found-channel(int);
+
     // ---- collections -----------------------------------------------------
     in property <bool> collection-open: false;
     in property <CollectionItem> open-collection-item;
@@ -511,6 +517,11 @@ export component MainWindow inherits Window {
             open-collection-creator => { root.open-collection-creator(); }
             edit-collection => { root.edit-collection(); }
             new-collection => { root.new-collection(-1); }
+
+            found-people: root.found-people;
+            found-channels: root.found-channels;
+            open-found-person(i) => { root.open-found-person(i); }
+            open-found-channel(i) => { root.open-found-channel(i); }
 
             search(q) => { root.search(q); }
             open-downloads => { root.select-destination(5); }

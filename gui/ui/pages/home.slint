@@ -16,7 +16,8 @@ import { MaterialPalette, SecondaryTabBar, FilterChip, NavigationItem, OutlineBu
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
-import { ReleaseCard, CollectionItem } from "../structs.slint";
+import { ReleaseCard, CollectionItem, PersonItem } from "../structs.slint";
+import { PersonChip } from "../components/person-chip.slint";
 import { PosterCard } from "../components/release-cards.slint";
 
 /// A genre, as one of a row where exactly one of them is chosen.
@@ -35,6 +36,46 @@ component GenreChip inherits FilterChip {
         if (self.checked == root.selected) { return; }
         if (self.checked) { root.picked(); }
         self.checked = root.selected;
+    }
+}
+
+/// A labelled row of people or channels, scrolled sideways.
+component SearchRow inherits VerticalLayout {
+    in property <string> label;
+    in property <[PersonItem]> items;
+    callback clicked(int);
+
+    padding-left: Spacing.base;
+    padding-right: Spacing.base;
+    padding-top: Spacing.small;
+    spacing: Spacing.tight;
+    // Its own height and no more: the grid below is what takes the rest.
+    vertical-stretch: 0;
+
+    Text {
+        text: root.label;
+        color: MaterialPalette.on-surface-variant;
+        font-size: Typography.label-large-size;
+    }
+
+    row := Flickable {
+        min-height: 52px;
+        max-height: 52px;
+        vertical-stretch: 0;
+        interactive: self.content-width > self.width;
+        content-width: chips.preferred-width;
+
+        chips := HorizontalLayout {
+            height: 52px;
+            spacing: Spacing.small;
+            alignment: start;
+
+            for item[index] in root.items: PersonChip {
+                width: 240px;
+                person: item;
+                clicked => { root.clicked(index); }
+            }
+        }
     }
 }
 
@@ -194,6 +235,13 @@ export component HomePage inherits Rectangle {
     callback open-collection-creator();
     callback edit-collection();
     callback new-collection();
+
+    /// People and channels a search found beside the releases. Only a search
+    /// of the whole catalogue looks for them.
+    in property <[PersonItem]> found-people: [];
+    in property <[PersonItem]> found-channels: [];
+    callback open-found-person(int);
+    callback open-found-channel(int);
 
     callback open-downloads();
     callback search(string);
@@ -521,6 +569,21 @@ export component HomePage inherits Rectangle {
                 font-size: Typography.label-medium-size;
                 vertical-alignment: center;
             }
+        }
+
+        // Who and which channels go by that name, a row each, scrolled
+        // sideways: the releases are what most searches are after, and these
+        // should not push them off the screen.
+        if root.searching && root.found-people.length > 0: SearchRow {
+            label: Tr.found-people;
+            items: root.found-people;
+            clicked(i) => { root.open-found-person(i); }
+        }
+
+        if root.searching && root.found-channels.length > 0: SearchRow {
+            label: Tr.feed-channels;
+            items: root.found-channels;
+            clicked(i) => { root.open-found-channel(i); }
         }
 
         // Loading, with nothing yet to show under it.

@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Someone, as a row of people shows them.
+
+import { MaterialPalette } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { PersonItem } from "../structs.slint";
+
+/// A person in a row of people: face, name, and a dot when online.
+export component PersonChip inherits Rectangle {
+    in property <PersonItem> person;
+    callback clicked;
+
+    height: 52px;
+    border-radius: Shape.medium;
+    background: touch.has-hover ? MaterialPalette.surface-container-high : MaterialPalette.surface-container;
+
+    HorizontalLayout {
+        padding-left: Spacing.small;
+        padding-right: Spacing.medium;
+        spacing: Spacing.medium;
+
+        VerticalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 18px;
+                background: MaterialPalette.primary-container;
+                clip: true;
+
+                Image {
+                    source: root.person.avatar;
+                    image-fit: cover;
+                    width: 100%;
+                    height: 100%;
+                    visible: root.person.avatar-loaded;
+                }
+            }
+        }
+
+        Text {
+            text: root.person.login;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.body-large-size;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+
+        if root.person.online: VerticalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: MaterialPalette.tertiary;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
