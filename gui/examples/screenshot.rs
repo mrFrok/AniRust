@@ -25,7 +25,7 @@
 //! `theatre`, `downloads`, `sign-in`, `failed`, `saved`, `loading`,
 //! `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`,
 //! `profile-light`, `home-downloading`, `feed`, `feed-latest`,
-//! `feed-signed-out`, `feed-empty`, `comments`, `comments-replying`,
+//! `feed-signed-out`, `feed-empty`, `feed-channels`, `feed-channel`, `comments`, `comments-replying`,
 //! `comments-signed-out`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
@@ -170,9 +170,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if state.starts_with("feed") {
         ui.set_destination(3);
         ui.set_signed_in(state != "feed-signed-out");
-        ui.set_feed_tab(i32::from(state == "feed-latest"));
+        ui.set_feed_tab(match state.as_str() {
+            "feed-latest" => 1,
+            "feed-channels" => 2,
+            _ => 0,
+        });
         if state != "feed-signed-out" && state != "feed-empty" {
             ui.set_posts(slint::ModelRc::new(slint::VecModel::from(sample_posts())));
+        }
+        if state == "feed-channels" {
+            ui.set_feed_channels(slint::ModelRc::new(
+                slint::VecModel::from(sample_channels()),
+            ));
+            ui.set_subscription_count(2);
+        }
+        // A channel's own page: its header over its posts.
+        if state == "feed-channel" {
+            let mut channel = sample_channels().swap_remove(0);
+            channel.muted = true;
+            ui.set_open_channel_item(channel);
+            ui.set_channel_open(true);
         }
     }
     // The bell with a count, and its sheet open over the grid.
@@ -703,4 +720,38 @@ fn option(label: &str, episodes: i32, is_sub: bool) -> PickerOption {
         is_sub,
         pinned: false,
     }
+}
+
+fn sample_channels() -> Vec<ChannelItem> {
+    let c = |title: &str, description: &str, subscribers: i32, subscribed: bool, blog: bool| {
+        ChannelItem {
+            title: title.into(),
+            description: description.into(),
+            avatar: slint::Image::default(),
+            avatar_loaded: false,
+            subscribers,
+            subscribed,
+            muted: false,
+            blog,
+            verified: !blog,
+        }
+    };
+    vec![
+        c(
+            "Новостной канал",
+            "Анонсы, даты выхода и новости индустрии.",
+            48_210,
+            true,
+            false,
+        ),
+        c("user7", "Пишу о том, что смотрю.", 312, true, true),
+        c(
+            "Обзоры сезона",
+            "Что смотреть этой весной: коротко и по делу, без спойлеров.",
+            9_870,
+            false,
+            false,
+        ),
+        c("Клипы и опенинги", "", 1_204, false, false),
+    ]
 }

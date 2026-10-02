@@ -18,7 +18,7 @@ import { MaterialPalette, SecondaryTabBar, CircularProgressIndicator, TonalButto
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
-import { FeedPost } from "../structs.slint";
+import { FeedPost, ChannelItem } from "../structs.slint";
 
 /// An icon and a number beside it.
 component Tally inherits HorizontalLayout {
@@ -53,6 +53,7 @@ component PostCard inherits Rectangle {
     callback toggle-subscription();
     callback open-comments();
     callback toggle-like();
+    callback open-channel();
 
     /// Folded by default when the post is long enough to need it. Each card
     /// keeps its own: unfolding one post is not a reason to unfold them all.
@@ -92,10 +93,15 @@ component PostCard inherits Rectangle {
 
                 Text {
                     text: root.post.channel;
-                    color: MaterialPalette.on-surface;
+                    color: channel-touch.has-hover ? MaterialPalette.primary : MaterialPalette.on-surface;
                     font-size: Typography.title-small-size;
                     font-weight: Typography.title-small-weight-em;
                     overflow: elide;
+
+                    channel-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.open-channel(); }
+                    }
                 }
 
                 Text {
@@ -245,6 +251,113 @@ component PostCard inherits Rectangle {
     height: layout.preferred-height;
 }
 
+/// A channel: face, name and count, and its two switches. Used for the rows
+/// of the list and, larger, as the head of a channel's own page.
+component ChannelRow inherits Rectangle {
+    in property <ChannelItem> channel;
+    in property <bool> heading: false;
+    callback open();
+    callback toggle-subscription();
+    callback toggle-mute();
+
+    height: layout.preferred-height;
+    border-radius: Shape.large;
+    background: !root.heading && touch.has-hover
+        ? MaterialPalette.surface-container-high
+        : MaterialPalette.surface-container;
+
+    touch := TouchArea {
+        z: -1;
+        mouse-cursor: root.heading ? default : pointer;
+        clicked => { if (!root.heading) { root.open(); } }
+    }
+
+    layout := HorizontalLayout {
+        padding: Spacing.base;
+        spacing: Spacing.medium;
+
+        VerticalLayout {
+            alignment: start;
+
+            Rectangle {
+                width: root.heading ? 64px : 44px;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: MaterialPalette.primary-container;
+                clip: true;
+
+                Image {
+                    source: root.channel.avatar;
+                    image-fit: cover;
+                    width: 100%;
+                    height: 100%;
+                    visible: root.channel.avatar-loaded;
+                }
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: Spacing.hair;
+
+            Text {
+                text: root.channel.title;
+                color: MaterialPalette.on-surface;
+                font-size: root.heading ? Typography.title-large-size : Typography.title-small-size;
+                font-weight: Typography.title-small-weight-em;
+                overflow: elide;
+            }
+
+            Text {
+                text: Tr.subscribers-label(root.channel.subscribers);
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.label-medium-size;
+            }
+
+            // In full on the channel's page; one line in a list.
+            if root.channel.description != "": Text {
+                text: root.channel.description;
+                color: root.heading ? MaterialPalette.on-surface : MaterialPalette.on-surface-variant;
+                font-size: root.heading ? Typography.body-medium-size : Typography.body-small-size;
+                wrap: root.heading ? word-wrap : no-wrap;
+                overflow: elide;
+            }
+        }
+
+        HorizontalLayout {
+            alignment: end;
+            spacing: Spacing.tight;
+
+            // Muting is for a channel the account follows but wants quiet:
+            // its posts stay reachable and leave the feed.
+            if root.channel.subscribed: VerticalLayout {
+                alignment: center;
+                TextButton {
+                    text: root.channel.muted ? Tr.unmute : Tr.mute;
+                    clicked => { root.toggle-mute(); }
+                }
+            }
+
+            if !root.channel.subscribed: VerticalLayout {
+                alignment: center;
+                TonalButton {
+                    text: Tr.subscribe;
+                    clicked => { root.toggle-subscription(); }
+                }
+            }
+
+            if root.channel.subscribed: VerticalLayout {
+                alignment: center;
+                TextButton {
+                    text: Tr.subscribed;
+                    clicked => { root.toggle-subscription(); }
+                }
+            }
+        }
+    }
+}
+
 export component FeedPage inherits Rectangle {
     in property <[FeedPost]> posts: [];
     in property <bool> loading: false;
@@ -259,6 +372,20 @@ export component FeedPage inherits Rectangle {
     callback open-comments(int);
     callback toggle-like(int);
     callback sign-in();
+
+    /// The channels tab: subscriptions, then suggestions, in one list.
+    in property <[ChannelItem]> channels: [];
+    /// How many of `channels` are subscriptions; the rest are suggestions.
+    in property <int> subscription-count: 0;
+    /// A channel's own page, over the tabs, when one is open.
+    in property <bool> channel-open: false;
+    in property <ChannelItem> channel;
+    callback open-post-channel(int);
+    callback open-channel(int);
+    callback close-channel();
+    /// -1 the open channel; otherwise a row of the list.
+    callback toggle-channel-subscription(int);
+    callback toggle-channel-mute(int);
 
     background: MaterialPalette.surface;
 
@@ -276,6 +403,9 @@ export component FeedPage inherits Rectangle {
     /// next one.
     property <length> measure: 680px;
 
+    /// The channels tab is up: a list of channels rather than of posts.
+    property <bool> listing-channels: !root.channel-open && root.tab == 2;
+
     VerticalLayout {
         // Over the column of posts rather than across the window: the tabs
         // name what is in that column, and an underline a metre from the text
@@ -285,7 +415,44 @@ export component FeedPage inherits Rectangle {
         // it takes the room up to the column's width and the spacers share
         // what is left on either side. Asking for `root.width` instead would
         // have the page's size depend on itself.
-        HorizontalLayout {
+        if root.channel-open: VerticalLayout {
+            padding: Spacing.base;
+            padding-bottom: 0px;
+            spacing: Spacing.small;
+
+            // Capped by the layout, not computed from the page's width: the
+            // page reading its own width is a loop.
+            HorizontalLayout {
+                Rectangle { horizontal-stretch: 1; }
+
+                VerticalLayout {
+                    horizontal-stretch: 1000;
+                    max-width: root.measure;
+                    spacing: Spacing.small;
+
+                    HorizontalLayout {
+                        alignment: start;
+
+                        TextButton {
+                            icon: @image-url("../icons/back.svg");
+                            text: Tr.back-to-feed;
+                            clicked => { root.close-channel(); }
+                        }
+                    }
+
+                    ChannelRow {
+                        heading: true;
+                        channel: root.channel;
+                        toggle-subscription => { root.toggle-channel-subscription(-1); }
+                        toggle-mute => { root.toggle-channel-mute(-1); }
+                    }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+
+        if !root.channel-open: HorizontalLayout {
             padding-top: Spacing.small;
             padding-left: Spacing.base;
             padding-right: Spacing.base;
@@ -295,7 +462,7 @@ export component FeedPage inherits Rectangle {
             SecondaryTabBar {
                 horizontal-stretch: 1000;
                 max-width: root.measure;
-                items: [{ text: Tr.feed-mine }, { text: Tr.feed-latest }];
+                items: [{ text: Tr.feed-mine }, { text: Tr.feed-latest }, { text: Tr.feed-channels }];
 
                 // Pushed, not bound: the bar writes its own index on a click.
                 property <int> wanted: root.tab;
@@ -330,7 +497,45 @@ export component FeedPage inherits Rectangle {
             }
         }
 
-        if root.signed-in && root.loading && root.posts.length == 0: HorizontalLayout {
+        if root.signed-in && root.listing-channels: ScrollView {
+            vertical-stretch: 1;
+            content-height: channel-list.preferred-height + 2 * Spacing.base;
+
+            channel-list := VerticalLayout {
+                y: Spacing.base;
+                x: max(Spacing.base, (parent.width - self.width) / 2);
+                width: min(root.measure, parent.width - 2 * Spacing.base);
+                spacing: Spacing.small;
+                alignment: start;
+
+                if root.subscription-count > 0: Text {
+                    text: Tr.my-subscriptions;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-medium-size;
+                    font-weight: Typography.title-medium-weight-em;
+                }
+
+                for item[i] in root.channels: VerticalLayout {
+                    spacing: Spacing.small;
+
+                    if i == root.subscription-count: Text {
+                        text: Tr.recommended-channels;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.title-medium-size;
+                        font-weight: Typography.title-medium-weight-em;
+                    }
+
+                    ChannelRow {
+                        channel: item;
+                        open => { root.open-channel(i); }
+                        toggle-subscription => { root.toggle-channel-subscription(i); }
+                        toggle-mute => { root.toggle-channel-mute(i); }
+                    }
+                }
+            }
+        }
+
+        if root.signed-in && !root.listing-channels && root.loading && root.posts.length == 0: HorizontalLayout {
             vertical-stretch: 1;
             alignment: center;
 
@@ -347,9 +552,9 @@ export component FeedPage inherits Rectangle {
             }
         }
 
-        if root.signed-in && !root.loading && root.posts.length == 0: Text {
+        if root.signed-in && !root.listing-channels && !root.loading && root.posts.length == 0: Text {
             vertical-stretch: 1;
-            text: root.notice != "" ? root.notice : Tr.feed-empty;
+            text: root.notice != "" ? root.notice : (root.channel-open ? Tr.no-posts : Tr.feed-empty);
             color: MaterialPalette.on-surface-variant;
             font-size: Typography.body-large-size;
             horizontal-alignment: center;
@@ -357,7 +562,7 @@ export component FeedPage inherits Rectangle {
             wrap: word-wrap;
         }
 
-        if root.signed-in && root.posts.length > 0: ScrollView {
+        if root.signed-in && !root.listing-channels && root.posts.length > 0: ScrollView {
             vertical-stretch: 1;
             content-height: column.preferred-height + 2 * Spacing.base;
 
@@ -373,6 +578,7 @@ export component FeedPage inherits Rectangle {
                     toggle-subscription => { root.toggle-subscription(index); }
                     open-comments => { root.open-comments(index); }
                     toggle-like => { root.toggle-like(index); }
+                    open-channel => { root.open-post-channel(index); }
                 }
             }
         }

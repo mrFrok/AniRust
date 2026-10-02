@@ -223,3 +223,16 @@ export struct SwitchItem {
     label: string,
     on: bool,
 }
+
+/// A channel, in the list of them or heading its own page.
+export struct ChannelItem {
+    title: string,
+    description: string,
+    avatar: image,
+    avatar-loaded: bool,
+    subscribers: int,
+    subscribed: bool,
+    muted: bool,
+    blog: bool,
+    verified: bool,
+}

@@ -220,6 +220,18 @@ export global Tr {
     out property <string> block: lang == "ru" ? "Заблокировать" : "Block";
     out property <string> unblock: lang == "ru" ? "Разблокировать" : "Unblock";
     out property <string> friend-requests: lang == "ru" ? "Заявки в друзья" : "Friend requests";
+    out property <string> feed-channels: lang == "ru" ? "Каналы" : "Channels";
+    out property <string> my-subscriptions: lang == "ru" ? "Мои подписки" : "Following";
+    out property <string> recommended-channels: lang == "ru" ? "Рекомендуем" : "Suggested";
+    out property <string> mute: lang == "ru" ? "Заглушить" : "Mute";
+    out property <string> unmute: lang == "ru" ? "Включить" : "Unmute";
+    out property <string> back-to-feed: lang == "ru" ? "К ленте" : "Back to feed";
+    out property <string> no-posts: lang == "ru" ? "Записей пока нет." : "No posts yet.";
+    public pure function subscribers-label(n: int) -> string {
+        root.lang == "ru"
+            ? n + " " + root.plural(n, "подписчик", "подписчика", "подписчиков")
+            : n + (n == 1 ? " subscriber" : " subscribers")
+    }
     out property <string> not-in-list: lang == "ru" ? "Не в списке" : "Not in a list";
     out property <string> add-to-favourites: lang == "ru" ? "В избранное" : "Add to favourites";
     out property <string> remove-from-favourites: lang == "ru" ? "Убрать из избранного" : "Remove from favourites";

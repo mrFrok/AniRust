@@ -12,7 +12,7 @@ import { ProfilePage } from "pages/profile.slint";
 import { FeedPage } from "pages/feed.slint";
 import { CommentsSheet } from "components/comments.slint";
 import { NotificationsSheet } from "components/notifications.slint";
-import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem } from "structs.slint";
+import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -293,6 +293,15 @@ export component MainWindow inherits Window {
     callback select-feed-tab(int);
     callback toggle-subscription(int);
     callback toggle-like(int);
+    in property <[ChannelItem]> feed-channels: [];
+    in property <int> subscription-count: 0;
+    in property <bool> channel-open: false;
+    in property <ChannelItem> open-channel-item;
+    callback open-post-channel(int);
+    callback open-channel(int);
+    callback close-channel();
+    callback toggle-channel-subscription(int);
+    callback toggle-channel-mute(int);
 
     callback clear-finished-downloads();
 
@@ -371,6 +380,15 @@ export component MainWindow inherits Window {
             toggle-subscription(i) => { root.toggle-subscription(i); }
             open-comments(i) => { root.open-post-comments(i); }
             toggle-like(i) => { root.toggle-like(i); }
+            channels: root.feed-channels;
+            subscription-count: root.subscription-count;
+            channel-open: root.channel-open;
+            channel: root.open-channel-item;
+            open-post-channel(i) => { root.open-post-channel(i); }
+            open-channel(i) => { root.open-channel(i); }
+            close-channel => { root.close-channel(); }
+            toggle-channel-subscription(i) => { root.toggle-channel-subscription(i); }
+            toggle-channel-mute(i) => { root.toggle-channel-mute(i); }
             sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
         }
 

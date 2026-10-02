@@ -613,6 +613,57 @@ fn wire_feed(window: &MainWindow, app: &Rc<App>) {
             feed::toggle_subscription(&window, &app.feed, &app.client, index);
         }
     });
+
+    on_row!(window, app, on_open_post_channel, |window, app, index| {
+        feed::open_post_channel(&window, &app.feed, &app.client, app.http.clone(), index)
+    });
+    on_row!(window, app, on_open_channel, |window, app, index| {
+        feed::open_listed_channel(&window, &app.feed, &app.client, app.http.clone(), index)
+    });
+
+    window.on_close_channel({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            let signed_in = app.account.borrow().authenticated;
+            feed::close_channel(&window, &app.feed, &app.client, app.http.clone(), signed_in);
+        }
+    });
+
+    // Both act on a row, or on the open channel with -1.
+    window.on_toggle_channel_subscription({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            if !app.client.is_authenticated() {
+                window.set_sign_in_error("".into());
+                window.set_show_sign_in(true);
+                return;
+            }
+            feed::toggle_channel_subscription(
+                &window,
+                &app.feed,
+                &app.client,
+                app.http.clone(),
+                index,
+            );
+        }
+    });
+    window.on_toggle_channel_mute({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            if !app.client.is_authenticated() {
+                window.set_sign_in_error("".into());
+                window.set_show_sign_in(true);
+                return;
+            }
+            feed::toggle_channel_mute(&window, &app.feed, &app.client, app.http.clone(), index);
+        }
+    });
 }
 
 fn wire_home(window: &MainWindow, app: &Rc<App>) {

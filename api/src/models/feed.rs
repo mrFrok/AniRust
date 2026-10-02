@@ -44,6 +44,15 @@ pub struct Channel {
     pub is_subscribed: bool,
     #[serde(deserialize_with = "nullable")]
     pub subscriber_count: i64,
+    #[serde(deserialize_with = "nullable")]
+    pub article_count: i64,
+    /// The account follows the channel but hears nothing of its posts.
+    #[serde(deserialize_with = "nullable")]
+    pub is_muted: bool,
+    #[serde(deserialize_with = "nullable")]
+    pub is_creator: bool,
+    #[serde(deserialize_with = "nullable")]
+    pub is_administrator_or_higher: bool,
 }
 
 /// One block of a post's body.

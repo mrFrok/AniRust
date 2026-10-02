@@ -12,9 +12,9 @@ use std::rc::Rc;
 
 use slint::{ComponentHandle, Model, VecModel};
 
-use anirust_api::{Article, Client, CommentVote, Page};
+use anirust_api::{Article, Channel, Client, CommentVote, Page};
 
-use crate::{FeedPost, MainWindow, tasks};
+use crate::{ChannelItem, FeedPost, MainWindow, tasks};
 
 /// Which of the two feeds is up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -24,18 +24,25 @@ pub enum Tab {
     Mine,
     /// The newest posts from every channel.
     Latest,
+    /// Channels rather than posts: those followed, and suggestions.
+    Channels,
 }
 
 impl Tab {
     #[must_use]
     pub fn at(index: i32) -> Self {
-        if index == 1 { Self::Latest } else { Self::Mine }
+        match index {
+            1 => Self::Latest,
+            2 => Self::Channels,
+            _ => Self::Mine,
+        }
     }
 
     fn index(self) -> i32 {
         match self {
             Self::Mine => 0,
             Self::Latest => 1,
+            Self::Channels => 2,
         }
     }
 }
@@ -49,6 +56,11 @@ pub struct FeedState {
     generation: u64,
     articles: Vec<Article>,
     posts: Option<Rc<VecModel<FeedPost>>>,
+    /// The channels tab: subscriptions first, then suggestions.
+    channels: Vec<Channel>,
+    channel_items: Option<Rc<VecModel<ChannelItem>>>,
+    /// A channel's own page, when one is open over the tabs.
+    open_channel: Option<Channel>,
 }
 
 impl FeedState {
@@ -68,15 +80,23 @@ pub fn open(
     http: reqwest::Client,
     signed_in: bool,
 ) {
+    // A tab is never drawn under a channel's page.
     let (tab, generation) = {
         let mut state = state.borrow_mut();
+        state.open_channel = None;
         (state.tab, state.next_generation())
     };
+    window.set_channel_open(false);
     window.set_feed_tab(tab.index());
     window.set_feed_notice("".into());
 
     if !signed_in {
         window.set_posts(slint::ModelRc::new(VecModel::<FeedPost>::default()));
+        return;
+    }
+
+    if tab == Tab::Channels {
+        load_channels(window, state, client, http, generation);
         return;
     }
 
@@ -89,7 +109,7 @@ pub fn open(
         async move {
             match tab {
                 Tab::Mine => api.feed(0).await,
-                Tab::Latest => api.feed_latest(0).await,
+                Tab::Latest | Tab::Channels => api.feed_latest(0).await,
             }
         },
         move |page: anirust_api::Result<Page<Article>>| {
@@ -107,6 +127,319 @@ pub fn open(
             }
         },
     );
+}
+
+// ---------------------------------------------------------------------------
+// Channels
+// ---------------------------------------------------------------------------
+
+/// Loads the channels tab: the account's subscriptions, then suggestions it
+/// does not follow yet.
+fn load_channels(
+    window: &MainWindow,
+    state: &Rc<RefCell<FeedState>>,
+    client: &Client,
+    http: reqwest::Client,
+    generation: u64,
+) {
+    window.set_feed_loading(true);
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    let api = client.clone();
+    tasks::spawn(
+        async move {
+            let mine = api
+                .subscriptions(0, 1)
+                .await
+                .map(|p| p.content)
+                .unwrap_or_default();
+            let suggested = api
+                .channel_recommendations(0, Some(false), Some(true))
+                .await
+                .map(|p| p.content)
+                .unwrap_or_default();
+            (mine, suggested)
+        },
+        move |(mine, suggested)| {
+            let Some(window) = weak.upgrade() else { return };
+            if state.borrow().generation != generation {
+                return;
+            }
+            window.set_feed_loading(false);
+            let count = i32::try_from(mine.len()).unwrap_or(0);
+            let mut all = mine;
+            all.extend(suggested);
+            let model = channel_model(&all, &http);
+            window.set_feed_channels(slint::ModelRc::from(Rc::clone(&model)));
+            window.set_subscription_count(count);
+            let mut state = state.borrow_mut();
+            state.channels = all;
+            state.channel_items = Some(model);
+        },
+    );
+}
+
+/// Opens a channel's own page from one of its posts.
+pub fn open_post_channel(
+    window: &MainWindow,
+    state: &Rc<RefCell<FeedState>>,
+    client: &Client,
+    http: reqwest::Client,
+    index: usize,
+) {
+    let Some(channel) = state
+        .borrow()
+        .articles
+        .get(index)
+        .map(|a| a.channel.clone())
+    else {
+        return;
+    };
+    open_channel(window, state, client, http, channel);
+}
+
+/// Opens a channel's own page from the channels tab.
+pub fn open_listed_channel(
+    window: &MainWindow,
+    state: &Rc<RefCell<FeedState>>,
+    client: &Client,
+    http: reqwest::Client,
+    index: usize,
+) {
+    let Some(channel) = state.borrow().channels.get(index).cloned() else {
+        return;
+    };
+    open_channel(window, state, client, http, channel);
+}
+
+fn open_channel(
+    window: &MainWindow,
+    state: &Rc<RefCell<FeedState>>,
+    client: &Client,
+    http: reqwest::Client,
+    channel: Channel,
+) {
+    if channel.id <= 0 {
+        return;
+    }
+    let id = channel.id;
+    let generation = {
+        let mut state = state.borrow_mut();
+        state.open_channel = Some(channel.clone());
+        state.next_generation()
+    };
+    show_open_channel(window, &channel, &http);
+    window.set_channel_open(true);
+    window.set_posts(slint::ModelRc::new(VecModel::<FeedPost>::default()));
+    window.set_feed_loading(true);
+
+    // The channel in full, for its description and the account's standing
+    // with it, and its posts.
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    let api = client.clone();
+    tasks::spawn(
+        async move { (api.channel(id).await, api.channel_articles(id, 0).await) },
+        move |(channel, posts)| {
+            let Some(window) = weak.upgrade() else { return };
+            if state.borrow().generation != generation {
+                return;
+            }
+            window.set_feed_loading(false);
+            if let Ok(channel) = channel {
+                show_open_channel(&window, &channel, &http);
+                state.borrow_mut().open_channel = Some(channel);
+            }
+            match posts {
+                Ok(page) => show(&window, &state, page.content, generation, http),
+                Err(error) => tracing::warn!(%error, id, "the channel's posts were not loaded"),
+            }
+        },
+    );
+}
+
+/// Back from a channel's page to the tab it was opened from.
+pub fn close_channel(
+    window: &MainWindow,
+    state: &Rc<RefCell<FeedState>>,
+    client: &Client,
+    http: reqwest::Client,
+    signed_in: bool,
+) {
+    open(window, state, client, http, signed_in);
+}
+
+/// Follows or stops following a channel — the open one with -1, else a row.
+pub fn toggle_channel_subscription(
+    window: &MainWindow,
+    state: &Rc<RefCell<FeedState>>,
+    client: &Client,
+    http: reqwest::Client,
+    index: i32,
+) {
+    let Some(channel) = channel_at(state, index) else {
+        return;
+    };
+    let (id, now) = (channel.id, !channel.is_subscribed);
+    update_channel(window, state, &http, index, |c| c.is_subscribed = now);
+    mark_channel(state, id, now);
+
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    let api = client.clone();
+    tasks::spawn(
+        async move {
+            if now {
+                api.channel_subscribe(id).await
+            } else {
+                api.channel_unsubscribe(id).await
+            }
+        },
+        move |result| {
+            let Err(error) = result else { return };
+            tracing::warn!(%error, id, "the subscription was not changed");
+            let Some(window) = weak.upgrade() else { return };
+            update_channel(&window, &state, &http, index, |c| c.is_subscribed = !now);
+            mark_channel(&state, id, !now);
+        },
+    );
+}
+
+/// Mutes or unmutes a channel — the open one with -1, else a row.
+pub fn toggle_channel_mute(
+    window: &MainWindow,
+    state: &Rc<RefCell<FeedState>>,
+    client: &Client,
+    http: reqwest::Client,
+    index: i32,
+) {
+    let Some(channel) = channel_at(state, index) else {
+        return;
+    };
+    let (id, now) = (channel.id, !channel.is_muted);
+    update_channel(window, state, &http, index, |c| c.is_muted = now);
+
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    let api = client.clone();
+    tasks::spawn(
+        async move {
+            if now {
+                api.channel_mute(id).await
+            } else {
+                api.channel_unmute(id).await
+            }
+        },
+        move |result| {
+            let Err(error) = result else { return };
+            tracing::warn!(%error, id, "the channel was not muted");
+            let Some(window) = weak.upgrade() else { return };
+            update_channel(&window, &state, &http, index, |c| c.is_muted = !now);
+        },
+    );
+}
+
+fn channel_at(state: &Rc<RefCell<FeedState>>, index: i32) -> Option<Channel> {
+    let state = state.borrow();
+    if index < 0 {
+        state.open_channel.clone()
+    } else {
+        usize::try_from(index)
+            .ok()
+            .and_then(|at| state.channels.get(at))
+            .cloned()
+    }
+}
+
+/// Changes one channel — the open one with -1, else a row — and redraws it.
+fn update_channel(
+    window: &MainWindow,
+    state: &Rc<RefCell<FeedState>>,
+    http: &reqwest::Client,
+    index: i32,
+    change: impl Fn(&mut Channel),
+) {
+    let mut guard = state.borrow_mut();
+    if index < 0 {
+        if let Some(channel) = guard.open_channel.as_mut() {
+            change(channel);
+            let channel = channel.clone();
+            drop(guard);
+            show_open_channel(window, &channel, http);
+        }
+        return;
+    }
+    let Ok(at) = usize::try_from(index) else {
+        return;
+    };
+    let model = guard.channel_items.clone();
+    if let Some(channel) = guard.channels.get_mut(at) {
+        change(channel);
+        if let Some(model) = model
+            && let Some(mut item) = model.row_data(at)
+        {
+            item.subscribed = channel.is_subscribed;
+            item.muted = channel.is_muted;
+            model.set_row_data(at, item);
+        }
+    }
+}
+
+fn channel_item(channel: &Channel) -> ChannelItem {
+    ChannelItem {
+        title: channel.title.as_str().into(),
+        description: channel.description.as_str().into(),
+        avatar: slint::Image::default(),
+        avatar_loaded: false,
+        subscribers: count(channel.subscriber_count),
+        subscribed: channel.is_subscribed,
+        muted: channel.is_muted,
+        blog: channel.is_blog,
+        verified: channel.is_verified,
+    }
+}
+
+fn show_open_channel(window: &MainWindow, channel: &Channel, http: &reqwest::Client) {
+    window.set_open_channel_item(channel_item(channel));
+    if channel.avatar.starts_with("http") {
+        let weak = window.as_weak();
+        tasks::spawn(
+            tasks::fetch_image(http.clone(), channel.avatar.clone()),
+            move |result| {
+                let (Some(window), Ok(buffer)) = (weak.upgrade(), result) else {
+                    return;
+                };
+                let mut item = window.get_open_channel_item();
+                item.avatar = slint::Image::from_rgba8(buffer);
+                item.avatar_loaded = true;
+                window.set_open_channel_item(item);
+            },
+        );
+    }
+}
+
+fn channel_model(channels: &[Channel], http: &reqwest::Client) -> Rc<VecModel<ChannelItem>> {
+    let model = Rc::new(VecModel::from(
+        channels.iter().map(channel_item).collect::<Vec<_>>(),
+    ));
+    for (index, channel) in channels.iter().enumerate() {
+        if !channel.avatar.starts_with("http") {
+            continue;
+        }
+        let model = Rc::clone(&model);
+        tasks::spawn(
+            tasks::fetch_image(http.clone(), channel.avatar.clone()),
+            move |result| {
+                let Ok(buffer) = result else { return };
+                if let Some(mut item) = model.row_data(index) {
+                    item.avatar = slint::Image::from_rgba8(buffer);
+                    item.avatar_loaded = true;
+                    model.set_row_data(index, item);
+                }
+            },
+        );
+    }
+    model
 }
 
 /// The post a row of the feed stands for: its id and a title for the
@@ -429,7 +762,7 @@ mod tests {
 
     #[test]
     fn a_tab_index_names_the_same_tab_back() {
-        for tab in [Tab::Mine, Tab::Latest] {
+        for tab in [Tab::Mine, Tab::Latest, Tab::Channels] {
             assert_eq!(Tab::at(tab.index()), tab);
         }
         assert_eq!(Tab::at(7), Tab::Mine);
