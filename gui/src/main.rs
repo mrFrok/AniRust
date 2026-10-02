@@ -11,6 +11,7 @@
 //! goes through [`tasks`] and comes back on the UI thread.
 
 mod bookmarks;
+mod channel_admin;
 mod collections;
 mod comments;
 mod downloads;
@@ -106,6 +107,7 @@ fn main() -> Result<()> {
         reports: Rc::new(RefCell::new(reports::ReportState::default())),
         standing: Rc::new(RefCell::new(standing::Standing::default())),
         editor: Rc::new(RefCell::new(editor::EditorState::default())),
+        admin: Rc::new(RefCell::new(channel_admin::AdminState::default())),
         feed: Rc::new(RefCell::new(feed::FeedState::new(Rc::clone(&account)))),
         comments: Rc::new(RefCell::new(comments::CommentsState::default())),
         notifications: Rc::new(RefCell::new(notifications::NotificationsState::default())),
@@ -121,6 +123,7 @@ fn main() -> Result<()> {
     wire_settings(&window, &app);
     wire_reports(&window, &app);
     wire_editor(&window, &app);
+    wire_channel_admin(&window, &app);
     wire_feed(&window, &app);
     wire_comments(&window, &app);
     wire_notifications(&window, &app);
@@ -176,6 +179,7 @@ struct App {
     reports: Rc<RefCell<reports::ReportState>>,
     standing: Rc<RefCell<standing::Standing>>,
     editor: Rc<RefCell<editor::EditorState>>,
+    admin: Rc<RefCell<channel_admin::AdminState>>,
     comments: Rc<RefCell<comments::CommentsState>>,
     notifications: Rc<RefCell<notifications::NotificationsState>>,
     people: Rc<RefCell<people::PeopleState>>,
@@ -790,6 +794,124 @@ fn wire_editor(window: &MainWindow, app: &Rc<App>) {
             });
         });
     }
+}
+
+fn admin_context<'a>(window: &'a MainWindow, app: &'a App) -> channel_admin::Context<'a> {
+    channel_admin::Context {
+        window,
+        state: &app.admin,
+        client: &app.client,
+        http: app.http.clone(),
+    }
+}
+
+/// A window callback that acts on the channel being run.
+macro_rules! on_admin {
+    ($window:expr, $app:expr, $setter:ident, |$cx:ident $(, $arg:ident)*| $body:expr) => {{
+        let app = Rc::clone($app);
+        let weak = $window.as_weak();
+        $window.$setter(move |$($arg),*| {
+            let Some(window) = weak.upgrade() else { return };
+            let $cx = admin_context(&window, &app);
+            $body;
+        });
+    }};
+}
+
+fn wire_channel_admin(window: &MainWindow, app: &Rc<App>) {
+    {
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        window.on_manage_channel(move || {
+            let Some(window) = weak.upgrade() else { return };
+            if let Some(channel) = feed::open_channel_whole(&app.feed) {
+                channel_admin::open(&admin_context(&window, &app), channel);
+            }
+        });
+    }
+    on_admin!(window, app, on_create_channel, |cx| channel_admin::create(
+        &cx
+    ));
+    {
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        window.on_create_blog(move || {
+            let Some(window) = weak.upgrade() else { return };
+            let again = Rc::clone(&app);
+            channel_admin::create_blog(&window, &app.client, move |window, blog| {
+                feed::open_found_channel(
+                    window,
+                    &again.feed,
+                    &again.client,
+                    again.http.clone(),
+                    blog,
+                );
+            });
+        });
+    }
+    {
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        window.on_admin_save(move || {
+            let Some(window) = weak.upgrade() else { return };
+            let again = Rc::clone(&app);
+            channel_admin::save(&admin_context(&window, &app), move |window, channel| {
+                // The channel as it now is, on its own page.
+                feed::open_found_channel(
+                    window,
+                    &again.feed,
+                    &again.client,
+                    again.http.clone(),
+                    channel,
+                );
+            });
+        });
+    }
+    on_admin!(window, app, on_admin_change_avatar, |cx| {
+        channel_admin::change_picture(&cx, false)
+    });
+    on_admin!(window, app, on_admin_change_cover, |cx| {
+        channel_admin::change_picture(&cx, true)
+    });
+    on_admin!(window, app, on_admin_delete_cover, |cx| {
+        channel_admin::delete_cover(&cx)
+    });
+    on_admin!(window, app, on_admin_select_tab, |cx, tab| {
+        channel_admin::select_tab(&cx, tab)
+    });
+    on_admin!(window, app, on_admin_search, |cx, query| {
+        channel_admin::search(&cx, query.into())
+    });
+    on_admin!(window, app, on_admin_publish, |cx, index, signed| {
+        if let Ok(index) = usize::try_from(index) {
+            channel_admin::publish(&cx, index, signed);
+        }
+    });
+    on_admin!(window, app, on_admin_reject, |cx, index| {
+        if let Ok(index) = usize::try_from(index) {
+            channel_admin::reject(&cx, index);
+        }
+    });
+    on_admin!(window, app, on_admin_remove_admin, |cx, index| {
+        if let Ok(index) = usize::try_from(index) {
+            channel_admin::remove_admin(&cx, index);
+        }
+    });
+    on_admin!(window, app, on_admin_make_admin, |cx, index| {
+        if let Ok(index) = usize::try_from(index) {
+            channel_admin::make_admin(&cx, index);
+        }
+    });
+    on_admin!(window, app, on_admin_unblock, |cx, index| {
+        if let Ok(index) = usize::try_from(index) {
+            channel_admin::unblock(&cx, index);
+        }
+    });
+    on_admin!(window, app, on_admin_block, |cx, index| {
+        if let Ok(index) = usize::try_from(index) {
+            channel_admin::block(&cx, index);
+        }
+    });
 }
 
 fn wire_reports(window: &MainWindow, app: &Rc<App>) {

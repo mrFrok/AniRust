@@ -17,7 +17,8 @@ import { AccountSettingsSheet } from "components/account-settings.slint";
 import { ReportSheet } from "components/report.slint";
 import { DeletionSheet } from "components/deletion.slint";
 import { PostEditor } from "components/post-editor.slint";
-import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem, CollectionItem, AccountSettings, VideoItem, EnforcementItem, DraftBlock } from "structs.slint";
+import { ChannelAdmin } from "components/channel-admin.slint";
+import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem, CollectionItem, AccountSettings, VideoItem, EnforcementItem, DraftBlock, SuggestionItem } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -112,6 +113,38 @@ export component MainWindow inherits Window {
     callback editor-move-block(int, int);
     callback editor-remove-block(int);
     callback editor-publish();
+
+    // ---- running channels ------------------------------------------------
+    in-out property <bool> admin-open: false;
+    in property <bool> admin-creating: false;
+    in property <bool> admin-creator: false;
+    in property <int> admin-tab: 0;
+    in-out property <string> admin-title;
+    in-out property <string> admin-description;
+    in-out property <bool> admin-commenting: true;
+    in-out property <bool> admin-suggestions: false;
+    in property <[SuggestionItem]> admin-suggested: [];
+    in property <[PersonItem]> admin-admins: [];
+    in property <[PersonItem]> admin-blocked: [];
+    in property <[PersonItem]> admin-found: [];
+    in property <bool> admin-busy: false;
+    in property <bool> admin-loading: false;
+    in property <string> admin-message;
+    callback manage-channel();
+    callback create-channel();
+    callback create-blog();
+    callback admin-save();
+    callback admin-change-avatar();
+    callback admin-change-cover();
+    callback admin-delete-cover();
+    callback admin-select-tab(int);
+    callback admin-publish(int, bool);
+    callback admin-reject(int);
+    callback admin-remove-admin(int);
+    callback admin-unblock(int);
+    callback admin-search(string);
+    callback admin-make-admin(int);
+    callback admin-block(int);
 
     // ---- reports ---------------------------------------------------------
     /// Reports something: "release", "profile", "channel", "collection"
@@ -507,6 +540,9 @@ export component MainWindow inherits Window {
             pin-post(i) => { root.pin-post(i); }
             delete-post(i) => { root.delete-post(i); }
             write-post => { root.write-post(); }
+            manage-channel => { root.manage-channel(); }
+            create-channel => { root.create-channel(); }
+            create-blog => { root.create-blog(); }
             can-write: root.feed-can-write;
             report-channel => { root.report("channel", -1); }
             toggle-like(i) => { root.toggle-like(i); }
@@ -818,6 +854,38 @@ export component MainWindow inherits Window {
         dismiss => { root.editor-open = false; }
     }
 
+    if root.admin-open: ChannelAdmin {
+        width: 100%;
+        height: 100%;
+        creating: root.admin-creating;
+        creator: root.admin-creator;
+        tab: root.admin-tab;
+        title <=> root.admin-title;
+        description <=> root.admin-description;
+        commenting <=> root.admin-commenting;
+        suggestions <=> root.admin-suggestions;
+        suggested: root.admin-suggested;
+        admins: root.admin-admins;
+        blocked: root.admin-blocked;
+        found: root.admin-found;
+        busy: root.admin-busy;
+        loading: root.admin-loading;
+        message: root.admin-message;
+        save => { root.admin-save(); }
+        change-avatar => { root.admin-change-avatar(); }
+        change-cover => { root.admin-change-cover(); }
+        delete-cover => { root.admin-delete-cover(); }
+        select-tab(i) => { root.admin-select-tab(i); }
+        publish-suggestion(i, signed) => { root.admin-publish(i, signed); }
+        reject-suggestion(i) => { root.admin-reject(i); }
+        remove-admin(i) => { root.admin-remove-admin(i); }
+        unblock(i) => { root.admin-unblock(i); }
+        search-subscribers(q) => { root.admin-search(q); }
+        make-admin(i) => { root.admin-make-admin(i); }
+        block(i) => { root.admin-block(i); }
+        dismiss => { root.admin-open = false; }
+    }
+
     if root.report-open: ReportSheet {
         width: 100%;
         height: 100%;
@@ -938,7 +1006,7 @@ export component MainWindow inherits Window {
                 root.close-comments();
                 return accept;
             }
-            if (root.show-sign-in || root.comments-open || root.notifications-open || root.collection-editor-open || root.collection-picker-open || root.settings-open || root.report-open || root.deletion-open || root.editor-open || !root.playing) { return reject; }
+            if (root.show-sign-in || root.comments-open || root.notifications-open || root.collection-editor-open || root.collection-picker-open || root.settings-open || root.report-open || root.deletion-open || root.editor-open || root.admin-open || !root.playing) { return reject; }
 
             // ---- transport ----
             if (event.text == " " || event.text == "k") { root.toggle-pause(); return accept; }

@@ -306,6 +306,7 @@ component ChannelRow inherits Rectangle {
     in property <bool> heading: false;
     callback open();
     callback report();
+    callback manage();
     callback toggle-subscription();
     callback toggle-mute();
 
@@ -378,6 +379,14 @@ component ChannelRow inherits Rectangle {
             alignment: end;
             spacing: Spacing.tight;
 
+            if root.heading && root.channel.manageable: VerticalLayout {
+                alignment: center;
+                TonalButton {
+                    text: Tr.manage;
+                    clicked => { root.manage(); }
+                }
+            }
+
             if root.heading: VerticalLayout {
                 alignment: center;
                 IconButton {
@@ -439,6 +448,9 @@ export component FeedPage inherits Rectangle {
     in property <bool> can-write: false;
     /// Reports the channel whose page is open.
     callback report-channel();
+    callback manage-channel();
+    callback create-channel();
+    callback create-blog();
     callback toggle-like(int);
     callback sign-in();
 
@@ -515,6 +527,7 @@ export component FeedPage inherits Rectangle {
                         toggle-subscription => { root.toggle-channel-subscription(-1); }
                         toggle-mute => { root.toggle-channel-mute(-1); }
                         report => { root.report-channel(); }
+                        manage => { root.manage-channel(); }
                     }
                 }
 
@@ -577,6 +590,22 @@ export component FeedPage inherits Rectangle {
                 width: min(root.measure, parent.width - 2 * Spacing.base);
                 spacing: Spacing.small;
                 alignment: start;
+
+                // Making one's own: a channel, or a personal blog.
+                if root.signed-in: HorizontalLayout {
+                    spacing: Spacing.small;
+                    alignment: start;
+
+                    TonalButton {
+                        text: Tr.create-channel;
+                        clicked => { root.create-channel(); }
+                    }
+
+                    OutlineButton {
+                        text: Tr.create-blog;
+                        clicked => { root.create-blog(); }
+                    }
+                }
 
                 if root.subscription-count > 0: Text {
                     text: Tr.my-subscriptions;

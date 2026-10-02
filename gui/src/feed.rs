@@ -431,6 +431,7 @@ fn channel_item(channel: &Channel) -> ChannelItem {
         muted: channel.is_muted,
         blog: channel.is_blog,
         verified: channel.is_verified,
+        manageable: channel.is_creator || channel.is_administrator_or_higher,
     }
 }
 

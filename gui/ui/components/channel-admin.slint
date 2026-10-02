@@ -1,0 +1,306 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Running a channel: its settings and pictures, the posts readers suggest,
+// who else runs it, and who is kept out. The same sheet, with only the
+// settings, makes a new channel.
+
+import { ScrollView } from "std-widgets.slint";
+import { MaterialPalette, TextField, FilledButton, TonalButton, TextButton, OutlineButton, IconButton, Switch, SecondaryTabBar } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+import { PersonItem, SuggestionItem } from "../structs.slint";
+import { PersonChip } from "person-chip.slint";
+
+component SwitchRow inherits HorizontalLayout {
+    in property <string> label;
+    in-out property <bool> on;
+
+    spacing: Spacing.base;
+
+    Text {
+        text: root.label;
+        color: MaterialPalette.on-surface;
+        font-size: Typography.body-large-size;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+    }
+
+    Switch {
+        width: 52px;
+        height: 32px;
+        property <bool> wanted: root.on;
+        init => { self.checked = root.on; }
+        changed wanted => { self.checked = self.wanted; }
+        changed checked => { root.on = self.checked; }
+    }
+}
+
+/// A person with what can be done to them.
+component PersonAction inherits HorizontalLayout {
+    in property <PersonItem> person;
+    in property <string> action;
+    in property <string> second-action;
+    callback act();
+    callback second();
+
+    spacing: Spacing.small;
+
+    PersonChip {
+        horizontal-stretch: 1;
+        person: root.person;
+    }
+
+    VerticalLayout {
+        alignment: center;
+        TextButton { text: root.action; clicked => { root.act(); } }
+    }
+
+    if root.second-action != "": VerticalLayout {
+        alignment: center;
+        TextButton { text: root.second-action; clicked => { root.second(); } }
+    }
+}
+
+export component ChannelAdmin inherits Rectangle {
+    /// Making a channel rather than running one: only the settings.
+    in property <bool> creating: false;
+    /// Only the creator manages administrators.
+    in property <bool> creator: false;
+    in-out property <int> tab: 0;
+    in-out property <string> title;
+    in-out property <string> description;
+    in-out property <bool> commenting: true;
+    in-out property <bool> suggestions: false;
+    in property <[SuggestionItem]> suggested: [];
+    in property <[PersonItem]> admins: [];
+    in property <[PersonItem]> blocked: [];
+    in property <[PersonItem]> found: [];
+    in property <bool> busy: false;
+    in property <bool> loading: false;
+    in property <string> message;
+
+    callback save();
+    callback change-avatar();
+    callback change-cover();
+    callback delete-cover();
+    callback select-tab(int);
+    callback publish-suggestion(int, bool);
+    callback reject-suggestion(int);
+    callback remove-admin(int);
+    callback unblock(int);
+    callback search-subscribers(string);
+    callback make-admin(int);
+    callback block(int);
+    callback dismiss();
+
+    property <string> query;
+
+    background: #000000A6;
+
+    TouchArea {
+        clicked => { root.dismiss(); }
+    }
+
+    Rectangle {
+        width: min(640px, parent.width - 2 * Spacing.comfortable);
+        height: root.creating
+            ? min(settings-height + 180px, parent.height - 2 * Spacing.comfortable)
+            : parent.height - 2 * Spacing.comfortable;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: Shape.extra-large;
+        background: MaterialPalette.surface-container-high;
+        drop-shadow-blur: 32px;
+        drop-shadow-color: #00000080;
+
+        property <length> settings-height: 210px;
+
+        TouchArea {}
+
+        VerticalLayout {
+            padding-top: Spacing.base;
+            padding-bottom: Spacing.base;
+            spacing: Spacing.small;
+
+            HorizontalLayout {
+                padding-left: Spacing.comfortable;
+                padding-right: Spacing.base;
+
+                Text {
+                    text: root.creating ? Tr.new-channel : Tr.manage-channel;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-large-size;
+                    font-weight: Typography.title-large-weight-em;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                IconButton {
+                    icon: @image-url("../icons/close.svg");
+                    clicked => { root.dismiss(); }
+                }
+            }
+
+            if !root.creating: SecondaryTabBar {
+                height: 48px;
+                items: [
+                    { text: Tr.channel-settings },
+                    { text: Tr.suggested-posts },
+                    { text: Tr.administrators },
+                    { text: Tr.blocked-people },
+                ];
+                property <int> wanted: root.tab;
+                init => { self.current-index = root.tab; }
+                changed wanted => { self.current-index = self.wanted; }
+                index-changed(i) => { root.select-tab(i); }
+            }
+
+            ScrollView {
+                vertical-stretch: 1;
+
+                VerticalLayout {
+                    padding-left: Spacing.comfortable;
+                    padding-right: Spacing.comfortable;
+                    spacing: Spacing.base;
+                    alignment: start;
+
+                    if root.loading: Text {
+                        text: Tr.loading;
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.body-medium-size;
+                    }
+
+                    // ---- settings ---------------------------------------
+                    if root.creating || root.tab == 0: VerticalLayout {
+                        spacing: Spacing.base;
+
+                        TextField { label: Tr.collection-title-field; text <=> root.title; }
+                        TextField { label: Tr.collection-description-field; text <=> root.description; }
+                        SwitchRow { label: Tr.allow-comments; on <=> root.commenting; }
+                        SwitchRow { label: Tr.allow-suggestions; on <=> root.suggestions; }
+
+                        if !root.creating: HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            OutlineButton { text: Tr.change-avatar; enabled: !root.busy; clicked => { root.change-avatar(); } }
+                            OutlineButton { text: Tr.change-cover; enabled: !root.busy; clicked => { root.change-cover(); } }
+                            TextButton { text: Tr.delete-cover; enabled: !root.busy; clicked => { root.delete-cover(); } }
+                        }
+
+                        HorizontalLayout {
+                            alignment: end;
+
+                            FilledButton {
+                                text: root.busy ? Tr.loading : root.creating ? Tr.create : Tr.save;
+                                enabled: !root.busy && root.title != "";
+                                clicked => { root.save(); }
+                            }
+                        }
+                    }
+
+                    // ---- suggested posts --------------------------------
+                    if !root.creating && root.tab == 1 && !root.loading && root.suggested.length == 0: Text {
+                        text: Tr.no-suggestions;
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.body-medium-size;
+                    }
+
+                    if !root.creating && root.tab == 1: VerticalLayout {
+                        spacing: Spacing.small;
+
+                        for item[index] in root.suggested: Rectangle {
+                            border-radius: Shape.medium;
+                            background: MaterialPalette.surface-container;
+                            height: suggestion.preferred-height;
+
+                            suggestion := VerticalLayout {
+                                padding: Spacing.medium;
+                                spacing: Spacing.tight;
+
+                                Text {
+                                    text: item.author;
+                                    color: MaterialPalette.primary;
+                                    font-size: Typography.label-large-size;
+                                }
+
+                                Text {
+                                    text: item.text;
+                                    color: MaterialPalette.on-surface;
+                                    font-size: Typography.body-medium-size;
+                                    wrap: word-wrap;
+                                    max-lines: 6;
+                                }
+
+                                HorizontalLayout {
+                                    spacing: Spacing.small;
+                                    alignment: end;
+
+                                    TextButton { text: Tr.reject; clicked => { root.reject-suggestion(index); } }
+                                    TextButton { text: Tr.publish-signed; clicked => { root.publish-suggestion(index, true); } }
+                                    TonalButton { text: Tr.publish; clicked => { root.publish-suggestion(index, false); } }
+                                }
+                            }
+                        }
+                    }
+
+                    // ---- administrators ---------------------------------
+                    if !root.creating && root.tab == 2: VerticalLayout {
+                        spacing: Spacing.small;
+
+                        for person[index] in root.admins: PersonAction {
+                            person: person;
+                            action: root.creator ? Tr.remove-admin : "";
+                            act => { root.remove-admin(index); }
+                        }
+                    }
+
+                    // ---- blocked ----------------------------------------
+                    if !root.creating && root.tab == 3: VerticalLayout {
+                        spacing: Spacing.small;
+
+                        if !root.loading && root.blocked.length == 0: Text {
+                            text: Tr.no-blocked;
+                            color: MaterialPalette.on-surface-variant;
+                            font-size: Typography.body-medium-size;
+                        }
+
+                        for person[index] in root.blocked: PersonAction {
+                            person: person;
+                            action: Tr.unblock;
+                            act => { root.unblock(index); }
+                        }
+                    }
+
+                    // ---- finding a subscriber to promote or keep out ---
+                    if !root.creating && (root.tab == 2 || root.tab == 3): VerticalLayout {
+                        spacing: Spacing.small;
+
+                        TextField {
+                            label: Tr.find-subscriber;
+                            text <=> root.query;
+                            accepted(text) => { root.search-subscribers(text); }
+                        }
+
+                        for person[index] in root.found: PersonAction {
+                            person: person;
+                            action: root.tab == 2 && root.creator ? Tr.make-admin : root.tab == 3 ? Tr.block : "";
+                            act => {
+                                if (root.tab == 2) { root.make-admin(index); } else { root.block(index); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if root.message != "": Text {
+                x: Spacing.comfortable;
+                text: Tr.settings-message(root.message);
+                color: Tr.settings-message-is-error(root.message) ? MaterialPalette.error : MaterialPalette.on-surface-variant;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

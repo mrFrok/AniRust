@@ -28,7 +28,8 @@
 //! `feed-signed-out`, `feed-empty`, `feed-channels`, `feed-channel`, `collections`, `collection`,
 //! `collection-editor`, `collection-picker`, `search`, `sign-up`,
 //! `sign-up-code`, `restore-code`, `settings`, `settings-email`,
-//! `settings-standing`, `report`, `editor`, `feed-own`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
+//! `settings-standing`, `report`, `editor`, `feed-own`, `admin`, `admin-suggested`,
+//! `admin-new`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
 //! `comments-signed-out`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
@@ -93,6 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || state.starts_with("settings")
             || state.starts_with("report")
             || state == "editor"
+            || state.starts_with("admin")
             || state.starts_with("deletion")
         {
             "home".into()
@@ -278,6 +280,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .into(),
         );
         ui.set_email_code_pending(state == "settings-email");
+    }
+    // Running a channel: its settings, and the queue of suggested posts.
+    if state.starts_with("admin") {
+        ui.set_destination(3);
+        ui.set_signed_in(true);
+        ui.set_admin_open(true);
+        ui.set_admin_creator(true);
+        ui.set_admin_title("Новостной канал".into());
+        ui.set_admin_description("Анонсы, даты выхода и новости индустрии.".into());
+        ui.set_admin_suggestions(true);
+        if state == "admin-suggested" {
+            ui.set_admin_tab(1);
+            let item = |author: &str, text: &str| SuggestionItem {
+                author: author.into(),
+                text: text.into(),
+            };
+            ui.set_admin_suggested(slint::ModelRc::new(slint::VecModel::from(vec![
+                item("user2", "Вышел трейлер второго сезона, дата — апрель."),
+                item(
+                    "user5",
+                    "Подборка опенингов этого сезона: десять штук, от лучшего к худшему.",
+                ),
+            ])));
+        }
+        if state == "admin-new" {
+            ui.set_admin_creating(true);
+            ui.set_admin_title("".into());
+            ui.set_admin_description("".into());
+        }
     }
     // The post editor, a few blocks in, one of them a picture it keeps.
     if state == "editor" {
@@ -964,6 +995,7 @@ fn sample_channels() -> Vec<ChannelItem> {
             muted: false,
             blog,
             verified: !blog,
+            manageable: false,
         }
     };
     vec![

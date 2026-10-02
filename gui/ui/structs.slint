@@ -240,6 +240,8 @@ export struct ChannelItem {
     muted: bool,
     blog: bool,
     verified: bool,
+    /// The account runs it: may change it, and see who suggested what.
+    manageable: bool,
 }
 
 /// A collection heading its own page.
@@ -309,4 +311,10 @@ export struct DraftBlock {
     text: string,
     /// Whom a quote is by.
     caption: string,
+}
+
+/// A post someone suggested to a channel, waiting on its runners.
+export struct SuggestionItem {
+    author: string,
+    text: string,
 }
