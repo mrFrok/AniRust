@@ -269,6 +269,16 @@ fn open_channel(
     );
 }
 
+/// The channel whose page is open: id and title.
+#[must_use]
+pub fn open_channel_of(state: &Rc<RefCell<FeedState>>) -> Option<(i64, String)> {
+    state
+        .borrow()
+        .open_channel
+        .as_ref()
+        .map(|c| (c.id, c.title.clone()))
+}
+
 /// Back from a channel's page to the tab it was opened from.
 pub fn close_channel(
     window: &MainWindow,

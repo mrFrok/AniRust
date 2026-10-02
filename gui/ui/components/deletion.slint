@@ -1,0 +1,138 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Deleting the account: the one thing in the client that cannot be put
+// back by the client. So it is a sheet of its own, asks for the login typed
+// out and the password, and then asks once more.
+
+import { MaterialPalette, TextField, FilledButton, TextButton } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+
+export component DeletionSheet inherits Rectangle {
+    /// The account's login, which has to be typed to go on.
+    in property <string> login;
+    in property <bool> loading: false;
+    /// A request is in: the account goes on `delete-at` unless cancelled.
+    in property <bool> pending: false;
+    in property <string> delete-at;
+    in property <bool> busy: false;
+    /// "", "wrong-password", "in-progress" or "failed".
+    in property <string> error;
+
+    callback request(string);
+    callback cancel-request();
+    callback dismiss();
+
+    property <string> typed;
+    property <string> password;
+    property <bool> confirming: false;
+    property <bool> ready: root.typed == root.login && root.login != "" && root.password != "";
+
+    background: #000000A6;
+
+    TouchArea {
+        clicked => { root.dismiss(); }
+    }
+
+    Rectangle {
+        width: min(460px, parent.width - 2 * Spacing.comfortable);
+        height: form.preferred-height + 2 * Spacing.comfortable;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: Shape.extra-large;
+        background: MaterialPalette.surface-container-high;
+        drop-shadow-blur: 32px;
+        drop-shadow-color: #00000080;
+
+        TouchArea {}
+
+        form := VerticalLayout {
+            x: Spacing.comfortable;
+            y: Spacing.comfortable;
+            width: parent.width - 2 * Spacing.comfortable;
+            spacing: Spacing.base;
+            alignment: start;
+
+            Text {
+                text: Tr.delete-account;
+                color: MaterialPalette.error;
+                font-size: Typography.title-large-size;
+                font-weight: Typography.title-large-weight-em;
+            }
+
+            if root.loading: Text {
+                text: Tr.loading;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.body-medium-size;
+            }
+
+            if !root.loading && root.pending: Text {
+                text: Tr.deletion-pending(root.delete-at);
+                color: MaterialPalette.on-surface;
+                font-size: Typography.body-large-size;
+                wrap: word-wrap;
+            }
+
+            if !root.loading && !root.pending: Text {
+                text: Tr.deletion-why;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+            }
+
+            if !root.loading && !root.pending: TextField {
+                label: Tr.type-login(root.login);
+                text <=> root.typed;
+                edited => { root.confirming = false; }
+            }
+
+            if !root.loading && !root.pending: TextField {
+                label: Tr.password-field;
+                input-type: InputType.password;
+                text <=> root.password;
+                has-error: root.error == "wrong-password";
+                supporting-text: root.error == "wrong-password" ? Tr.wrong-password : "";
+                edited => { root.confirming = false; }
+            }
+
+            if root.error != "" && root.error != "wrong-password": Text {
+                text: root.error == "in-progress" ? Tr.deletion-in-progress : Tr.action-failed;
+                color: MaterialPalette.error;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: Spacing.small;
+                alignment: end;
+
+                TextButton {
+                    text: Tr.close;
+                    clicked => { root.dismiss(); }
+                }
+
+                if !root.loading && root.pending: FilledButton {
+                    text: root.busy ? Tr.loading : Tr.cancel-deletion;
+                    enabled: !root.busy;
+                    clicked => { root.cancel-request(); }
+                }
+
+                // Twice: the second press is on a button that says what the
+                // first would have done.
+                if !root.loading && !root.pending: TextButton {
+                    text: root.busy ? Tr.loading : root.confirming ? Tr.delete-for-good : Tr.delete-account;
+                    enabled: !root.busy && root.ready;
+                    clicked => {
+                        if (root.confirming) {
+                            root.request(root.password);
+                            root.confirming = false;
+                        } else {
+                            root.confirming = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

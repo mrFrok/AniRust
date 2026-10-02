@@ -42,8 +42,8 @@ pub use episode::{DubberChannel, EpisodeSort};
 pub use people::{Badge, FriendOutcome, LoginChange, ProfileInfo, Socials};
 pub use preference::{Binding, LoginChangeInfo, Preferences, Privacy, SettingStep};
 pub use service::{
-    Bookmarks, Deletion, Enforcement, Health, ReleaseVideo, ReleaseVideos, ReportReason,
-    ReportTarget, VideoBlock, VideoCategory,
+    AppealStatus, Bookmarks, Deletion, Enforcement, Health, ReleaseVideo, ReleaseVideos,
+    ReportReason, ReportTarget, VideoBlock, VideoCategory,
 };
 
 /// Mirrors `PageableResponse<T>`. Pages are 0-based.

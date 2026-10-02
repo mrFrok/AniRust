@@ -297,6 +297,23 @@ pub fn author_at(state: &Rc<RefCell<CommentsState>>, index: usize) -> Option<i64
         .map(|row| row.comment.profile.id)
 }
 
+/// The comment at a row, as a report names it: what kind of thread it is in,
+/// its id, and a little of what it says.
+#[must_use]
+pub fn reportable_at(
+    state: &Rc<RefCell<CommentsState>>,
+    index: usize,
+) -> Option<(CommentTarget, i64, String)> {
+    let state = state.borrow();
+    let (target, _) = state.target?;
+    let comment = &state.rows.get(index)?.comment;
+    Some((
+        target,
+        comment.id,
+        comment.message.chars().take(80).collect(),
+    ))
+}
+
 /// Opens a spoiler. Kept on the row, so it stays open.
 pub fn reveal(
     window: &MainWindow,

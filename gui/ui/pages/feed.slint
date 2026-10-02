@@ -14,7 +14,7 @@
 // decision, and not one this screen makes.
 
 import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, SecondaryTabBar, CircularProgressIndicator, TonalButton, OutlineButton, TextButton } from "@material";
+import { MaterialPalette, SecondaryTabBar, CircularProgressIndicator, TonalButton, OutlineButton, TextButton, IconButton } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -54,6 +54,7 @@ component PostCard inherits Rectangle {
     callback open-comments();
     callback toggle-like();
     callback open-channel();
+    callback report();
 
     /// Folded by default when the post is long enough to need it. Each card
     /// keeps its own: unfolding one post is not a reason to unfold them all.
@@ -168,12 +169,8 @@ component PostCard inherits Rectangle {
         }
 
         // ---- what people made of it --------------------------------------
-        //
-        // Counts, not controls: voting and commenting are writing into the
-        // network, which this screen does not do.
         HorizontalLayout {
             spacing: Spacing.base;
-            alignment: start;
 
             // The heart is the account's vote, and the count beside it moves
             // with it. Without an account it asks for one.
@@ -225,6 +222,16 @@ component PostCard inherits Rectangle {
                     clicked => { root.open-comments(); }
                 }
             }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            report-button := IconButton {
+                icon: @image-url("../icons/flag.svg");
+                tooltip: Tr.report;
+                width: 28px;
+                height: 28px;
+                clicked => { root.report(); }
+            }
         }
     }
 
@@ -257,6 +264,7 @@ component ChannelRow inherits Rectangle {
     in property <ChannelItem> channel;
     in property <bool> heading: false;
     callback open();
+    callback report();
     callback toggle-subscription();
     callback toggle-mute();
 
@@ -329,6 +337,15 @@ component ChannelRow inherits Rectangle {
             alignment: end;
             spacing: Spacing.tight;
 
+            if root.heading: VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: @image-url("../icons/flag.svg");
+                    tooltip: Tr.report;
+                    clicked => { root.report(); }
+                }
+            }
+
             // Muting is for a channel the account follows but wants quiet:
             // its posts stay reachable and leave the feed.
             if root.channel.subscribed: VerticalLayout {
@@ -370,6 +387,9 @@ export component FeedPage inherits Rectangle {
     callback select-tab(int);
     callback toggle-subscription(int);
     callback open-comments(int);
+    callback report-post(int);
+    /// Reports the channel whose page is open.
+    callback report-channel();
     callback toggle-like(int);
     callback sign-in();
 
@@ -445,6 +465,7 @@ export component FeedPage inherits Rectangle {
                         channel: root.channel;
                         toggle-subscription => { root.toggle-channel-subscription(-1); }
                         toggle-mute => { root.toggle-channel-mute(-1); }
+                        report => { root.report-channel(); }
                     }
                 }
 
@@ -577,6 +598,7 @@ export component FeedPage inherits Rectangle {
                     post: post;
                     toggle-subscription => { root.toggle-subscription(index); }
                     open-comments => { root.open-comments(index); }
+                    report => { root.report-post(index); }
                     toggle-like => { root.toggle-like(index); }
                     open-channel => { root.open-post-channel(index); }
                 }

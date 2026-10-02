@@ -22,8 +22,10 @@ mod preferences;
 mod progress;
 mod register;
 mod release;
+mod reports;
 mod session;
 mod settings;
+mod standing;
 mod tasks;
 mod video;
 
@@ -100,6 +102,8 @@ fn main() -> Result<()> {
         collections: Rc::new(RefCell::new(collections::CollectionsState::default())),
         pending: Rc::new(RefCell::new(register::Pending::default())),
         email_change: Rc::new(RefCell::new(settings::EmailChange::default())),
+        reports: Rc::new(RefCell::new(reports::ReportState::default())),
+        standing: Rc::new(RefCell::new(standing::Standing::default())),
         feed: Rc::new(RefCell::new(feed::FeedState::default())),
         comments: Rc::new(RefCell::new(comments::CommentsState::default())),
         notifications: Rc::new(RefCell::new(notifications::NotificationsState::default())),
@@ -113,6 +117,7 @@ fn main() -> Result<()> {
     wire_home(&window, &app);
     wire_collections(&window, &app);
     wire_settings(&window, &app);
+    wire_reports(&window, &app);
     wire_feed(&window, &app);
     wire_comments(&window, &app);
     wire_notifications(&window, &app);
@@ -165,6 +170,8 @@ struct App {
     collections: Rc<RefCell<collections::CollectionsState>>,
     pending: Rc<RefCell<register::Pending>>,
     email_change: Rc<RefCell<settings::EmailChange>>,
+    reports: Rc<RefCell<reports::ReportState>>,
+    standing: Rc<RefCell<standing::Standing>>,
     comments: Rc<RefCell<comments::CommentsState>>,
     notifications: Rc<RefCell<notifications::NotificationsState>>,
     people: Rc<RefCell<people::PeopleState>>,
@@ -692,6 +699,62 @@ fn wire_feed(window: &MainWindow, app: &Rc<App>) {
     });
 }
 
+fn wire_reports(window: &MainWindow, app: &Rc<App>) {
+    use anirust_api::{CommentTarget, ReportTarget};
+
+    window.on_report({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move |kind, index| {
+            let Some(window) = weak.upgrade() else { return };
+            let row = usize::try_from(index).ok();
+            let found: Option<(ReportTarget, i64, String)> = match kind.as_str() {
+                "release" => app
+                    .release
+                    .borrow()
+                    .release
+                    .as_ref()
+                    .map(|r| (ReportTarget::Release, r.id, r.title().to_owned())),
+                "profile" => people::viewing(&app.people)
+                    .map(|(id, login)| (ReportTarget::Profile, id, login)),
+                "channel" => feed::open_channel_of(&app.feed)
+                    .map(|(id, title)| (ReportTarget::Channel, id, title)),
+                "collection" => collections::open_one(&app.collections)
+                    .map(|(id, title, _)| (ReportTarget::Collection, id, title)),
+                "post" => row
+                    .and_then(|row| feed::article_at(&app.feed, row))
+                    .map(|(id, title)| (ReportTarget::Article, id, title)),
+                "comment" => row
+                    .and_then(|row| comments::reportable_at(&app.comments, row))
+                    .map(|(thread, id, text)| {
+                        let target = match thread {
+                            CommentTarget::Release => ReportTarget::ReleaseComment,
+                            CommentTarget::Article => ReportTarget::ArticleComment,
+                            CommentTarget::Collection => ReportTarget::CollectionComment,
+                        };
+                        (target, id, text)
+                    }),
+                _ => None,
+            };
+            if let Some((target, id, subject)) = found {
+                reports::open(&window, &app.reports, &app.client, target, id, &subject);
+            }
+        }
+    });
+
+    window.on_send_report({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move |reason, message| {
+            let Some(window) = weak.upgrade() else { return };
+            let Ok(reason) = usize::try_from(reason) else {
+                return;
+            };
+            reports::send(&window, &app.reports, &app.client, reason, message.into());
+        }
+    });
+}
+
 fn settings_context<'a>(window: &'a MainWindow, app: &'a App) -> settings::Context<'a> {
     settings::Context {
         window,
@@ -717,7 +780,35 @@ macro_rules! on_settings {
 }
 
 fn wire_settings(window: &MainWindow, app: &Rc<App>) {
-    on_settings!(window, app, on_open_settings, |cx| settings::open(&cx));
+    {
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        window.on_open_settings(move || {
+            let Some(window) = weak.upgrade() else { return };
+            settings::open(&settings_context(&window, &app));
+            standing::load(&window, &app.standing, &app.client);
+        });
+    }
+    {
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        window.on_appeal(move |index, message| {
+            let Some(window) = weak.upgrade() else { return };
+            let Ok(index) = usize::try_from(index) else {
+                return;
+            };
+            standing::appeal(&window, &app.standing, &app.client, index, message.into());
+        });
+    }
+    on_settings!(window, app, on_open_deletion, |cx| standing::open_deletion(
+        cx.window, cx.client
+    ));
+    on_settings!(window, app, on_request_deletion, |cx, password| {
+        standing::request(cx.window, cx.client, password.into())
+    });
+    on_settings!(window, app, on_cancel_deletion, |cx| standing::cancel(
+        cx.window, cx.client
+    ));
     on_settings!(window, app, on_change_avatar, |cx| settings::change_avatar(
         &cx
     ));

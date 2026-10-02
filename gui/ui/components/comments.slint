@@ -52,6 +52,7 @@ component CommentRow inherits Rectangle {
     callback reply();
     callback edit();
     callback delete();
+    callback report();
     callback toggle-replies();
     callback reveal();
     callback open-author();
@@ -196,6 +197,11 @@ component CommentRow inherits Rectangle {
                     text: Tr.delete;
                     clicked => { root.delete(); }
                 }
+
+                if !root.item.mine: TextButton {
+                    text: Tr.report;
+                    clicked => { root.report(); }
+                }
             }
 
             if !root.item.is-reply && root.item.replies > 0: HorizontalLayout {
@@ -239,6 +245,7 @@ export component CommentsSheet inherits Rectangle {
     callback reply(int);
     callback edit(int);
     callback delete(int);
+    callback report(int);
     callback toggle-replies(int);
     callback reveal(int);
     callback open-author(int);
@@ -358,6 +365,7 @@ export component CommentsSheet inherits Rectangle {
                         }
                         edit => { root.edit(index); }
                         delete => { root.delete(index); }
+                        report => { root.report(index); }
                         toggle-replies => { root.toggle-replies(index); }
                         reveal => { root.reveal(index); }
                         open-author => { root.open-author(index); }

@@ -122,6 +122,16 @@ pub fn load_requests(
     );
 }
 
+/// Whose profile is up, when it is someone else's: id and login.
+#[must_use]
+pub fn viewing(state: &Rc<RefCell<PeopleState>>) -> Option<(i64, String)> {
+    state
+        .borrow()
+        .viewing
+        .as_ref()
+        .map(|p| (p.id, p.login.clone()))
+}
+
 /// The person at a row of the friends list, or of the requests.
 #[must_use]
 pub fn friend_at(state: &Rc<RefCell<PeopleState>>, index: usize) -> Option<i64> {

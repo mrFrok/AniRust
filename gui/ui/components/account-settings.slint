@@ -11,7 +11,7 @@ import { MaterialPalette, TextField, FilledButton, TonalButton, TextButton, Outl
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
-import { AccountSettings } from "../structs.slint";
+import { AccountSettings, EnforcementItem } from "../structs.slint";
 
 component Heading inherits Text {
     color: MaterialPalette.on-surface;
@@ -83,7 +83,15 @@ export component AccountSettingsSheet inherits Rectangle {
     callback resend-email();
     callback import-bookmarks();
     callback export-bookmarks();
+    /// The account's standing, already worded, and its sanctions.
+    in property <string> standing;
+    in property <[EnforcementItem]> enforcements: [];
+    callback appeal(int, string);
+    callback open-deletion();
     callback dismiss();
+
+    property <int> appealing: -1;
+    property <string> appeal-text;
 
     // Drafts, filled from the settings whenever they arrive.
     property <string> status;
@@ -456,6 +464,88 @@ export component AccountSettingsSheet inherits Rectangle {
                             text: Tr.export-csv;
                             enabled: !root.busy;
                             clicked => { root.export-bookmarks(); }
+                        }
+                    }
+
+                    HorizontalDivider {}
+
+                    // ---- standing, and leaving -----------------------------
+                    Heading { text: Tr.account-section; }
+
+                    Hint { text: root.standing; }
+
+                    for item[index] in root.enforcements: Rectangle {
+                        border-radius: Shape.medium;
+                        background: MaterialPalette.surface-container;
+                        height: sanction.preferred-height;
+
+                        sanction := VerticalLayout {
+                            padding: Spacing.medium;
+                            spacing: Spacing.tight;
+
+                            Text {
+                                text: item.reason;
+                                color: MaterialPalette.on-surface;
+                                font-size: Typography.body-large-size;
+                                wrap: word-wrap;
+                            }
+
+                            Text {
+                                text: item.date + (item.status != "" ? " · " + Tr.appeal-status(item.status) : "");
+                                color: MaterialPalette.on-surface-variant;
+                                font-size: Typography.label-medium-size;
+                            }
+
+                            if item.answer != "": Text {
+                                text: item.answer;
+                                color: MaterialPalette.on-surface;
+                                font-size: Typography.body-medium-size;
+                                wrap: word-wrap;
+                            }
+
+                            if item.can-appeal && root.appealing != index: HorizontalLayout {
+                                alignment: start;
+
+                                TextButton {
+                                    text: Tr.appeal;
+                                    clicked => {
+                                        root.appealing = index;
+                                        root.appeal-text = "";
+                                    }
+                                }
+                            }
+
+                            if item.can-appeal && root.appealing == index: HorizontalLayout {
+                                spacing: Spacing.small;
+
+                                TextField {
+                                    horizontal-stretch: 1;
+                                    label: Tr.appeal-field;
+                                    text <=> root.appeal-text;
+                                }
+
+                                VerticalLayout {
+                                    alignment: center;
+
+                                    TonalButton {
+                                        text: Tr.send-report;
+                                        enabled: !root.busy && root.appeal-text != "";
+                                        clicked => {
+                                            root.appeal(index, root.appeal-text);
+                                            root.appealing = -1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        alignment: start;
+
+                        TextButton {
+                            text: Tr.delete-account;
+                            clicked => { root.open-deletion(); }
                         }
                     }
                 }

@@ -1,0 +1,157 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Telling the service's moderators about something: a reason from the
+// service's own list for that kind of thing, and a few words.
+
+import { ScrollView } from "std-widgets.slint";
+import { MaterialPalette, TextField, FilledButton, TextButton } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+
+export component ReportSheet inherits Rectangle {
+    /// What is being reported, as the sheet's second line.
+    in property <string> subject;
+    in property <[string]> reasons: [];
+    in property <bool> loading: false;
+    in property <bool> busy: false;
+    /// "", "sent" or "failed".
+    in property <string> outcome;
+
+    callback send(int, string);
+    callback dismiss();
+
+    property <int> picked: -1;
+    property <string> message;
+
+    background: #000000A6;
+
+    TouchArea {
+        clicked => { root.dismiss(); }
+    }
+
+    Rectangle {
+        width: min(460px, parent.width - 2 * Spacing.comfortable);
+        height: min(form.preferred-height, parent.height - 2 * Spacing.comfortable);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: Shape.extra-large;
+        background: MaterialPalette.surface-container-high;
+        drop-shadow-blur: 32px;
+        drop-shadow-color: #00000080;
+
+        TouchArea {}
+
+        form := VerticalLayout {
+            padding: Spacing.comfortable;
+            spacing: Spacing.small;
+            alignment: start;
+
+            Text {
+                text: Tr.report;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.title-large-size;
+                font-weight: Typography.title-large-weight-em;
+            }
+
+            if root.subject != "": Text {
+                text: root.subject;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.body-medium-size;
+                overflow: elide;
+            }
+
+            if root.outcome == "sent": Text {
+                text: Tr.report-sent;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.body-large-size;
+                wrap: word-wrap;
+            }
+
+            if root.outcome != "sent" && root.loading: Text {
+                text: Tr.loading;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.body-medium-size;
+            }
+
+            // The reasons, one of them chosen: a list of rows rather than a
+            // menu, since the reason is the whole of the choice.
+            if root.outcome != "sent": VerticalLayout {
+                for reason[index] in root.reasons: Rectangle {
+                    height: 44px;
+                    border-radius: Shape.medium;
+                    background: root.picked == index
+                        ? MaterialPalette.secondary-container
+                        : touch.has-hover ? MaterialPalette.surface-container-highest : transparent;
+
+                    HorizontalLayout {
+                        padding-left: Spacing.medium;
+                        padding-right: Spacing.medium;
+                        spacing: Spacing.medium;
+
+                        Rectangle {
+                            width: 18px;
+                            height: 18px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 9px;
+                            border-width: 2px;
+                            border-color: root.picked == index ? MaterialPalette.primary : MaterialPalette.outline;
+
+                            Rectangle {
+                                width: 8px;
+                                height: 8px;
+                                border-radius: 4px;
+                                background: MaterialPalette.primary;
+                                visible: root.picked == index;
+                            }
+                        }
+
+                        Text {
+                            text: reason;
+                            color: root.picked == index
+                                ? MaterialPalette.on-secondary-container
+                                : MaterialPalette.on-surface;
+                            font-size: Typography.body-large-size;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                    }
+
+                    touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.picked = index; }
+                    }
+                }
+            }
+
+            if root.outcome != "sent": TextField {
+                label: Tr.report-message;
+                text <=> root.message;
+            }
+
+            if root.outcome == "failed": Text {
+                text: Tr.action-failed;
+                color: MaterialPalette.error;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: Spacing.small;
+                alignment: end;
+
+                TextButton {
+                    text: root.outcome == "sent" ? Tr.close : Tr.cancel;
+                    clicked => { root.dismiss(); }
+                }
+
+                if root.outcome != "sent": FilledButton {
+                    text: root.busy ? Tr.loading : Tr.send-report;
+                    enabled: !root.busy && root.picked >= 0;
+                    clicked => { root.send(root.picked, root.message); }
+                }
+            }
+        }
+    }
+}

@@ -234,6 +234,13 @@ export global Tr {
     }
     out property <string> found-people: lang == "ru" ? "Люди" : "People";
     out property <string> videos: lang == "ru" ? "Видео" : "Videos";
+    out property <string> report: lang == "ru" ? "Пожаловаться" : "Report";
+    out property <string> report-message: lang == "ru" ? "Пара слов модераторам (необязательно)" : "A few words for the moderators (optional)";
+    out property <string> send-report: lang == "ru" ? "Отправить" : "Send";
+    out property <string> report-sent: lang == "ru"
+        ? "Жалоба отправлена. Модераторы посмотрят."
+        : "Reported. The moderators will look into it.";
+    out property <string> close: lang == "ru" ? "Закрыть" : "Close";
     out property <string> tab-collections: lang == "ru" ? "Коллекции" : "Collections";
     out property <string> my-collections: lang == "ru" ? "Мои коллекции" : "My collections";
     out property <string> new-collection: lang == "ru" ? "Новая коллекция" : "New collection";
@@ -432,6 +439,33 @@ export global Tr {
         : "Lists come in from the JSON file Shikimori exports: profile settings → Anime and manga list → Export. An import can be made once a month.";
     out property <string> import-shikimori: lang == "ru" ? "Импорт из Shikimori" : "Import from Shikimori";
     out property <string> export-csv: lang == "ru" ? "Экспорт в CSV" : "Export to CSV";
+    out property <string> account-section: lang == "ru" ? "Аккаунт" : "Account";
+    public pure function appeal-status(status: string) -> string {
+        status == "submitted" ? (lang == "ru" ? "Апелляция на рассмотрении" : "Appeal under review")
+        : status == "accepted" ? (lang == "ru" ? "Апелляция принята" : "Appeal accepted")
+        : status == "rejected" ? (lang == "ru" ? "Апелляция отклонена" : "Appeal rejected")
+        : status == "revoked" ? (lang == "ru" ? "Отменено" : "Revoked")
+        : ""
+    }
+    out property <string> appeal: lang == "ru" ? "Обжаловать" : "Appeal";
+    out property <string> appeal-field: lang == "ru" ? "Почему это ошибка" : "Why this is a mistake";
+    out property <string> delete-account: lang == "ru" ? "Удалить аккаунт" : "Delete account";
+    out property <string> delete-for-good: lang == "ru" ? "Да, удалить навсегда" : "Yes, delete it for good";
+    out property <string> deletion-why: lang == "ru"
+        ? "Аккаунт удаляется не сразу: сервис держит его какое-то время, и до тех пор удаление можно отменить. Потом пропадёт всё — списки, история, комментарии, коллекции."
+        : "The account does not go at once: the service holds it for a while, and until then the deletion can be cancelled. After that everything goes — lists, history, comments, collections.";
+    public pure function type-login(login: string) -> string {
+        lang == "ru" ? "Введите логин «" + login + "»" : "Type the login “" + login + "”"
+    }
+    public pure function deletion-pending(date: string) -> string {
+        lang == "ru"
+            ? "Аккаунт будет удалён " + date + ". До этого удаление можно отменить."
+            : "The account will be deleted on " + date + ". Until then the deletion can be cancelled."
+    }
+    out property <string> deletion-in-progress: lang == "ru" ? "Удаление уже идёт." : "The deletion is already under way.";
+    out property <string> cancel-deletion: lang == "ru" ? "Отменить удаление" : "Cancel the deletion";
+    out property <string> appeal-sent: lang == "ru" ? "Апелляция отправлена" : "Appeal sent";
+
     /// The words for the outcome of a settings change Rust has named.
     public pure function settings-message(key: string) -> string {
         key == "saved" ? (lang == "ru" ? "Сохранено" : "Saved")
@@ -452,6 +486,7 @@ export global Tr {
         : key == "email-taken" ? (lang == "ru" ? "На эту почту уже есть аккаунт" : "That email already has an account")
         : key == "wrong-code" ? (lang == "ru" ? "Неверный или устаревший код" : "Wrong or expired code")
         : key == "cannot-send" ? (lang == "ru" ? "Не получилось отправить письмо" : "The email could not be sent")
+        : key == "appeal-sent" ? root.appeal-sent
         : key == "imported" ? (lang == "ru" ? "Закладки перенесены" : "Bookmarks imported")
         : key == "import-too-soon" ? (lang == "ru" ? "Импорт возможен раз в месяц — этот уже был" : "One import a month, and this month's is done")
         : key == "import-unreadable" ? (lang == "ru" ? "Это не выгрузка Shikimori" : "That is not a Shikimori export")
@@ -462,7 +497,7 @@ export global Tr {
     public pure function settings-message-is-error(key: string) -> bool {
         key != "saved" && key != "avatar-saved" && key != "login-saved"
             && key != "password-saved" && key != "email-code-sent" && key != "email-saved"
-            && key != "imported" && key != "exported"
+            && key != "imported" && key != "exported" && key != "appeal-sent"
     }
 
     /// The words for a refusal Rust has named.

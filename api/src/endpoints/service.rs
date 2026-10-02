@@ -67,6 +67,73 @@ pub struct Enforcement {
     pub appeal_submit_timestamp: Option<i64>,
     #[serde(deserialize_with = "crate::serde_ext::nullable")]
     pub appeal_process_message: String,
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub appeal_type: serde_json::Value,
+}
+
+/// Where an appeal against a sanction stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppealStatus {
+    Unknown,
+    NotSubmitted,
+    Submitted,
+    Accepted,
+    Rejected,
+}
+
+impl Enforcement {
+    /// The appeal's standing. Read from the name the service gives it, or
+    /// from its position in the service's list when a number comes instead.
+    #[must_use]
+    pub fn appeal(&self) -> AppealStatus {
+        match enum_name(
+            &self.appeal_status,
+            &[
+                "UNKNOWN",
+                "NOT_SUBMITTED",
+                "SUBMITTED",
+                "ACCEPTED",
+                "REJECTED",
+            ],
+        ) {
+            Some("NOT_SUBMITTED") => AppealStatus::NotSubmitted,
+            Some("SUBMITTED") => AppealStatus::Submitted,
+            Some("ACCEPTED") => AppealStatus::Accepted,
+            Some("REJECTED") => AppealStatus::Rejected,
+            _ => AppealStatus::Unknown,
+        }
+    }
+
+    /// Whether an appeal can still be written: none sent, one allowed, and
+    /// the time for it not run out (`now` in seconds since the epoch).
+    #[must_use]
+    pub fn can_appeal(&self, now: i64) -> bool {
+        let allowed = !matches!(
+            enum_name(
+                &self.appeal_type,
+                &["UNKNOWN", "NOT_AVAILABLE", "MESSAGE", "ADJUSTMENT"]
+            ),
+            Some("NOT_AVAILABLE")
+        );
+        allowed
+            && !self.is_revoked
+            && self.appeal() == AppealStatus::NotSubmitted
+            && self
+                .appeal_expires_timestamp
+                .is_none_or(|until| until > now)
+    }
+}
+
+/// An enum the service may send by name or by position.
+fn enum_name<'a>(value: &'a serde_json::Value, names: &[&'a str]) -> Option<&'a str> {
+    match value {
+        serde_json::Value::String(name) => Some(name.as_str()),
+        serde_json::Value::Number(n) => n
+            .as_u64()
+            .and_then(|at| usize::try_from(at).ok())
+            .and_then(|at| names.get(at).copied()),
+        _ => None,
+    }
 }
 
 /// A reason a report can give.
@@ -558,5 +625,41 @@ impl Client {
         }
         let payload: PageablePayload<ReleaseVideo> = self.send(spec).await?;
         Ok(payload.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_appeal_reads_by_name_or_by_position() {
+        let by_name = Enforcement {
+            appeal_status: json!("SUBMITTED"),
+            ..Enforcement::default()
+        };
+        assert_eq!(by_name.appeal(), AppealStatus::Submitted);
+        let by_position = Enforcement {
+            appeal_status: json!(4),
+            ..Enforcement::default()
+        };
+        assert_eq!(by_position.appeal(), AppealStatus::Rejected);
+    }
+
+    #[test]
+    fn an_appeal_is_open_only_while_it_may_be_written() {
+        let open = Enforcement {
+            appeal_status: json!("NOT_SUBMITTED"),
+            appeal_type: json!("MESSAGE"),
+            appeal_expires_timestamp: Some(200),
+            ..Enforcement::default()
+        };
+        assert!(open.can_appeal(100));
+        assert!(!open.can_appeal(300), "the time ran out");
+        let barred = Enforcement {
+            appeal_type: json!("NOT_AVAILABLE"),
+            ..open.clone()
+        };
+        assert!(!barred.can_appeal(100));
     }
 }

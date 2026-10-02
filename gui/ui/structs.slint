@@ -284,3 +284,14 @@ export struct VideoItem {
     image: image,
     image-loaded: bool,
 }
+
+/// A sanction against the account or something it posted.
+export struct EnforcementItem {
+    reason: string,
+    date: string,
+    /// "", "submitted", "accepted", "rejected" or "revoked".
+    status: string,
+    /// What the moderators answered an appeal with.
+    answer: string,
+    can-appeal: bool,
+}

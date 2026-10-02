@@ -12,7 +12,7 @@
 // that owns the video texture is declared once, in the window.
 
 import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, IconButton, FloatingActionButton, FABStyle, TonalButton, ActionChip, OutlineButton } from "@material";
+import { MaterialPalette, IconButton, FloatingActionButton, FABStyle, TonalButton, ActionChip, OutlineButton, TextButton } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -228,6 +228,7 @@ export component ReleasePage inherits Rectangle {
     callback set-list(int);
     callback toggle-favourite();
     callback add-to-collection();
+    callback report();
     /// A star was clicked. Clicking the rating already given takes it back.
     callback set-vote(int);
     /// Asked for any of the three above without an account.
@@ -572,6 +573,12 @@ export component ReleasePage inherits Rectangle {
                                     icon: @image-url("../icons/comment.svg");
                                     text: Tr.comments-title + (root.comment-count > 0 ? " · " + root.comment-count : "");
                                     clicked => { root.open-comments(); }
+                                }
+
+                                TextButton {
+                                    icon: @image-url("../icons/flag.svg");
+                                    text: Tr.report;
+                                    clicked => { root.report(); }
                                 }
                             }
 

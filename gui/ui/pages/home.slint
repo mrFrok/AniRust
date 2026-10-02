@@ -87,6 +87,7 @@ component CollectionHeader inherits Rectangle {
     callback open-comments();
     callback open-creator();
     callback edit();
+    callback report();
     callback sign-in();
 
     height: layout.preferred-height;
@@ -191,6 +192,12 @@ component CollectionHeader inherits Rectangle {
                     text: Tr.edit;
                     clicked => { root.edit(); }
                 }
+
+                if !root.collection.mine: TextButton {
+                    icon: @image-url("../icons/flag.svg");
+                    text: Tr.report;
+                    clicked => { root.report(); }
+                }
             }
         }
     }
@@ -235,6 +242,7 @@ export component HomePage inherits Rectangle {
     callback open-collection-creator();
     callback edit-collection();
     callback new-collection();
+    callback report-collection();
 
     /// People and channels a search found beside the releases. Only a search
     /// of the whole catalogue looks for them.
@@ -466,6 +474,7 @@ export component HomePage inherits Rectangle {
                 open-comments => { root.open-collection-comments(); }
                 open-creator => { root.open-collection-creator(); }
                 edit => { root.edit-collection(); }
+                report => { root.report-collection(); }
                 sign-in => { root.sign-in(); }
             }
         }

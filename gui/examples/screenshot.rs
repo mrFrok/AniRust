@@ -27,7 +27,8 @@
 //! `profile-light`, `home-downloading`, `feed`, `feed-latest`,
 //! `feed-signed-out`, `feed-empty`, `feed-channels`, `feed-channel`, `collections`, `collection`,
 //! `collection-editor`, `collection-picker`, `search`, `sign-up`,
-//! `sign-up-code`, `restore-code`, `settings`, `settings-email`, `comments`, `comments-replying`,
+//! `sign-up-code`, `restore-code`, `settings`, `settings-email`,
+//! `settings-standing`, `report`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
 //! `comments-signed-out`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
@@ -90,6 +91,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || state.starts_with("collection")
             || state == "search"
             || state.starts_with("settings")
+            || state.starts_with("report")
+            || state.starts_with("deletion")
         {
             "home".into()
         } else {
@@ -267,6 +270,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .into(),
         );
         ui.set_email_code_pending(state == "settings-email");
+    }
+    // A report about a comment, a reason picked; and the deletion sheet,
+    // before a request and with one in.
+    if state == "report" {
+        ui.set_report_open(true);
+        ui.set_report_subject("Согласен, вторая половина сильнее.".into());
+        ui.set_report_reasons(slint::ModelRc::new(slint::VecModel::from(
+            ["Спам", "Оскорбления", "Спойлеры", "Другое"]
+                .iter()
+                .map(|r| slint::SharedString::from(*r))
+                .collect::<Vec<_>>(),
+        )));
+    }
+    if state.starts_with("deletion") {
+        ui.set_destination(4);
+        ui.set_signed_in(true);
+        ui.set_account(Account {
+            login: "mrfrok".into(),
+            ..Account::default()
+        });
+        ui.set_deletion_open(true);
+        ui.set_deletion_pending(state == "deletion-pending");
+        ui.set_deletion_at("2 ноября 2026".into());
+    }
+    if state == "settings-standing" {
+        ui.set_standing("Блокировок: 1. Ограничение до 12 ноября 2026.".into());
+        ui.set_enforcements(slint::ModelRc::new(slint::VecModel::from(vec![
+            EnforcementItem {
+                reason: "Оскорбления в комментариях".into(),
+                date: "28 сентября 2026".into(),
+                status: "".into(),
+                answer: "".into(),
+                can_appeal: true,
+            },
+            EnforcementItem {
+                reason: "Спойлеры без пометки".into(),
+                date: "3 августа 2026".into(),
+                status: "rejected".into(),
+                answer: "Спойлер был в первой строке.".into(),
+                can_appeal: false,
+            },
+        ])));
     }
     // A search of everything: people and channels over the releases.
     if state == "search" {
