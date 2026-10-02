@@ -684,21 +684,19 @@ pub fn toggle_like(
     let state = Rc::clone(state);
     let api = client.clone();
     tasks::spawn(
-        async move {
-            let vote = if liking {
-                CommentVote::Up
-            } else {
-                CommentVote::None
-            };
-            api.article_vote(article_id, vote).await
-        },
+        // The official client sends the up vote either way: the service
+        // takes a vote it already has as taking it back. A 0 is not sent.
+        async move { api.article_vote(article_id, CommentVote::Up).await },
         move |result| {
             if weak.upgrade().is_none() {
                 return;
             }
-            if let Err(error) = result {
-                tracing::warn!(%error, article_id, "the heart was not counted");
-                set_like(&state, at, before_vote, before_count);
+            match result {
+                Ok(()) => tracing::info!(article_id, liking, "heart counted"),
+                Err(error) => {
+                    tracing::warn!(%error, article_id, liking, "the heart was not counted");
+                    set_like(&state, at, before_vote, before_count);
+                }
             }
         },
     );

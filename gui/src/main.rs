@@ -57,6 +57,7 @@ slint::include_modules!();
 /// have to agree about each: the rail's own order, and what arriving there has
 /// to fetch — neither is a grid, so nothing in `home` fetches for them.
 const FEED_DESTINATION: i32 = 3;
+const SETTINGS_DESTINATION: i32 = 6;
 const PROFILE_DESTINATION: i32 = 4;
 
 fn main() -> Result<()> {
@@ -80,6 +81,8 @@ fn main() -> Result<()> {
     } else {
         "en".into()
     });
+    window.set_app_version(env!("CARGO_PKG_VERSION").into());
+    window.on_open_link(|url| release::open_in_browser(&url));
     let prefs = Rc::new(Cell::new(preferences::Preferences::load()));
     wire_preferences(&window, &prefs);
 
@@ -1409,6 +1412,9 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
                     Rc::clone(&app.client),
                     app.http.clone(),
                 );
+            }
+            if index == SETTINGS_DESTINATION {
+                notifications::load_switches(&window, &app.client);
             }
             if index == FEED_DESTINATION {
                 feed::open(

@@ -9,6 +9,8 @@ import { HomePage } from "pages/home.slint";
 import { SignInSheet } from "components/sign-in.slint";
 import { DownloadsPage } from "pages/downloads.slint";
 import { ProfilePage } from "pages/profile.slint";
+import { SettingsPage } from "pages/settings.slint";
+import { Rail } from "components/rail.slint";
 import { FeedPage } from "pages/feed.slint";
 import { CommentsSheet } from "components/comments.slint";
 import { NotificationsSheet } from "components/notifications.slint";
@@ -373,7 +375,7 @@ export component MainWindow inherits Window {
     /// `current-index` on a click, and a property written to keeps no binding.
     /// Rust moving the destination on its own still has to land on the rail.
     in-out property <int> destination: 0;
-    changed destination => { rail.current-index = root.destination; }
+    // The rail reads the destination by binding; nothing to push.
     /// Which of the destination's tabs is selected.
     in property <int> tab: 0;
     in property <[string]> genres: [];
@@ -521,6 +523,9 @@ export component MainWindow inherits Window {
     /// Which appearance is chosen, as a position in the row the profile
     /// screen offers. Rust owns that order, and writes it to the settings.
     in property <int> appearance-choice: 0;
+    in property <string> app-version;
+    /// Opens a web page in the desktop's browser.
+    callback open-link(string);
     callback select-appearance(int);
 
     browsing := HorizontalLayout {
@@ -531,8 +536,7 @@ export component MainWindow inherits Window {
         // The official client puts these five on a bar along the bottom, where
         // a thumb reaches them. A desktop window is wide rather than tall and
         // has no thumb, so the same five run down the left edge.
-        rail := NavigationRail {
-            alignment: start;
+        rail := Rail {
             items: [
                 { icon: @image-url("icons/home.svg"), text: Tr.nav-home },
                 { icon: @image-url("icons/compass.svg"), text: Tr.nav-catalogue },
@@ -540,9 +544,11 @@ export component MainWindow inherits Window {
                 { icon: @image-url("icons/feed.svg"), text: Tr.nav-feed },
                 { icon: @image-url("icons/person.svg"), text: Tr.nav-profile },
             ];
-
-            init => { self.current-index = root.destination; }
-            index-changed(i) => { root.select-destination(i); }
+            // The settings are a destination of their own, kept apart at the
+            // foot of the rail; Rust knows them as the seventh.
+            bottom: { icon: @image-url("icons/settings.svg"), text: Tr.nav-settings };
+            current: root.destination == 6 ? 5 : root.destination;
+            select(i) => { root.select-destination(i == 5 ? 6 : i); }
         }
 
         // Two destinations are not a grid of posters, so they are their own
@@ -586,7 +592,28 @@ export component MainWindow inherits Window {
             sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
         }
 
+        if root.destination == 6: SettingsPage {
+            signed-in: root.signed-in;
+            account-name: root.account-name;
+            version: root.app-version;
+            notify: root.notify-switches;
+            appearance: root.appearance-choice;
+            accent: root.accent-index;
+            translucent: root.translucent;
+            remember-player: root.remember-player;
+            flip-notify(i) => { root.flip-notify(i); }
+            select-appearance(i) => { root.select-appearance(i); }
+            select-accent(i) => { root.select-accent(i); }
+            set-translucent(on) => { root.set-translucent(on); }
+            set-remember-player(on) => { root.set-remember-player(on); }
+            open-account-settings => { root.open-settings(); }
+            sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
+            sign-out => { root.confirm-sign-out = true; }
+            open-link(url) => { root.open-link(url); }
+        }
+
         if root.destination == 4: ProfilePage {
+            narrow: root.narrow;
             signed-in: root.signed-in;
             account: root.account;
             avatar: root.avatar;

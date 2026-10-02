@@ -224,7 +224,8 @@ component Stat inherits Rectangle {
     in property <bool> opens: false;
     callback clicked;
 
-    width: 146px;
+    min-width: 72px;
+    horizontal-stretch: 1;
     height: 76px;
     background: transparent;
 
@@ -259,12 +260,232 @@ component Stat inherits Rectangle {
     }
 }
 
+/// The account's people and its recent viewing: beside the overview on a
+/// wide window, under it on a narrow one.
+component ProfileSide inherits VerticalLayout {
+    in property <bool> signed-in;
+    in property <bool> mine;
+    in property <int> friend-count;
+    in property <int> vote-count;
+    in property <int> comment-count;
+    in property <int> collection-count;
+    in property <[PersonItem]> friends;
+    in property <[PersonItem]> requests;
+    in property <[HistoryItem]> recent;
+    callback open-friend(int);
+    callback open-request(int);
+    callback answer-request(int, bool);
+    callback open-recent(int);
+    callback remove-recent(int);
+
+    spacing: Spacing.base;
+    alignment: start;
+
+    // Counts of things this client has no screen for, so they are under a
+    // heading of their own rather than among lists that open. They are still
+    // the account's own measure of itself.
+    if root.signed-in: VerticalLayout {
+        spacing: Spacing.small;
+
+        Text {
+            text: Tr.activity;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.title-medium-size;
+            font-weight: Typography.title-medium-weight-em;
+        }
+
+        HorizontalLayout {
+            spacing: Spacing.small;
+
+            Stat { label: Tr.votes; value: root.vote-count; }
+            Stat { label: Tr.comments; value: root.comment-count; }
+            Stat { label: Tr.collections; value: root.collection-count; }
+            Stat { label: Tr.friends; value: root.friend-count; }
+        }
+    }
+
+    // ---- friends, and requests waiting --------------------------------
+    if root.signed-in && (root.friends.length > 0 || (root.mine && root.requests.length > 0)): VerticalLayout {
+        spacing: Spacing.small;
+
+        if root.mine && root.requests.length > 0: VerticalLayout {
+            spacing: Spacing.small;
+
+            Text {
+                text: Tr.friend-requests;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.title-medium-size;
+                font-weight: Typography.title-medium-weight-em;
+            }
+
+            for person[i] in root.requests: HorizontalLayout {
+                spacing: Spacing.medium;
+                max-width: 560px;
+
+                PersonChip {
+                    horizontal-stretch: 1;
+                    person: person;
+                    clicked => { root.open-request(i); }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    FilledButton {
+                        text: Tr.accept-friend;
+                        clicked => { root.answer-request(i, true); }
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    TextButton {
+                        text: Tr.decline;
+                        clicked => { root.answer-request(i, false); }
+                    }
+                }
+            }
+        }
+
+        if root.friends.length > 0: VerticalLayout {
+            spacing: Spacing.small;
+
+            Text {
+                text: Tr.friends + " · " + root.friend-count;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.title-medium-size;
+                font-weight: Typography.title-medium-weight-em;
+            }
+
+            FlexboxLayout {
+                flex-wrap: wrap;
+                alignment: start;
+                spacing: Spacing.small;
+
+                for person[i] in root.friends: PersonChip {
+                    width: 200px;
+                    person: person;
+                    clicked => { root.open-friend(i); }
+                }
+            }
+        }
+    }
+
+    // ---- what was watched lately -------------------------------------
+    //
+    // The same list the history tab holds, cut to what fits here. It is on
+    // this screen because it is the answer to "where was I", and that is
+    // the question an account is opened with.
+    if root.signed-in && root.mine: VerticalLayout {
+        spacing: Spacing.small;
+
+        Text {
+            text: Tr.recently-watched;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.title-medium-size;
+            font-weight: Typography.title-medium-weight-em;
+        }
+
+        if root.recent.length == 0: Text {
+            text: Tr.nothing-watched;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.body-medium-size;
+        }
+
+        for item[index] in root.recent: Rectangle {
+            height: 64px;
+            border-radius: Shape.medium;
+            background: row-touch.has-hover || remove.has-hover
+                ? MaterialPalette.surface-container
+                : transparent;
+
+            HorizontalLayout {
+                padding-left: Spacing.small;
+                padding-right: Spacing.base;
+                spacing: Spacing.medium;
+
+                VerticalLayout {
+                    alignment: center;
+
+                    Rectangle {
+                        width: 36px;
+                        height: 52px;
+                        border-radius: Shape.small;
+                        background: MaterialPalette.surface-container-high;
+                        clip: true;
+
+                        Image {
+                            source: item.poster;
+                            image-fit: cover;
+                            width: 100%;
+                            height: 100%;
+                            visible: item.poster-loaded;
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: Spacing.hair;
+
+                    Text {
+                        text: item.title;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.body-large-size;
+                        overflow: elide;
+                    }
+
+                    Text {
+                        text: item.episode > 0
+                            ? Tr.episode-of(item.episode) + " · " + Tr.ago(item.minutes-ago)
+                            : Tr.ago(item.minutes-ago);
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.label-medium-size;
+                        overflow: elide;
+                    }
+                }
+
+                // Taking a release out of the history is the official
+                // client's long-press; on a desktop it is a button that
+                // shows under the pointer.
+                Rectangle {
+                    width: 40px;
+
+                    if row-touch.has-hover || remove.has-hover: VerticalLayout {
+                        alignment: center;
+
+                        IconButton {
+                            icon: @image-url("../icons/close.svg");
+                            tooltip: Tr.remove-from-history;
+                            clicked => { root.remove-recent(index); }
+                        }
+                    }
+
+                    remove := TouchArea {
+                        z: -1;
+                    }
+                }
+            }
+
+            // Beneath the remove button, so the button gets its click.
+            row-touch := TouchArea {
+                z: -1;
+                mouse-cursor: pointer;
+                clicked => { root.open-recent(index); }
+            }
+        }
+    }
+
+}
+
 export component ProfilePage inherits Rectangle {
     in property <bool> signed-in: false;
     /// Whether this is the account's own profile or someone else's. Someone
     /// else's leaves out what is the account's alone: its history, its
     /// settings, signing out.
     in property <bool> mine: true;
+    /// One column rather than two.
+    in property <bool> narrow: false;
     in property <[PersonItem]> friends: [];
     in property <[PersonItem]> requests: [];
     callback back-to-mine();
@@ -462,18 +683,11 @@ export component ProfilePage inherits Rectangle {
                     clicked => { root.sign-in(); }
                 }
 
-                if root.signed-in && root.mine: HorizontalLayout {
-                    spacing: Spacing.small;
-
-                    TonalButton {
-                        text: Tr.account-settings;
-                        clicked => { root.open-settings(); }
-                    }
-
-                    OutlineButton {
-                        text: Tr.sign-out;
-                        clicked => { root.sign-out(); }
-                    }
+                // Picture and status are the profile's own; everything else
+                // that can be set, and signing out, is under Settings.
+                if root.signed-in && root.mine: TonalButton {
+                    text: Tr.edit-profile;
+                    clicked => { root.open-settings(); }
                 }
 
                 // Someone else's: the one friend button, saying what it will
@@ -504,681 +718,312 @@ export component ProfilePage inherits Rectangle {
             }
         }
 
-        // ---- what is in the lists ----------------------------------------
-        //
-        // Only with an account behind them. Five zeroes state nothing except
-        // that nobody is signed in, which the line above already said.
-        //
-        // A ring beside the numbers, because the question the numbers answer
-        // is what the account's viewing looks like as a whole, and a
-        // proportion is a shape before it is a figure.
-        if root.signed-in: VerticalLayout {
-            spacing: Spacing.base;
+        // Two columns on a wide window — the account as figures on the left,
+        // its people and its viewing on the right — and one under the other
+        // on a narrow one.
+        HorizontalLayout {
+            spacing: Spacing.comfortable;
 
             VerticalLayout {
-                spacing: Spacing.small;
+                horizontal-stretch: 3;
+                spacing: Spacing.base;
+                alignment: start;
 
-                Text {
-                    text: Tr.lists;
-                    color: MaterialPalette.on-surface;
-                    font-size: Typography.title-medium-size;
-                    font-weight: Typography.title-medium-weight-em;
-                }
-
-                // As wide as it needs to be and no wider: a legend of five
-                // short lines stretched across a desktop window puts each
-                // number half a screen from the word it belongs to.
-                HorizontalLayout {
-                    alignment: start;
-
-                Rectangle {
-                    width: 520px;
-                    height: 188px;
-                    border-radius: Shape.large;
-                    background: MaterialPalette.surface-container;
-
-                    HorizontalLayout {
-                        padding: Spacing.base;
-                        spacing: Spacing.base;
-
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            alignment: center;
-                            spacing: Spacing.hair;
-
-                            Reading {
-                                label: Tr.list-watching;
-                                value: root.account.watching;
-                                tint: root.watching-colour;
-                                clicked => { if (root.mine) { root.open-list(0); } }
-                            }
-
-                            Reading {
-                                label: Tr.list-planned;
-                                value: root.account.planned;
-                                tint: root.planned-colour;
-                                clicked => { if (root.mine) { root.open-list(1); } }
-                            }
-
-                            Reading {
-                                label: Tr.list-watched;
-                                value: root.account.watched;
-                                tint: root.watched-colour;
-                                clicked => { if (root.mine) { root.open-list(2); } }
-                            }
-
-                            Reading {
-                                label: Tr.list-hold;
-                                value: root.account.hold;
-                                tint: root.hold-colour;
-                                clicked => { if (root.mine) { root.open-list(3); } }
-                            }
-
-                            Reading {
-                                label: Tr.list-dropped;
-                                value: root.account.dropped;
-                                tint: root.dropped-colour;
-                                clicked => { if (root.mine) { root.open-list(4); } }
-                            }
-                        }
-
-                        // The ring itself, and in its hole the number the five
-                        // add up to: a total is what a reader works out from a
-                        // ring otherwise, and works out wrong.
-                        Rectangle {
-                            width: 156px;
-
-                            Wedge {
-                                width: 100%;
-                                height: 100%;
-                                start: 0;
-                                sweep: root.account.watching / root.total;
-                                tint: root.watching-colour;
-                            }
-
-                            Wedge {
-                                width: 100%;
-                                height: 100%;
-                                start: root.account.watching / root.total;
-                                sweep: root.account.planned / root.total;
-                                tint: root.planned-colour;
-                            }
-
-                            Wedge {
-                                width: 100%;
-                                height: 100%;
-                                start: (root.account.watching + root.account.planned) / root.total;
-                                sweep: root.account.watched / root.total;
-                                tint: root.watched-colour;
-                            }
-
-                            Wedge {
-                                width: 100%;
-                                height: 100%;
-                                start: (root.account.watching + root.account.planned
-                                    + root.account.watched) / root.total;
-                                sweep: root.account.hold / root.total;
-                                tint: root.hold-colour;
-                            }
-
-                            Wedge {
-                                width: 100%;
-                                height: 100%;
-                                start: (root.account.watching + root.account.planned
-                                    + root.account.watched + root.account.hold) / root.total;
-                                sweep: root.account.dropped / root.total;
-                                tint: root.dropped-colour;
-                            }
-
-                            VerticalLayout {
-                                alignment: center;
-
-                                Text {
-                                    text: root.total;
-                                    color: MaterialPalette.on-surface;
-                                    font-size: Typography.headline-small-size;
-                                    horizontal-alignment: center;
-                                }
-
-                                Text {
-                                    text: Tr.releases-total;
-                                    color: MaterialPalette.on-surface-variant;
-                                    font-size: Typography.label-small-size;
-                                    horizontal-alignment: center;
-                                }
-                            }
-                        }
-                    }
-                }
-                }
-            }
-
-            // ---- statistics ------------------------------------------------
+            // ---- what is in the lists ----------------------------------------
             //
-            // What the account watches and how much, as the official profile
-            // shows it: shares by genre, audience and theme, two totals, and
-            // the last days as bars. Hidden accounts say so instead.
-            VerticalLayout {
-                spacing: Spacing.small;
-
-                Text {
-                    text: Tr.statistics;
-                    color: MaterialPalette.on-surface;
-                    font-size: Typography.title-medium-size;
-                    font-weight: Typography.title-medium-weight-em;
-                }
-
-                if root.account.stats-hidden: Text {
-                    text: Tr.stats-hidden;
-                    color: MaterialPalette.on-surface-variant;
-                    font-size: Typography.body-medium-size;
-                }
-
-                if !root.account.stats-hidden: HorizontalLayout {
-                    alignment: start;
-
-                    Rectangle {
-                        width: 520px;
-                        height: stats.preferred-height;
-                        border-radius: Shape.large;
-                        background: MaterialPalette.surface-container;
-
-                        stats := VerticalLayout {
-                            padding: Spacing.base;
-                            spacing: Spacing.tight;
-
-                            for row in [
-                                { label: Tr.stat-genres, value: root.account.genres },
-                                { label: Tr.stat-audiences, value: root.account.audiences },
-                                { label: Tr.stat-themes, value: root.account.themes },
-                            ]: HorizontalLayout {
-                                spacing: Spacing.small;
-                                // A share the account has none of takes no
-                                // line, rather than a label with nothing by it.
-                                visible: row.value != "";
-                                height: row.value != "" ? self.preferred-height : 0px;
-
-                                Text {
-                                    text: row.label + ":";
-                                    color: MaterialPalette.on-surface;
-                                    font-size: Typography.body-medium-size;
-                                    font-weight: Typography.body-medium-weight-em;
-                                }
-
-                                Text {
-                                    text: row.value;
-                                    color: MaterialPalette.on-surface;
-                                    font-size: Typography.body-medium-size;
-                                    horizontal-stretch: 1;
-                                    overflow: elide;
-                                }
-                            }
-
-                            Rectangle { height: Spacing.small; }
-
-                            Stat2 {
-                                label: Tr.stat-episodes;
-                                value: root.account.episodes-watched;
-                            }
-
-                            HorizontalLayout {
-                                spacing: Spacing.small;
-
-                                Text {
-                                    text: Tr.stat-time + ":";
-                                    color: MaterialPalette.on-surface-variant;
-                                    font-size: Typography.body-medium-size;
-                                }
-
-                                Text {
-                                    text: Tr.duration(root.account.minutes-watched);
-                                    color: MaterialPalette.on-surface;
-                                    font-size: Typography.body-medium-size;
-                                    font-weight: Typography.body-medium-weight-em;
-                                    horizontal-stretch: 1;
-                                }
-                            }
-
-                            if root.account.dynamics.length > 0: VerticalLayout {
-                                padding-top: Spacing.base;
-                                spacing: Spacing.small;
-
-                                Text {
-                                    text: Tr.stat-dynamics;
-                                    color: MaterialPalette.on-surface;
-                                    font-size: Typography.title-small-size;
-                                    font-weight: Typography.title-small-weight-em;
-                                }
-
-                                Bars {
-                                    values: root.account.dynamics;
-                                    days: root.account.dynamics-days;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Counts of things this client has no screen for, so they are
-            // under a heading of their own rather than sitting among lists
-            // that open. They are still worth stating: they are the account's
-            // own measure of itself.
-            VerticalLayout {
-                spacing: Spacing.small;
-
-                Text {
-                    text: Tr.activity;
-                    color: MaterialPalette.on-surface;
-                    font-size: Typography.title-medium-size;
-                    font-weight: Typography.title-medium-weight-em;
-                }
-
-                FlexboxLayout {
-                    flex-wrap: wrap;
-                    alignment: start;
-                    spacing: Spacing.small;
-
-                    Stat {
-                        label: Tr.votes;
-                        value: root.account.votes;
-                    }
-
-                    Stat {
-                        label: Tr.comments;
-                        value: root.account.comments;
-                    }
-
-                    Stat {
-                        label: Tr.collections;
-                        value: root.account.collections;
-                    }
-
-                    Stat {
-                        label: Tr.friends;
-                        value: root.account.friends;
-                    }
-                }
-            }
-        }
-
-        // ---- friends, and requests waiting --------------------------------
-        if root.signed-in && (root.friends.length > 0 || (root.mine && root.requests.length > 0)): VerticalLayout {
-            spacing: Spacing.small;
-
-            if root.mine && root.requests.length > 0: VerticalLayout {
-                spacing: Spacing.small;
-
-                Text {
-                    text: Tr.friend-requests;
-                    color: MaterialPalette.on-surface;
-                    font-size: Typography.title-medium-size;
-                    font-weight: Typography.title-medium-weight-em;
-                }
-
-                for person[i] in root.requests: HorizontalLayout {
-                    spacing: Spacing.medium;
-                    max-width: 560px;
-
-                    PersonChip {
-                        horizontal-stretch: 1;
-                        person: person;
-                        clicked => { root.open-request(i); }
-                    }
-
-                    VerticalLayout {
-                        alignment: center;
-                        FilledButton {
-                            text: Tr.accept-friend;
-                            clicked => { root.answer-request(i, true); }
-                        }
-                    }
-
-                    VerticalLayout {
-                        alignment: center;
-                        TextButton {
-                            text: Tr.decline;
-                            clicked => { root.answer-request(i, false); }
-                        }
-                    }
-                }
-            }
-
-            if root.friends.length > 0: VerticalLayout {
-                spacing: Spacing.small;
-
-                Text {
-                    text: Tr.friends + " · " + root.account.friends;
-                    color: MaterialPalette.on-surface;
-                    font-size: Typography.title-medium-size;
-                    font-weight: Typography.title-medium-weight-em;
-                }
-
-                FlexboxLayout {
-                    flex-wrap: wrap;
-                    alignment: start;
-                    spacing: Spacing.small;
-
-                    for person[i] in root.friends: PersonChip {
-                        width: 200px;
-                        person: person;
-                        clicked => { root.open-friend(i); }
-                    }
-                }
-            }
-        }
-
-        // ---- what was watched lately -------------------------------------
-        //
-        // The same list the history tab holds, cut to what fits here. It is on
-        // this screen because it is the answer to "where was I", and that is
-        // the question an account is opened with.
-        if root.signed-in && root.mine: VerticalLayout {
-            spacing: Spacing.small;
-
-            Text {
-                text: Tr.recently-watched;
-                color: MaterialPalette.on-surface;
-                font-size: Typography.title-medium-size;
-                font-weight: Typography.title-medium-weight-em;
-            }
-
-            if root.recent.length == 0: Text {
-                text: Tr.nothing-watched;
-                color: MaterialPalette.on-surface-variant;
-                font-size: Typography.body-medium-size;
-            }
-
-            for item[index] in root.recent: Rectangle {
-                height: 64px;
-                border-radius: Shape.medium;
-                background: row-touch.has-hover || remove.has-hover
-                    ? MaterialPalette.surface-container
-                    : transparent;
-
-                HorizontalLayout {
-                    padding-left: Spacing.small;
-                    padding-right: Spacing.base;
-                    spacing: Spacing.medium;
-
-                    VerticalLayout {
-                        alignment: center;
-
-                        Rectangle {
-                            width: 36px;
-                            height: 52px;
-                            border-radius: Shape.small;
-                            background: MaterialPalette.surface-container-high;
-                            clip: true;
-
-                            Image {
-                                source: item.poster;
-                                image-fit: cover;
-                                width: 100%;
-                                height: 100%;
-                                visible: item.poster-loaded;
-                            }
-                        }
-                    }
-
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        spacing: Spacing.hair;
-
-                        Text {
-                            text: item.title;
-                            color: MaterialPalette.on-surface;
-                            font-size: Typography.body-large-size;
-                            overflow: elide;
-                        }
-
-                        Text {
-                            text: item.episode > 0
-                                ? Tr.episode-of(item.episode) + " · " + Tr.ago(item.minutes-ago)
-                                : Tr.ago(item.minutes-ago);
-                            color: MaterialPalette.on-surface-variant;
-                            font-size: Typography.label-medium-size;
-                            overflow: elide;
-                        }
-                    }
-
-                    // Taking a release out of the history is the official
-                    // client's long-press; on a desktop it is a button that
-                    // shows under the pointer.
-                    Rectangle {
-                        width: 40px;
-
-                        if row-touch.has-hover || remove.has-hover: VerticalLayout {
-                            alignment: center;
-
-                            IconButton {
-                                icon: @image-url("../icons/close.svg");
-                                tooltip: Tr.remove-from-history;
-                                clicked => { root.remove-recent(index); }
-                            }
-                        }
-
-                        remove := TouchArea {
-                            z: -1;
-                        }
-                    }
-                }
-
-                // Beneath the remove button, so the button gets its click.
-                row-touch := TouchArea {
-                    z: -1;
-                    mouse-cursor: pointer;
-                    clicked => { root.open-recent(index); }
-                }
-            }
-        }
-
-        // ---- what brings a notification ------------------------------------
-        if root.signed-in && root.mine && root.notify.length > 0: VerticalLayout {
-            spacing: Spacing.tight;
-            // A label and its switch read as a pair only when they are not a
-            // window apart.
-            max-width: 560px;
-
-            Text {
-                text: Tr.notification-settings;
-                color: MaterialPalette.on-surface;
-                font-size: Typography.title-medium-size;
-                font-weight: Typography.title-medium-weight-em;
-            }
-
-            for label[i] in [
-                Tr.ns-episodes, Tr.ns-first-episode, Tr.ns-comments, Tr.ns-related,
-                Tr.ns-articles, Tr.ns-my-article-comments, Tr.ns-my-collection-comments,
-                Tr.ns-selected-releases, Tr.ns-reports,
-            ]: HorizontalLayout {
+            // Only with an account behind them. Five zeroes state nothing except
+            // that nobody is signed in, which the line above already said.
+            //
+            // A ring beside the numbers, because the question the numbers answer
+            // is what the account's viewing looks like as a whole, and a
+            // proportion is a shape before it is a figure.
+            if root.signed-in: VerticalLayout {
                 spacing: Spacing.base;
-                height: 40px;
-
-                Text {
-                    text: label;
-                    color: MaterialPalette.on-surface;
-                    font-size: Typography.body-large-size;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                }
 
                 VerticalLayout {
-                    alignment: center;
-
-                    // Its own width and no more: a switch stretched across
-                    // the row is a slider that does not slide.
-                    Switch {
-                        width: 52px;
-                        height: 32px;
-                        checked: i < root.notify.length && root.notify[i];
-                        // Put back to what Rust says at once: the switch is a
-                        // picture of the server's setting, which the click
-                        // asks to turn over, not a setting of its own.
-                        changed checked => {
-                            let wanted = i < root.notify.length && root.notify[i];
-                            if (self.checked != wanted) {
-                                self.checked = wanted;
-                                root.flip-notify(i);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if root.mine: VerticalLayout {
-            spacing: Spacing.base;
-
-            HorizontalDivider {}
-
-            // ---- the player ------------------------------------------------
-            HorizontalLayout {
-                spacing: Spacing.base;
-                max-width: 560px;
-
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: Spacing.hair;
+                    spacing: Spacing.small;
 
                     Text {
-                        text: Tr.remember-player;
+                        text: Tr.lists;
                         color: MaterialPalette.on-surface;
                         font-size: Typography.title-medium-size;
                         font-weight: Typography.title-medium-weight-em;
                     }
 
-                    Text {
-                        text: Tr.remember-player-why;
-                        color: MaterialPalette.on-surface-variant;
-                        font-size: Typography.body-medium-size;
-                        wrap: word-wrap;
-                    }
-                }
+                    // As wide as it needs to be and no wider: a legend of five
+                    // short lines stretched across a desktop window puts each
+                    // number half a screen from the word it belongs to.
+                    HorizontalLayout {
 
-                VerticalLayout {
-                    alignment: center;
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: 188px;
+                        border-radius: Shape.large;
+                        background: MaterialPalette.surface-container;
 
-                    Switch {
-                        width: 52px;
-                        height: 32px;
-                        property <bool> wanted: root.remember-player;
-                        init => { self.checked = root.remember-player; }
-                        changed wanted => { self.checked = self.wanted; }
-                        changed checked => {
-                            if (self.checked != root.remember-player) { root.set-remember-player(self.checked); }
+                        HorizontalLayout {
+                            padding: Spacing.base;
+                            spacing: Spacing.base;
+
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                max-width: 300px;
+                                alignment: center;
+                                spacing: Spacing.hair;
+
+                                Reading {
+                                    label: Tr.list-watching;
+                                    value: root.account.watching;
+                                    tint: root.watching-colour;
+                                    clicked => { if (root.mine) { root.open-list(0); } }
+                                }
+
+                                Reading {
+                                    label: Tr.list-planned;
+                                    value: root.account.planned;
+                                    tint: root.planned-colour;
+                                    clicked => { if (root.mine) { root.open-list(1); } }
+                                }
+
+                                Reading {
+                                    label: Tr.list-watched;
+                                    value: root.account.watched;
+                                    tint: root.watched-colour;
+                                    clicked => { if (root.mine) { root.open-list(2); } }
+                                }
+
+                                Reading {
+                                    label: Tr.list-hold;
+                                    value: root.account.hold;
+                                    tint: root.hold-colour;
+                                    clicked => { if (root.mine) { root.open-list(3); } }
+                                }
+
+                                Reading {
+                                    label: Tr.list-dropped;
+                                    value: root.account.dropped;
+                                    tint: root.dropped-colour;
+                                    clicked => { if (root.mine) { root.open-list(4); } }
+                                }
+                            }
+
+                            // The ring itself, and in its hole the number the five
+                            // add up to: a total is what a reader works out from a
+                            // ring otherwise, and works out wrong.
+                            Rectangle { horizontal-stretch: 1; }
+
+                            Rectangle {
+                                width: 156px;
+
+                                Wedge {
+                                    width: 100%;
+                                    height: 100%;
+                                    start: 0;
+                                    sweep: root.account.watching / root.total;
+                                    tint: root.watching-colour;
+                                }
+
+                                Wedge {
+                                    width: 100%;
+                                    height: 100%;
+                                    start: root.account.watching / root.total;
+                                    sweep: root.account.planned / root.total;
+                                    tint: root.planned-colour;
+                                }
+
+                                Wedge {
+                                    width: 100%;
+                                    height: 100%;
+                                    start: (root.account.watching + root.account.planned) / root.total;
+                                    sweep: root.account.watched / root.total;
+                                    tint: root.watched-colour;
+                                }
+
+                                Wedge {
+                                    width: 100%;
+                                    height: 100%;
+                                    start: (root.account.watching + root.account.planned
+                                        + root.account.watched) / root.total;
+                                    sweep: root.account.hold / root.total;
+                                    tint: root.hold-colour;
+                                }
+
+                                Wedge {
+                                    width: 100%;
+                                    height: 100%;
+                                    start: (root.account.watching + root.account.planned
+                                        + root.account.watched + root.account.hold) / root.total;
+                                    sweep: root.account.dropped / root.total;
+                                    tint: root.dropped-colour;
+                                }
+
+                                VerticalLayout {
+                                    alignment: center;
+
+                                    Text {
+                                        text: root.total;
+                                        color: MaterialPalette.on-surface;
+                                        font-size: Typography.headline-small-size;
+                                        horizontal-alignment: center;
+                                    }
+
+                                    Text {
+                                        text: Tr.releases-total;
+                                        color: MaterialPalette.on-surface-variant;
+                                        font-size: Typography.label-small-size;
+                                        horizontal-alignment: center;
+                                    }
+                                }
+                            }
                         }
                     }
-                }
-            }
-
-            // ---- how it looks ------------------------------------------------
-            VerticalLayout {
-                spacing: Spacing.small;
-
-                Text {
-                    text: Tr.appearance;
-                    color: MaterialPalette.on-surface;
-                    font-size: Typography.title-medium-size;
-                    font-weight: Typography.title-medium-weight-em;
-                }
-
-                Text {
-                    text: Tr.appearance-why;
-                    color: MaterialPalette.on-surface-variant;
-                    font-size: Typography.body-medium-size;
-                    wrap: word-wrap;
-                }
-
-                HorizontalLayout {
-                    alignment: start;
-
-                    choice := SegmentedButton {
-                        items: [
-                            { text: Tr.appearance-system },
-                            { text: Tr.appearance-light },
-                            { text: Tr.appearance-dark },
-                            { text: Tr.appearance-amoled },
-                        ];
-
-                        // Pushed, not bound: the control writes its own index on a
-                        // click, and what is actually in force is whatever Rust
-                        // wrote to the settings file.
-                        property <int> wanted: root.appearance;
-                        init => { self.current-index = root.appearance; }
-                        changed wanted => { self.current-index = self.wanted; }
-
-                        index-changed(i) => { root.select-appearance(i); }
                     }
                 }
 
-                // The accent: a swatch of each, its own primary colour.
-                HorizontalLayout {
-                    alignment: start;
+                // ---- statistics ------------------------------------------------
+                //
+                // What the account watches and how much, as the official profile
+                // shows it: shares by genre, audience and theme, two totals, and
+                // the last days as bars. Hidden accounts say so instead.
+                VerticalLayout {
                     spacing: Spacing.small;
 
-                    for colour[i] in [
-                        Scheme.scheme-of(Accent.violet).dark.primary,
-                        Scheme.scheme-of(Accent.blue).dark.primary,
-                        Scheme.scheme-of(Accent.indigo).dark.primary,
-                        Scheme.scheme-of(Accent.teal).dark.primary,
-                        Scheme.scheme-of(Accent.green).dark.primary,
-                        Scheme.scheme-of(Accent.amber).dark.primary,
-                        Scheme.scheme-of(Accent.rose).dark.primary,
-                    ]: Rectangle {
-                        width: 36px;
-                        height: 36px;
-                        border-radius: 18px;
-                        background: colour;
-                        border-width: i == root.accent ? 3px : 0px;
-                        border-color: MaterialPalette.on-surface;
-
-                        TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.select-accent(i); }
-                        }
-                    }
-                }
-
-                HorizontalLayout {
-                    spacing: Spacing.base;
-                    max-width: 560px;
-
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-
-                        Text {
-                            text: Tr.translucent-window;
-                            color: MaterialPalette.on-surface;
-                            font-size: Typography.body-large-size;
-                        }
-
-                        Text {
-                            text: Tr.translucent-why;
-                            color: MaterialPalette.on-surface-variant;
-                            font-size: Typography.body-medium-size;
-                            wrap: word-wrap;
-                        }
+                    Text {
+                        text: Tr.statistics;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.title-medium-size;
+                        font-weight: Typography.title-medium-weight-em;
                     }
 
-                    VerticalLayout {
-                        alignment: center;
+                    if root.account.stats-hidden: Text {
+                        text: Tr.stats-hidden;
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.body-medium-size;
+                    }
 
-                        Switch {
-                            width: 52px;
-                            height: 32px;
-                            property <bool> wanted: root.translucent;
-                            init => { self.checked = root.translucent; }
-                            changed wanted => { self.checked = self.wanted; }
-                            changed checked => {
-                                if (self.checked != root.translucent) { root.set-translucent(self.checked); }
+                    if !root.account.stats-hidden: HorizontalLayout {
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: stats.preferred-height;
+                            border-radius: Shape.large;
+                            background: MaterialPalette.surface-container;
+
+                            stats := VerticalLayout {
+                                padding: Spacing.base;
+                                spacing: Spacing.tight;
+
+                                for row in [
+                                    { label: Tr.stat-genres, value: root.account.genres },
+                                    { label: Tr.stat-audiences, value: root.account.audiences },
+                                    { label: Tr.stat-themes, value: root.account.themes },
+                                ]: HorizontalLayout {
+                                    spacing: Spacing.small;
+                                    // A share the account has none of takes no
+                                    // line, rather than a label with nothing by it.
+                                    visible: row.value != "";
+                                    height: row.value != "" ? self.preferred-height : 0px;
+
+                                    Text {
+                                        text: row.label + ":";
+                                        color: MaterialPalette.on-surface;
+                                        font-size: Typography.body-medium-size;
+                                        font-weight: Typography.body-medium-weight-em;
+                                    }
+
+                                    Text {
+                                        text: row.value;
+                                        color: MaterialPalette.on-surface;
+                                        font-size: Typography.body-medium-size;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                }
+
+                                Rectangle { height: Spacing.small; }
+
+                                Stat2 {
+                                    label: Tr.stat-episodes;
+                                    value: root.account.episodes-watched;
+                                }
+
+                                HorizontalLayout {
+                                    spacing: Spacing.small;
+
+                                    Text {
+                                        text: Tr.stat-time + ":";
+                                        color: MaterialPalette.on-surface-variant;
+                                        font-size: Typography.body-medium-size;
+                                    }
+
+                                    Text {
+                                        text: Tr.duration(root.account.minutes-watched);
+                                        color: MaterialPalette.on-surface;
+                                        font-size: Typography.body-medium-size;
+                                        font-weight: Typography.body-medium-weight-em;
+                                        horizontal-stretch: 1;
+                                    }
+                                }
+
+                                if root.account.dynamics.length > 0: VerticalLayout {
+                                    padding-top: Spacing.base;
+                                    spacing: Spacing.small;
+
+                                    Text {
+                                        text: Tr.stat-dynamics;
+                                        color: MaterialPalette.on-surface;
+                                        font-size: Typography.title-small-size;
+                                        font-weight: Typography.title-small-weight-em;
+                                    }
+
+                                    Bars {
+                                        values: root.account.dynamics;
+                                        days: root.account.dynamics-days;
+                                    }
+                                }
                             }
                         }
                     }
                 }
+
             }
+            }
+
+            if !root.narrow && root.signed-in: ProfileSide {
+                    horizontal-stretch: 2;
+                    signed-in: root.signed-in;
+                    mine: root.mine;
+                    friend-count: root.account.friends;
+                    vote-count: root.account.votes;
+                    comment-count: root.account.comments;
+                    collection-count: root.account.collections;
+                    friends: root.friends;
+                    requests: root.requests;
+                    recent: root.recent;
+                    open-friend(i) => { root.open-friend(i); }
+                    open-request(i) => { root.open-request(i); }
+                    answer-request(i, yes) => { root.answer-request(i, yes); }
+                    open-recent(i) => { root.open-recent(i); }
+                    remove-recent(i) => { root.remove-recent(i); }
+                }
         }
+
+        if root.narrow && root.signed-in: ProfileSide {
+            signed-in: root.signed-in;
+            mine: root.mine;
+            friend-count: root.account.friends;
+            vote-count: root.account.votes;
+            comment-count: root.account.comments;
+            collection-count: root.account.collections;
+            friends: root.friends;
+            requests: root.requests;
+            recent: root.recent;
+            open-friend(i) => { root.open-friend(i); }
+            open-request(i) => { root.open-request(i); }
+            answer-request(i, yes) => { root.answer-request(i, yes); }
+            open-recent(i) => { root.open-recent(i); }
+            remove-recent(i) => { root.remove-recent(i); }
+    }
     }
     }
 }

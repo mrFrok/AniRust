@@ -1,0 +1,390 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Settings: how the client looks and plays, what brings a notification, the
+// account, and what the program is.
+//
+// Kept on a destination of its own at the foot of the rail rather than at the
+// bottom of the profile, where it used to be: a profile is somebody, and
+// settings are not.
+
+import { ScrollView } from "std-widgets.slint";
+import { MaterialPalette, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton, Switch, TextButton, TonalButton } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+import { Scheme, Accent } from "../globals/scheme.slint";
+
+export component SettingsPage inherits Rectangle {
+    in property <bool> signed-in: false;
+    in property <string> account-name;
+    in property <string> version;
+    /// The notification switches, in the order of the labels below.
+    in property <[bool]> notify: [];
+    in property <int> appearance: 0;
+    in property <int> accent: 0;
+    in property <bool> translucent: false;
+    in property <bool> remember-player: true;
+
+    callback flip-notify(int);
+    callback select-appearance(int);
+    callback select-accent(int);
+    callback set-translucent(bool);
+    callback set-remember-player(bool);
+    callback open-account-settings();
+    callback sign-in();
+    callback sign-out();
+    callback open-link(string);
+
+    background: MaterialPalette.surface;
+
+    min-width: 0px;
+    min-height: 0px;
+    preferred-width: 0px;
+    preferred-height: 0px;
+    max-width: 100000px;
+    max-height: 100000px;
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
+
+    ScrollView {
+        width: 100%;
+        height: 100%;
+
+        HorizontalLayout {
+            padding: Spacing.base;
+
+            Rectangle { horizontal-stretch: 1; }
+
+            VerticalLayout {
+                horizontal-stretch: 1000;
+                max-width: 720px;
+                spacing: Spacing.base;
+                alignment: start;
+
+                Text {
+                    text: Tr.settings;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.headline-small-size;
+                    font-weight: Typography.title-large-weight-em;
+                }
+
+                // ---- the account --------------------------------------------
+                Text {
+                    text: Tr.account-section;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-medium-size;
+                    font-weight: Typography.title-medium-weight-em;
+                }
+
+                if !root.signed-in: HorizontalLayout {
+                    alignment: start;
+                    FilledButton {
+                        text: Tr.sign-in;
+                        clicked => { root.sign-in(); }
+                    }
+                }
+
+                if root.signed-in: HorizontalLayout {
+                    spacing: Spacing.small;
+                    alignment: start;
+
+                    Text {
+                        text: root.account-name;
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.body-large-size;
+                        vertical-alignment: center;
+                    }
+
+                    Rectangle { width: Spacing.small; }
+
+                    TonalButton {
+                        text: Tr.account-settings;
+                        clicked => { root.open-account-settings(); }
+                    }
+
+                    OutlineButton {
+                        text: Tr.sign-out;
+                        clicked => { root.sign-out(); }
+                    }
+                }
+
+                HorizontalDivider {}
+
+            // ---- what brings a notification ------------------------------------
+            if root.signed-in && root.notify.length > 0: VerticalLayout {
+                spacing: Spacing.tight;
+                // A label and its switch read as a pair only when they are not a
+                // window apart.
+                max-width: 560px;
+
+                Text {
+                    text: Tr.notification-settings;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-medium-size;
+                    font-weight: Typography.title-medium-weight-em;
+                }
+
+                for label[i] in [
+                    Tr.ns-episodes, Tr.ns-first-episode, Tr.ns-comments, Tr.ns-related,
+                    Tr.ns-articles, Tr.ns-my-article-comments, Tr.ns-my-collection-comments,
+                    Tr.ns-selected-releases, Tr.ns-reports,
+                ]: HorizontalLayout {
+                    spacing: Spacing.base;
+                    height: 40px;
+
+                    Text {
+                        text: label;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.body-large-size;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+
+                        // Its own width and no more: a switch stretched across
+                        // the row is a slider that does not slide.
+                        Switch {
+                            width: 52px;
+                            height: 32px;
+                            checked: i < root.notify.length && root.notify[i];
+                            // Put back to what Rust says at once: the switch is a
+                            // picture of the server's setting, which the click
+                            // asks to turn over, not a setting of its own.
+                            changed checked => {
+                                let wanted = i < root.notify.length && root.notify[i];
+                                if (self.checked != wanted) {
+                                    self.checked = wanted;
+                                    root.flip-notify(i);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: Spacing.base;
+
+                HorizontalDivider {}
+
+                // ---- the player ------------------------------------------------
+                HorizontalLayout {
+                    spacing: Spacing.base;
+                    max-width: 560px;
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: Spacing.hair;
+
+                        Text {
+                            text: Tr.remember-player;
+                            color: MaterialPalette.on-surface;
+                            font-size: Typography.title-medium-size;
+                            font-weight: Typography.title-medium-weight-em;
+                        }
+
+                        Text {
+                            text: Tr.remember-player-why;
+                            color: MaterialPalette.on-surface-variant;
+                            font-size: Typography.body-medium-size;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+
+                        Switch {
+                            width: 52px;
+                            height: 32px;
+                            property <bool> wanted: root.remember-player;
+                            init => { self.checked = root.remember-player; }
+                            changed wanted => { self.checked = self.wanted; }
+                            changed checked => {
+                                if (self.checked != root.remember-player) { root.set-remember-player(self.checked); }
+                            }
+                        }
+                    }
+                }
+
+                // ---- how it looks ------------------------------------------------
+                VerticalLayout {
+                    spacing: Spacing.small;
+
+                    Text {
+                        text: Tr.appearance;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.title-medium-size;
+                        font-weight: Typography.title-medium-weight-em;
+                    }
+
+                    Text {
+                        text: Tr.appearance-why;
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.body-medium-size;
+                        wrap: word-wrap;
+                    }
+
+                    HorizontalLayout {
+                        alignment: start;
+
+                        choice := SegmentedButton {
+                            items: [
+                                { text: Tr.appearance-system },
+                                { text: Tr.appearance-light },
+                                { text: Tr.appearance-dark },
+                                { text: Tr.appearance-amoled },
+                            ];
+
+                            // Pushed, not bound: the control writes its own index on a
+                            // click, and what is actually in force is whatever Rust
+                            // wrote to the settings file.
+                            property <int> wanted: root.appearance;
+                            init => { self.current-index = root.appearance; }
+                            changed wanted => { self.current-index = self.wanted; }
+
+                            index-changed(i) => { root.select-appearance(i); }
+                        }
+                    }
+
+                    // The accent: a swatch of each, its own primary colour.
+                    HorizontalLayout {
+                        alignment: start;
+                        spacing: Spacing.small;
+
+                        for colour[i] in [
+                            Scheme.scheme-of(Accent.violet).dark.primary,
+                            Scheme.scheme-of(Accent.blue).dark.primary,
+                            Scheme.scheme-of(Accent.indigo).dark.primary,
+                            Scheme.scheme-of(Accent.teal).dark.primary,
+                            Scheme.scheme-of(Accent.green).dark.primary,
+                            Scheme.scheme-of(Accent.amber).dark.primary,
+                            Scheme.scheme-of(Accent.rose).dark.primary,
+                        ]: Rectangle {
+                            width: 36px;
+                            height: 36px;
+                            border-radius: 18px;
+                            background: colour;
+                            border-width: i == root.accent ? 3px : 0px;
+                            border-color: MaterialPalette.on-surface;
+
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.select-accent(i); }
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: Spacing.base;
+                        max-width: 560px;
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+
+                            Text {
+                                text: Tr.translucent-window;
+                                color: MaterialPalette.on-surface;
+                                font-size: Typography.body-large-size;
+                            }
+
+                            Text {
+                                text: Tr.translucent-why;
+                                color: MaterialPalette.on-surface-variant;
+                                font-size: Typography.body-medium-size;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+
+                            Switch {
+                                width: 52px;
+                                height: 32px;
+                                property <bool> wanted: root.translucent;
+                                init => { self.checked = root.translucent; }
+                                changed wanted => { self.checked = self.wanted; }
+                                changed checked => {
+                                    if (self.checked != root.translucent) { root.set-translucent(self.checked); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+                HorizontalDivider {}
+
+                // ---- the program --------------------------------------------
+                Text {
+                    text: Tr.about;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-medium-size;
+                    font-weight: Typography.title-medium-weight-em;
+                }
+
+                HorizontalLayout {
+                    spacing: Spacing.base;
+                    alignment: start;
+
+                    Image {
+                        source: @image-url("../../../packaging/icons/anirust.svg");
+                        width: 56px;
+                        height: 56px;
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: Spacing.hair;
+
+                        Text {
+                            text: "AniRust " + root.version;
+                            color: MaterialPalette.on-surface;
+                            font-size: Typography.title-medium-size;
+                            font-weight: Typography.title-medium-weight-em;
+                        }
+
+                        Text {
+                            text: Tr.about-what;
+                            color: MaterialPalette.on-surface-variant;
+                            font-size: Typography.body-medium-size;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                Text {
+                    text: Tr.about-unaffiliated;
+                    color: MaterialPalette.on-surface-variant;
+                    font-size: Typography.body-small-size;
+                    wrap: word-wrap;
+                }
+
+                HorizontalLayout {
+                    spacing: Spacing.small;
+                    alignment: start;
+
+                    TonalButton {
+                        text: Tr.faq;
+                        clicked => { root.open-link("https://anixart-app.com/faq/"); }
+                    }
+
+                    TextButton {
+                        text: Tr.service-rules;
+                        clicked => { root.open-link("https://anixart-app.com/rules/"); }
+                    }
+
+                    TextButton {
+                        text: Tr.source-code;
+                        clicked => { root.open-link("https://github.com/mrfrok/AniRust"); }
+                    }
+                }
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+        }
+    }
+}

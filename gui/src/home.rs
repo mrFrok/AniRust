@@ -70,6 +70,8 @@ pub enum Destination {
     Feed,
     Profile,
     Downloads,
+    /// How the client looks and plays, the account, and what it is.
+    Settings,
 }
 
 impl Destination {
@@ -77,13 +79,14 @@ impl Destination {
     /// both count by. The first five are the official client's own, in its
     /// order. Downloads is last and off the end of the rail: that client has
     /// no such destination, and a queue is reached from the toolbar instead.
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Home,
         Self::Browse,
         Self::Saved,
         Self::Feed,
         Self::Profile,
         Self::Downloads,
+        Self::Settings,
     ];
 
     fn at(index: usize) -> Self {
@@ -101,7 +104,7 @@ impl Destination {
             Self::Home => HOME_TABS,
             Self::Browse => 5,
             Self::Saved => 8,
-            Self::Feed | Self::Profile | Self::Downloads => 0,
+            Self::Feed | Self::Profile | Self::Downloads | Self::Settings => 0,
         }
     }
 
@@ -195,7 +198,13 @@ fn query_for(destination: Destination, tab: usize) -> Query {
                 .unwrap_or(ProfileList::Watching),
         ),
 
-        (Destination::Feed | Destination::Profile | Destination::Downloads, _) => Query::None,
+        (
+            Destination::Feed
+            | Destination::Profile
+            | Destination::Downloads
+            | Destination::Settings,
+            _,
+        ) => Query::None,
     }
 }
 

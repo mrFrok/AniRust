@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The column of destinations down the left edge.
+//
+// Built here rather than taken from the component set's rail, which starts
+// its items 44px down: ours have to start below the 72px bar the search sits
+// in, with the program's mark level with that bar, and one destination —
+// the settings — kept at the bottom, apart from the rest.
+
+import { MaterialPalette, NavigationItem } from "@material";
+import { NavigationItemTemplate } from "../../material-1.18.0/ui/components/navigation_bar.slint";
+import { Spacing } from "../globals/shape.slint";
+
+export component Rail inherits Rectangle {
+    /// The destinations from the top.
+    in property <[NavigationItem]> items;
+    /// The one at the bottom.
+    in property <NavigationItem> bottom;
+    /// Which is lit: an index into `items`, or `items.length` for the bottom.
+    in property <int> current: 0;
+    /// The height of the bar beside it, so the mark sits level with it.
+    in property <length> bar-height: 72px;
+
+    callback select(int);
+
+    width: 80px;
+    background: MaterialPalette.surface;
+
+    VerticalLayout {
+        Rectangle {
+            height: root.bar-height;
+
+            Image {
+                source: @image-url("../../../packaging/icons/anirust.svg");
+                width: 36px;
+                height: 36px;
+            }
+        }
+
+        VerticalLayout {
+            vertical-stretch: 1;
+            alignment: start;
+            padding-top: Spacing.small;
+
+            for item[index] in root.items: NavigationItemTemplate {
+                icon: item.icon;
+                selected-icon: item.selected-icon;
+                text: item.text;
+                index: index;
+                selected: index == root.current;
+                show-badge: item.show-badge;
+                badge: item.badge;
+                navitem-padding-top: 0;
+                navitem-padding-bottom: 4px;
+                clicked => { root.select(index); }
+            }
+        }
+
+        NavigationItemTemplate {
+            icon: root.bottom.icon;
+            text: root.bottom.text;
+            index: root.items.length;
+            selected: root.current == root.items.length;
+            navitem-padding-top: 0;
+            navitem-padding-bottom: Spacing.base;
+            clicked => { root.select(root.items.length); }
+        }
+    }
+}

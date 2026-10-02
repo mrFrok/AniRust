@@ -29,7 +29,7 @@
 //! `collection-editor`, `collection-picker`, `search`, `sign-up`,
 //! `sign-up-code`, `restore-code`, `settings`, `settings-email`,
 //! `settings-standing`, `report`, `editor`, `feed-own`, `admin`, `admin-suggested`,
-//! `admin-new`, `sign-out`, `profile-teal`,
+//! `admin-new`, `sign-out`, `app-settings`, `profile-teal`,
 //! `profile-teal-glass`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
 //! `comments-signed-out`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
@@ -97,6 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || state == "editor"
             || state.starts_with("admin")
             || state == "sign-out"
+            || state.starts_with("app-settings")
             || state.starts_with("deletion")
         {
             "home".into()
@@ -288,6 +289,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_accent(Accent::Teal);
         ui.set_accent_index(3);
         ui.set_translucent(state == "profile-teal-glass");
+    }
+    // The settings destination, signed in, with its switches.
+    if state.starts_with("app-settings") {
+        ui.set_destination(6);
+        ui.set_signed_in(state == "app-settings");
+        ui.set_account_name("mrfrok".into());
+        ui.set_app_version("0.1.0".into());
+        ui.set_notify_switches(slint::ModelRc::new(slint::VecModel::from(vec![
+            true, false, true, true, false, true, true, false, false,
+        ])));
     }
     // The question before signing out.
     if state == "sign-out" {
