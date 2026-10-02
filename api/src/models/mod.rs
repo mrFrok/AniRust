@@ -19,6 +19,7 @@ mod comment;
 mod discover;
 mod episode;
 mod feed;
+mod notification;
 mod profile;
 mod release;
 
@@ -29,6 +30,11 @@ pub use comment::{
 pub use discover::{Collection, FeedSearch, Interesting, Schedule};
 pub use episode::{Dubber, Episode, EpisodeUpdate, Source};
 pub use feed::{Article, ArticleBlock, ArticlePayload, Channel, ProfileSlim};
+pub use notification::{
+    ArticleCompact, ChannelCompact, CommentCompact, EpisodeCompact, Named, Notification,
+    NotificationDelete, NotificationKind, NotificationPreferences, NotificationSwitch,
+    ReleaseCompact, SourceCompact,
+};
 pub use profile::{Profile, ProfileList, ProfileToken};
 pub use release::{
     Filter, FilterSort, Related, Release, ReleaseCategory, ReleaseStatus, SearchBy,

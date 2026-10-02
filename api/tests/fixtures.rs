@@ -79,3 +79,40 @@ fn interesting_cards_lead_to_releases() {
         assert!(!card.title.is_empty());
     }
 }
+
+/// A mixed page of notifications decodes whatever kinds are in it, including
+/// one this client has never met. Hand-written: notifications need an
+/// account, and these are the shapes the app's classes declare.
+#[test]
+fn a_page_of_notifications_of_every_kind() {
+    let page: Paged<anirust_api::Notification> = serde_json::from_value(serde_json::json!({
+        "content": [
+            { "type": "episode", "id": 1, "timestamp": 1, "is_new": true,
+              "episode": { "name": "13", "release": { "id": 7, "title_ru": "Релиз" },
+                           "source": { "name": "Kodik", "type": { "name": "AniLibria" } } } },
+            { "type": "friend", "id": 2, "timestamp": 2, "by_profile": { "id": 5, "login": "user5" }, "value": 1 },
+            { "type": "article", "id": 3, "timestamp": 3,
+              "article": { "id": 9, "channel": { "id": 4, "title": "Канал" }, "payload": { "blocks": [] } } },
+            { "type": "something_new", "id": 4, "timestamp": 4, "whatever": { "nested": true } }
+        ],
+        "total_count": 4
+    }))
+    .expect("every kind decodes");
+
+    let episode = page.content[0].episode.as_ref().expect("an episode");
+    assert_eq!(episode.release.id, 7);
+    assert_eq!(episode.source.dubber.name, "AniLibria");
+    assert_eq!(page.content[1].by_profile.as_ref().map(|p| p.id), Some(5));
+    assert_eq!(
+        page.content[2]
+            .article
+            .as_ref()
+            .map(|a| a.channel.title.as_str()),
+        Some("Канал")
+    );
+    assert_eq!(
+        page.content[3].kind, "something_new",
+        "an unknown kind keeps its id and time"
+    );
+    assert_eq!(page.content[3].id, 4);
+}

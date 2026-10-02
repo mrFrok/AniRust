@@ -23,6 +23,7 @@ mod comment;
 mod discover;
 mod episode;
 mod feed;
+mod notification;
 mod preference;
 mod release;
 

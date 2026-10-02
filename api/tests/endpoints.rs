@@ -1036,3 +1036,261 @@ async fn search_articles_in_one_channel() {
         .await
         .expect("a search");
 }
+
+// ---- A8: notifications and what brings them ------------------------------
+
+endpoint! {
+    notifications_all: "GET" "/notification/all/0",
+    token: true,
+    reply: page(),
+    call: |c| c.notifications(anirust_api::NotificationKind::All, 0),
+}
+
+endpoint! {
+    notifications_episodes: "GET" "/notification/episodes/0",
+    token: true,
+    reply: page(),
+    call: |c| c.notifications(anirust_api::NotificationKind::Episodes, 0),
+}
+
+endpoint! {
+    notifications_friends: "GET" "/notification/friends/0",
+    token: true,
+    reply: page(),
+    call: |c| c.notifications(anirust_api::NotificationKind::Friends, 0),
+}
+
+endpoint! {
+    notifications_release_comments: "GET" "/notification/releaseComments/0",
+    token: true,
+    reply: page(),
+    call: |c| c.notifications(anirust_api::NotificationKind::ReleaseComments, 0),
+}
+
+endpoint! {
+    notifications_related_releases: "GET" "/notification/related/release/0",
+    token: true,
+    reply: page(),
+    call: |c| c.notifications(anirust_api::NotificationKind::RelatedReleases, 0),
+}
+
+endpoint! {
+    notifications_articles: "GET" "/notification/articles/0",
+    token: true,
+    reply: page(),
+    call: |c| c.notifications(anirust_api::NotificationKind::Articles, 0),
+}
+
+endpoint! {
+    notifications_article_comments: "GET" "/notification/article/comments/0",
+    token: true,
+    reply: page(),
+    call: |c| c.notifications(anirust_api::NotificationKind::ArticleComments, 0),
+}
+
+endpoint! {
+    notifications_collection_comments: "GET" "/notification/collectionComments/0",
+    token: true,
+    reply: page(),
+    call: |c| c.notifications(anirust_api::NotificationKind::CollectionComments, 0),
+}
+
+endpoint! {
+    notification_delete_episode: "GET" "/notification/episode/delete/31",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_delete(anirust_api::NotificationDelete::Episode, 31),
+}
+
+endpoint! {
+    notification_delete_friend: "GET" "/notification/friend/delete/31",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_delete(anirust_api::NotificationDelete::Friend, 31),
+}
+
+endpoint! {
+    notification_delete_release_comment: "GET" "/notification/releaseComment/delete/31",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_delete(anirust_api::NotificationDelete::ReleaseComment, 31),
+}
+
+endpoint! {
+    notification_delete_related_release: "GET" "/notification/related/release/delete/31",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_delete(anirust_api::NotificationDelete::RelatedRelease, 31),
+}
+
+endpoint! {
+    notification_delete_article_comment: "GET" "/notification/article/comment/delete/31",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_delete(anirust_api::NotificationDelete::ArticleComment, 31),
+}
+
+endpoint! {
+    notification_delete_collection_comment: "GET" "/notification/collectionComment/delete/31",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_delete(anirust_api::NotificationDelete::CollectionComment, 31),
+}
+
+endpoint! {
+    notification_delete_my_article_comment: "GET" "/notification/my/article/comment/delete/31",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_delete(anirust_api::NotificationDelete::MyArticleComment, 31),
+}
+
+endpoint! {
+    notification_delete_my_collection_comment: "GET" "/notification/my/collection/comment/delete/31",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_delete(anirust_api::NotificationDelete::MyCollectionComment, 31),
+}
+
+endpoint! {
+    notification_switch_episodes: "GET" "/profile/preference/notification/episode/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_switch(anirust_api::NotificationSwitch::Episodes),
+}
+
+endpoint! {
+    notification_switch_first_episode: "GET" "/profile/preference/notification/episode/first/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_switch(anirust_api::NotificationSwitch::FirstEpisode),
+}
+
+endpoint! {
+    notification_switch_comments: "GET" "/profile/preference/notification/comment/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_switch(anirust_api::NotificationSwitch::Comments),
+}
+
+endpoint! {
+    notification_switch_related_releases: "GET" "/profile/preference/notification/related/release/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_switch(anirust_api::NotificationSwitch::RelatedReleases),
+}
+
+endpoint! {
+    notification_switch_articles: "GET" "/profile/preference/notification/article/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_switch(anirust_api::NotificationSwitch::Articles),
+}
+
+endpoint! {
+    notification_switch_my_article_comments: "GET" "/profile/preference/notification/my/article/comment/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_switch(anirust_api::NotificationSwitch::MyArticleComments),
+}
+
+endpoint! {
+    notification_switch_my_collection_comments: "GET" "/profile/preference/notification/my/collection/comment/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_switch(anirust_api::NotificationSwitch::MyCollectionComments),
+}
+
+endpoint! {
+    notification_switch_selected_releases: "GET" "/profile/preference/notification/selected/releases/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_switch(anirust_api::NotificationSwitch::SelectedReleases),
+}
+
+endpoint! {
+    notification_switch_report_outcomes: "GET" "/profile/preference/notification/report/process/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_switch(anirust_api::NotificationSwitch::ReportOutcomes),
+}
+
+endpoint! {
+    notification_count: "GET" "/notification/count",
+    token: true,
+    reply: json!({ "code": 0, "count": 3 }),
+    call: |c| c.notification_count(),
+}
+
+endpoint! {
+    notifications_read: "GET" "/notification/read",
+    token: true,
+    reply: ack(),
+    call: |c| c.notifications_read(),
+}
+
+endpoint! {
+    notifications_delete_all: "GET" "/notification/delete/all",
+    token: true,
+    reply: ack(),
+    call: |c| c.notifications_delete_all(),
+}
+
+endpoint! {
+    notification_preferences: "GET" "/profile/preference/notification/my",
+    token: true,
+    reply: json!({ "code": 0, "is_episode_notifications_enabled": true }),
+    call: |c| c.notification_preferences(),
+}
+
+endpoint! {
+    notification_releases: "GET" "/profile/preference/notification/release/all/0",
+    token: true,
+    reply: page(),
+    call: |c| c.notification_releases(0),
+}
+
+endpoint! {
+    notification_release_dubbers: "GET" "/profile/preference/notification/release/type/7",
+    token: true,
+    reply: json!({ "code": 0, "profile_release_type_notification_preferences": [{ "type": { "id": 3 } }] }),
+    call: |c| c.notification_release_dubbers(7),
+}
+
+#[tokio::test]
+async fn notification_preference_bodies() {
+    let server = MockServer::start().await;
+    for (route, body) in [
+        (
+            "/profile/preference/notification/release/type/edit",
+            json!({ "release_id": 7, "profile_release_type_notification_preferences": [3, 4] }),
+        ),
+        (
+            "/profile/preference/notification/status/edit",
+            json!({ "profile_status_notification_preferences": [1, 2] }),
+        ),
+        (
+            "/profile/preference/notification/type/edit",
+            json!({ "profile_type_notification_preferences": [3] }),
+        ),
+    ] {
+        Mock::given(method("POST"))
+            .and(path(route))
+            .and(query_param("token", TOKEN))
+            .and(body_json(body))
+            .respond_with(ResponseTemplate::new(200).set_body_json(ack()))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+
+    let c = client(&server);
+    c.notification_release_dubbers_edit(7, &[3, 4])
+        .await
+        .expect("per release");
+    c.notification_statuses_edit(&[1, 2])
+        .await
+        .expect("by list");
+    c.notification_dubbers_edit(&[3])
+        .await
+        .expect("by voice-over");
+}

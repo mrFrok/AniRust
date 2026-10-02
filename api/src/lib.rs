@@ -64,9 +64,11 @@ pub use endpoints::{
 };
 pub use error::{ApiCode, Error, Result};
 pub use models::{
-    Article, ArticleBlock, ArticlePayload, Channel, ChannelProfile, Collection, Comment,
-    CommentModeration, CommentSort, CommentTarget, CommentVote, Dubber, Embedded, Episode,
-    EpisodeUpdate, FeedSearch, Filter, FilterSort, Interesting, Page, Profile, ProfileCompact,
-    ProfileList, ProfileSlim, ProfileToken, Related, Release, ReleaseCategory, ReleaseStatus,
-    Schedule, SearchBy, Source, StreamingPlatform,
+    Article, ArticleBlock, ArticleCompact, ArticlePayload, Channel, ChannelCompact, ChannelProfile,
+    Collection, Comment, CommentCompact, CommentModeration, CommentSort, CommentTarget,
+    CommentVote, Dubber, Embedded, Episode, EpisodeCompact, EpisodeUpdate, FeedSearch, Filter,
+    FilterSort, Interesting, Named, Notification, NotificationDelete, NotificationKind,
+    NotificationPreferences, NotificationSwitch, Page, Profile, ProfileCompact, ProfileList,
+    ProfileSlim, ProfileToken, Related, Release, ReleaseCategory, ReleaseCompact, ReleaseStatus,
+    Schedule, SearchBy, Source, SourceCompact, StreamingPlatform,
 };
