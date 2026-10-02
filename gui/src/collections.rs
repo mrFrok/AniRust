@@ -324,6 +324,62 @@ pub fn delete(cx: &Context<'_>) {
     );
 }
 
+/// Asks for a picture with the platform's own chooser and makes it the
+/// cover of the collection the editor is on.
+pub fn change_cover(cx: &Context<'_>) {
+    let Some(id) = cx.state.borrow().editing else {
+        return;
+    };
+    let weak = cx.window.as_weak();
+    let state = Rc::clone(cx.state);
+    let api = (**cx.client).clone();
+    let (http, me) = (cx.http.clone(), cx.me);
+    // Opened from the UI thread, which is the one macOS insists on.
+    let picked = slint::spawn_local(async move {
+        let Some(file) = rfd::AsyncFileDialog::new()
+            .add_filter("Image", &["png", "jpg", "jpeg", "webp"])
+            .pick_file()
+            .await
+        else {
+            return;
+        };
+        let name = file.file_name();
+        let bytes = file.read().await;
+        let Some(window) = weak.upgrade() else { return };
+        let Some(mime) = crate::settings::mime_of(&name).filter(|_| !bytes.is_empty()) else {
+            window.set_collection_failed(true);
+            return;
+        };
+        window.set_collection_busy(true);
+        window.set_collection_failed(false);
+        let weak = window.as_weak();
+        tasks::spawn(
+            async move { api.collection_image(id, &name, mime, bytes).await },
+            move |result| {
+                let Some(window) = weak.upgrade() else { return };
+                window.set_collection_busy(false);
+                match result {
+                    Ok(url) => {
+                        let open = state.borrow().open.clone().filter(|c| c.id == id);
+                        if let Some(mut collection) = open {
+                            collection.image = url;
+                            show(&window, &collection, me, &http);
+                            state.borrow_mut().open = Some(collection);
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, id, "the cover was not changed");
+                        window.set_collection_failed(true);
+                    }
+                }
+            },
+        );
+    });
+    if let Err(error) = picked {
+        tracing::warn!(%error, "the file chooser could not be opened");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The picker
 // ---------------------------------------------------------------------------

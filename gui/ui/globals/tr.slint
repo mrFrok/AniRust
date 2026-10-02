@@ -241,6 +241,7 @@ export global Tr {
     out property <string> collection-title-field: lang == "ru" ? "Название" : "Title";
     out property <string> collection-description-field: lang == "ru" ? "Описание" : "Description";
     out property <string> private-collection: lang == "ru" ? "Только для меня" : "Only for me";
+    out property <string> change-cover: lang == "ru" ? "Сменить обложку" : "Change cover";
     out property <string> add-to-collection: lang == "ru" ? "В коллекцию" : "Add to collection";
     out property <string> no-collections: lang == "ru" ? "Коллекций пока нет." : "No collections yet.";
     out property <string> back-to-collections: lang == "ru" ? "К коллекциям" : "Back to collections";
@@ -424,6 +425,12 @@ export global Tr {
         lang == "ru" ? "Сейчас: " + hint : "Now: " + hint
     }
 
+    out property <string> bookmarks-section: lang == "ru" ? "Закладки" : "Bookmarks";
+    out property <string> import-why: lang == "ru"
+        ? "Списки переносятся из файла, который Shikimori выгружает в JSON: настройки профиля → Список аниме и манги → Экспортировать. Импорт возможен раз в месяц."
+        : "Lists come in from the JSON file Shikimori exports: profile settings → Anime and manga list → Export. An import can be made once a month.";
+    out property <string> import-shikimori: lang == "ru" ? "Импорт из Shikimori" : "Import from Shikimori";
+    out property <string> export-csv: lang == "ru" ? "Экспорт в CSV" : "Export to CSV";
     /// The words for the outcome of a settings change Rust has named.
     public pure function settings-message(key: string) -> string {
         key == "saved" ? (lang == "ru" ? "Сохранено" : "Saved")
@@ -444,11 +451,17 @@ export global Tr {
         : key == "email-taken" ? (lang == "ru" ? "На эту почту уже есть аккаунт" : "That email already has an account")
         : key == "wrong-code" ? (lang == "ru" ? "Неверный или устаревший код" : "Wrong or expired code")
         : key == "cannot-send" ? (lang == "ru" ? "Не получилось отправить письмо" : "The email could not be sent")
+        : key == "imported" ? (lang == "ru" ? "Закладки перенесены" : "Bookmarks imported")
+        : key == "import-too-soon" ? (lang == "ru" ? "Импорт возможен раз в месяц — этот уже был" : "One import a month, and this month's is done")
+        : key == "import-unreadable" ? (lang == "ru" ? "Это не выгрузка Shikimori" : "That is not a Shikimori export")
+        : key == "exported" ? (lang == "ru" ? "Закладки выгружены" : "Bookmarks exported")
+        : key == "export-unwritable" ? (lang == "ru" ? "Файл не записать" : "The file could not be written")
         : (lang == "ru" ? "Не получилось. Попробуйте ещё раз." : "That did not work. Try again.")
     }
     public pure function settings-message-is-error(key: string) -> bool {
         key != "saved" && key != "avatar-saved" && key != "login-saved"
             && key != "password-saved" && key != "email-code-sent" && key != "email-saved"
+            && key != "imported" && key != "exported"
     }
 
     /// The words for a refusal Rust has named.

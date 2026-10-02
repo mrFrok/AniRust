@@ -10,6 +10,7 @@
 //! Nothing here blocks the event loop. Every lookup and every extractor run
 //! goes through [`tasks`] and comes back on the UI thread.
 
+mod bookmarks;
 mod collections;
 mod comments;
 mod downloads;
@@ -763,6 +764,12 @@ fn wire_settings(window: &MainWindow, app: &Rc<App>) {
     on_settings!(window, app, on_resend_email, |cx| settings::resend_email(
         &cx
     ));
+    on_settings!(window, app, on_import_bookmarks, |cx| {
+        bookmarks::import(cx.window, cx.client)
+    });
+    on_settings!(window, app, on_export_bookmarks, |cx| {
+        bookmarks::export(cx.window, cx.client)
+    });
 }
 
 fn register_context<'a>(window: &'a MainWindow, app: &'a App) -> register::Context<'a> {
@@ -815,6 +822,9 @@ fn wire_collections(window: &MainWindow, app: &Rc<App>) {
     on_collections!(window, app, on_delete_collection, |cx| collections::delete(
         &cx
     ));
+    on_collections!(window, app, on_change_collection_cover, |cx| {
+        collections::change_cover(&cx)
+    });
 
     window.on_open_collection_comments({
         let app = Rc::clone(app);

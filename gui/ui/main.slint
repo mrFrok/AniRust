@@ -105,6 +105,8 @@ export component MainWindow inherits Window {
     callback change-email(string, string, string);
     callback verify-email(string);
     callback resend-email();
+    callback import-bookmarks();
+    callback export-bookmarks();
 
     // ---- search beyond releases -------------------------------------------
     in property <[PersonItem]> found-people: [];
@@ -133,6 +135,7 @@ export component MainWindow inherits Window {
     in property <bool> collection-failed: false;
     callback save-collection();
     callback delete-collection();
+    callback change-collection-cover();
     /// The sheet listing the account's collections, from a release.
     in-out property <bool> collection-picker-open: false;
     in property <[string]> my-collection-titles: [];
@@ -743,6 +746,8 @@ export component MainWindow inherits Window {
         change-email(a, b, c) => { root.change-email(a, b, c); }
         verify-email(c) => { root.verify-email(c); }
         resend-email => { root.resend-email(); }
+        import-bookmarks => { root.import-bookmarks(); }
+        export-bookmarks => { root.export-bookmarks(); }
         dismiss => { root.settings-open = false; }
     }
 
@@ -757,6 +762,7 @@ export component MainWindow inherits Window {
         failed: root.collection-failed;
         save => { root.save-collection(); }
         delete => { root.delete-collection(); }
+        change-cover => { root.change-collection-cover(); }
         dismiss => { root.collection-editor-open = false; }
     }
 

@@ -81,6 +81,8 @@ export component AccountSettingsSheet inherits Rectangle {
     callback change-email(string, string, string);
     callback verify-email(string);
     callback resend-email();
+    callback import-bookmarks();
+    callback export-bookmarks();
     callback dismiss();
 
     // Drafts, filled from the settings whenever they arrive.
@@ -430,6 +432,30 @@ export component AccountSettingsSheet inherits Rectangle {
                                 enabled: !root.busy && root.email-code != "";
                                 clicked => { root.verify-email(root.email-code); }
                             }
+                        }
+                    }
+
+                    HorizontalDivider {}
+
+                    // ---- lists in and out --------------------------------
+                    Heading { text: Tr.bookmarks-section; }
+
+                    Hint { text: Tr.import-why; }
+
+                    HorizontalLayout {
+                        spacing: Spacing.small;
+                        alignment: start;
+
+                        TonalButton {
+                            text: Tr.import-shikimori;
+                            enabled: !root.busy;
+                            clicked => { root.import-bookmarks(); }
+                        }
+
+                        OutlineButton {
+                            text: Tr.export-csv;
+                            enabled: !root.busy;
+                            clicked => { root.export-bookmarks(); }
                         }
                     }
                 }

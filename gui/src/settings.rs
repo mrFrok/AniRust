@@ -181,7 +181,7 @@ pub fn change_avatar(cx: &Context<'_>) {
 }
 
 /// The picture's type, by its name; `None` for what the server will not take.
-fn mime_of(name: &str) -> Option<&'static str> {
+pub(crate) fn mime_of(name: &str) -> Option<&'static str> {
     let extension = name.rsplit_once('.')?.1.to_ascii_lowercase();
     Some(match extension.as_str() {
         "png" => "image/png",

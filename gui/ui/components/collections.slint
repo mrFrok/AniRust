@@ -3,7 +3,7 @@
 // The sheets for the account's own collections: writing one, and putting a
 // release into one.
 
-import { MaterialPalette, TextField, FilledButton, TextButton, Switch, ListTile } from "@material";
+import { MaterialPalette, TextField, FilledButton, TextButton, OutlineButton, Switch, ListTile } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -55,6 +55,7 @@ export component CollectionEditor inherits Rectangle {
 
     callback save();
     callback delete();
+    callback change-cover();
     callback dismiss();
 
     // Deleting asks twice: the second press is on a button that says what
@@ -109,6 +110,18 @@ export component CollectionEditor inherits Rectangle {
                     init => { self.checked = root.private; }
                     changed wanted => { self.checked = self.wanted; }
                     changed checked => { root.private = self.checked; }
+                }
+            }
+
+            // The cover is the server's to store, so only one that exists
+            // can be given one.
+            if root.editing: HorizontalLayout {
+                alignment: start;
+
+                OutlineButton {
+                    text: Tr.change-cover;
+                    enabled: !root.busy;
+                    clicked => { root.change-cover(); }
                 }
             }
 
