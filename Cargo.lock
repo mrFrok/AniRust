@@ -292,6 +292,7 @@ dependencies = [
  "anirust-player",
  "anyhow",
  "dirs",
+ "futures",
  "glow",
  "image",
  "keyring",

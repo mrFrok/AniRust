@@ -50,6 +50,11 @@ fn runtime() -> &'static tokio::runtime::Runtime {
         .expect("tasks::init must run before any task is spawned")
 }
 
+/// Runs a task that lives for the whole program, with no result to hand back.
+pub fn background(work: impl Future<Output = ()> + Send + 'static) {
+    runtime().spawn(work);
+}
+
 /// Runs `work` in the background and hands its result to `then` on the UI
 /// thread.
 ///

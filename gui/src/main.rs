@@ -24,6 +24,7 @@ mod people;
 mod preferences;
 mod progress;
 mod register;
+mod relay;
 mod release;
 mod reports;
 mod session;
@@ -70,6 +71,7 @@ fn main() -> Result<()> {
 
     let opening = release_id_from_args()?;
     tasks::init()?;
+    relay::start();
 
     desktop::identify();
     let window = MainWindow::new().context("creating the window")?;
@@ -1979,12 +1981,14 @@ fn start(
     window.set_has_skip(stream.opening.is_some());
 
     let source_url = best.url.clone();
-    let mut source = MediaSource::new(&best.url).headers(
-        stream
-            .headers
-            .iter()
-            .map(|(name, value)| (name.as_str(), value.as_str())),
-    );
+    let mut source = {
+        let (url, headers) = relay::route(&best.url, stream.headers.clone());
+        MediaSource::new(&url).headers(
+            headers
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_str())),
+        )
+    };
     if let Some(at) = resume {
         source = source.start_at(at);
     }
@@ -2293,12 +2297,14 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         chosen.quality.set(index);
 
         let resume = player.position().unwrap_or_default();
-        let mut source = MediaSource::new(&variant.url).headers(
-            stream
-                .headers
-                .iter()
-                .map(|(name, value)| (name.as_str(), value.as_str())),
-        );
+        let mut source = {
+            let (url, headers) = relay::route(&variant.url, stream.headers.clone());
+            MediaSource::new(&url).headers(
+                headers
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), value.as_str())),
+            )
+        };
         if resume > Duration::ZERO {
             source = source.start_at(resume);
         }
@@ -2840,8 +2846,13 @@ pub fn format_time(value: Duration) -> String {
     }
 }
 
+/// The client pictures come through. Bounded in time: a picture from a host
+/// the network blocks — YouTube's thumbnails, from some countries — would
+/// otherwise hang its request for good.
 fn reqwest_client() -> reqwest::Client {
     reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(20))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
 }

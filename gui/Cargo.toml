@@ -19,7 +19,8 @@ anirust-extract.workspace = true
 anirust-player.workspace = true
 anyhow.workspace = true
 reqwest.workspace = true
-tokio = { workspace = true, features = ["rt", "macros"] }
+tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "time"] }
+futures.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
