@@ -89,6 +89,20 @@ pub async fn fetch_image(
     http: reqwest::Client,
     url: String,
 ) -> Result<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
+    let result = fetch_image_inner(http, &url).await;
+    // Pictures are decoration and their failures are not shown; they are
+    // logged, so one that never appears can be traced.
+    if let Err(error) = &result {
+        tracing::debug!(%url, error = format!("{error:#}"), "picture not loaded");
+    }
+    result
+}
+
+async fn fetch_image_inner(
+    http: reqwest::Client,
+    url: &str,
+) -> Result<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
+    let url = url.to_owned();
     let bytes = http
         .get(&url)
         .send()

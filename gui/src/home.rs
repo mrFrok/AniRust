@@ -20,13 +20,6 @@ use anirust_api::{
 use crate::session::Session;
 use crate::{MainWindow, PersonItem, ReleaseCard, people, tasks};
 
-/// How many results one page of browsing shows.
-///
-/// The server decides for search; this caps what is asked of it for the
-/// default list, which is otherwise long enough to fetch a hundred posters
-/// nobody scrolls to.
-const DEFAULT_LIMIT: usize = 30;
-
 /// Genres offered as chips, most common in the catalogue first.
 ///
 /// The server matches these by name — its own spelling, lowercase and Russian
@@ -136,6 +129,7 @@ pub const WEEKDAYS_RU: [&str; 7] = ["пн", "вт", "ср", "чт", "пт", "с�
 pub const WEEKDAYS_EN: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /// What one tab fetches.
+#[derive(Clone)]
 enum Query {
     /// The catalogue, filtered.
     Catalogue(Box<Filter>),
@@ -227,6 +221,18 @@ pub struct HomeState {
     /// People and channels a search of the whole catalogue found.
     found_people: Vec<Profile>,
     found_channels: Vec<Channel>,
+    /// What the grid is a page of, and the page to ask for next; `None`
+    /// once the end has been reached or for lists that are not paged.
+    more: Option<(Source, i32)>,
+    /// A further page is on its way.
+    loading_more: bool,
+}
+
+/// What the grid on screen was fetched from, so the next page of it can be.
+#[derive(Clone)]
+enum Source {
+    Tab(Query),
+    Search(String, Scope),
 }
 
 impl HomeState {
@@ -334,52 +340,260 @@ pub fn open(
     }
 
     window.set_results_loading(true);
+    load(
+        window,
+        state,
+        &client,
+        http,
+        Source::Tab(query),
+        0,
+        generation,
+    );
+}
 
-    if matches!(query, Query::Collections | Query::MyCollections) {
-        let me = state.borrow().account.borrow().id;
-        load_collections(window, state, &client, http, generation, me);
-        return;
+/// One page of what a grid shows, and whether there is another.
+enum Found {
+    Releases(Vec<Release>, Vec<Profile>, Vec<Channel>),
+    Collections(Vec<Collection>),
+}
+
+/// Whether a page has another after it. Some lists do not say how many
+/// pages they have; for those, a page with anything on it might.
+fn has_more<T>(page: &anirust_api::Page<T>) -> bool {
+    page.has_next() || (page.total_page_count == 0 && !page.content.is_empty())
+}
+
+fn releases(page: anirust_api::Page<Release>) -> (Found, bool) {
+    let more = has_more(&page);
+    (Found::Releases(page.content, Vec::new(), Vec::new()), more)
+}
+
+fn collections(page: anirust_api::Page<Collection>) -> (Found, bool) {
+    let more = has_more(&page);
+    (Found::Collections(page.content), more)
+}
+
+/// Fetches one page of a source.
+async fn fetch(
+    api: Client,
+    source: Source,
+    page: i32,
+    me: i64,
+) -> anirust_api::Result<(Found, bool)> {
+    let whole = |list: Vec<Release>| (Found::Releases(list, Vec::new(), Vec::new()), false);
+    Ok(match source {
+        Source::Tab(query) => match query {
+            Query::Catalogue(filter) => releases(api.filter(&filter, page).await?),
+            Query::List(list) => releases(api.profile_list(list, page, None).await?),
+            Query::History => releases(api.history(page).await?),
+            Query::Favourites => releases(api.favorites(page, None).await?),
+            Query::Recommended => releases(
+                api.discover_recommendations(page, (page - 1).max(0))
+                    .await?,
+            ),
+            Query::Watching => releases(api.discover_watching(page).await?),
+            Query::Collections => {
+                collections(api.collections(page, CollectionSort::Trending).await?)
+            }
+            Query::MyCollections => {
+                // The account's own, then those it favourited, page by page.
+                let mine = api.profile_collections(me, page).await?;
+                let favourites = api.favorite_collections(page).await.unwrap_or_default();
+                let more = has_more(&mine) || has_more(&favourites);
+                let mut all = mine.content;
+                all.extend(favourites.content);
+                (Found::Collections(all), more)
+            }
+            // Not paged: the whole list comes at once.
+            Query::Interesting => whole(releases_of_cards(api.discover_interesting().await?)),
+            Query::Discussing => whole(api.discover_discussing().await?.content),
+            Query::Schedule(day) => {
+                let week = api.schedule().await?;
+                let days = week.days();
+                whole(match day.checked_sub(1).and_then(|at| days.get(at)) {
+                    Some(one) => one.to_vec(),
+                    None => days.iter().flat_map(|d| d.iter().cloned()).collect(),
+                })
+            }
+            Query::None => whole(Vec::new()),
+        },
+        Source::Search(query, scope) => match scope {
+            Scope::Everything => {
+                let found = api.search_releases(&query, SearchBy::Title, page).await?;
+                // The search does not say how many pages it has.
+                let more = !found.is_empty();
+                // People and channels come with the first page only, and are
+                // extras: a failure there leaves them out.
+                let (people, channels) = if page == 0 {
+                    (
+                        api.search_profiles(&query, 0)
+                            .await
+                            .map(|p| p.content)
+                            .unwrap_or_default(),
+                        api.search_channels(&query, &ChannelSearch::default(), 0)
+                            .await
+                            .map(|p| p.content)
+                            .unwrap_or_default(),
+                    )
+                } else {
+                    (Vec::new(), Vec::new())
+                };
+                (Found::Releases(found, people, channels), more)
+            }
+            Scope::List(list) => releases(api.search_list(list, &query, page).await?),
+            Scope::History => releases(api.search_history(&query, page).await?),
+            Scope::Favourites => releases(api.search_favorites(&query, page).await?),
+            Scope::Collections => collections(api.search_collections(&query, page).await?),
+            Scope::MyCollections => {
+                let mine = api.search_profile_collections(me, 0, &query, page).await?;
+                let favourites = api
+                    .search_favorite_collections(&query, page)
+                    .await
+                    .unwrap_or_default();
+                let more = has_more(&mine) || has_more(&favourites);
+                let mut all = mine.content;
+                all.extend(favourites.content);
+                (Found::Collections(all), more)
+            }
+        },
+    })
+}
+
+/// Fetches a page of a source and puts it on screen: in place of what is
+/// there for the first page, after it for the rest.
+fn load(
+    window: &MainWindow,
+    state: &Rc<RefCell<HomeState>>,
+    client: &Client,
+    http: reqwest::Client,
+    source: Source,
+    page: i32,
+    generation: u64,
+) {
+    let me = state.borrow().account.borrow().id;
+    {
+        let mut state = state.borrow_mut();
+        state.more = None;
+        state.loading_more = page > 0;
     }
-
+    window.set_results_loading_more(page > 0);
     let weak = window.as_weak();
     let state = Rc::clone(state);
-    let api = (*client).clone();
-
-    tasks::spawn(
-        async move {
-            match query {
-                Query::Catalogue(filter) => api.filter(&filter, 0).await.map(|page| page.content),
-                Query::List(list) => api.profile_list(list, 0, None).await.map(|p| p.content),
-                Query::History => api.history(0).await.map(|page| page.content),
-                Query::Favourites => api.favorites(0, None).await.map(|page| page.content),
-                Query::Interesting => api.discover_interesting().await.map(releases_of_cards),
-                Query::Recommended => api
-                    .discover_recommendations(0, 0)
-                    .await
-                    .map(|page| page.content),
-                Query::Watching => api.discover_watching(0).await.map(|page| page.content),
-                Query::Discussing => api.discover_discussing().await.map(|page| page.content),
-                Query::Schedule(day) => api.schedule().await.map(|week| {
-                    let days = week.days();
-                    match day.checked_sub(1).and_then(|at| days.get(at)) {
-                        Some(one) => one.to_vec(),
-                        None => days.iter().flat_map(|d| d.iter().cloned()).collect(),
-                    }
-                }),
-                Query::None | Query::Collections | Query::MyCollections => Ok(Vec::new()),
+    let api = client.clone();
+    let next = source.clone();
+    tasks::spawn(fetch(api, source, page, me), move |result| {
+        let Some(window) = weak.upgrade() else { return };
+        if state.borrow().generation != generation {
+            return;
+        }
+        state.borrow_mut().loading_more = false;
+        window.set_results_loading_more(false);
+        let (found, more) = match result {
+            Ok(found) => found,
+            Err(error) => {
+                tracing::error!(%error, page, "could not load this list");
+                window.set_results_loading(false);
+                return;
             }
-        },
-        move |found| {
-            let Some(window) = weak.upgrade() else { return };
-            match found {
-                Ok(releases) => show(&window, &state, releases, generation, http),
-                Err(error) => {
-                    tracing::error!(%error, "could not load this tab");
-                    window.set_results_loading(false);
+        };
+        match found {
+            Found::Releases(releases, people, channels) => {
+                if page == 0 {
+                    show_found(&window, &state, people, channels, &http);
+                    show(&window, &state, releases, generation, http);
+                } else {
+                    append_releases(&state, releases, generation, &http);
                 }
             }
-        },
-    );
+            Found::Collections(found) => {
+                if page == 0 {
+                    show_collections(&window, &state, found, generation, http);
+                } else {
+                    append_collections(&state, found, generation, &http);
+                }
+            }
+        }
+        state.borrow_mut().more = more.then_some((next, page + 1));
+    });
+}
+
+/// The grid was scrolled near its end: the next page, if there is one.
+pub fn load_more(
+    window: &MainWindow,
+    state: &Rc<RefCell<HomeState>>,
+    client: &Client,
+    http: reqwest::Client,
+) {
+    // A collection open over the grid is a list of its own.
+    if window.get_collection_open() {
+        return;
+    }
+    let (source, page, generation) = {
+        let state = state.borrow();
+        if state.loading_more {
+            return;
+        }
+        let Some((source, page)) = state.more.clone() else {
+            return;
+        };
+        (source, page, state.generation)
+    };
+    load(window, state, client, http, source, page, generation);
+}
+
+fn append_releases(
+    state: &Rc<RefCell<HomeState>>,
+    releases: Vec<Release>,
+    generation: u64,
+    http: &reqwest::Client,
+) {
+    let Some(model) = state.borrow().cards.clone() else {
+        return;
+    };
+    let start = model.row_count();
+    // A release already on screen is not shown twice when pages overlap.
+    let fresh: Vec<Release> = {
+        let state = state.borrow();
+        releases
+            .into_iter()
+            .filter(|r| state.releases.iter().all(|seen| seen.id != r.id))
+            .collect()
+    };
+    for release in &fresh {
+        model.push(card_for(release));
+    }
+    let posters: Vec<String> = fresh.iter().map(Release::poster_url).collect();
+    state.borrow_mut().releases.extend(fresh);
+    for (offset, url) in posters.into_iter().enumerate() {
+        load_poster(state, &model, start + offset, generation, http.clone(), url);
+    }
+}
+
+fn append_collections(
+    state: &Rc<RefCell<HomeState>>,
+    found: Vec<Collection>,
+    generation: u64,
+    http: &reqwest::Client,
+) {
+    let Some(model) = state.borrow().cards.clone() else {
+        return;
+    };
+    let start = model.row_count();
+    let fresh: Vec<Collection> = {
+        let state = state.borrow();
+        found
+            .into_iter()
+            .filter(|c| state.collections.iter().all(|seen| seen.id != c.id))
+            .collect()
+    };
+    for collection in &fresh {
+        model.push(collection_card(collection));
+    }
+    let images: Vec<String> = fresh.iter().map(|c| c.image.clone()).collect();
+    state.borrow_mut().collections.extend(fresh);
+    for (offset, url) in images.into_iter().enumerate() {
+        load_poster(state, &model, start + offset, generation, http.clone(), url);
+    }
 }
 
 /// Today as a schedule chip: 1 for Monday through 7 for Sunday.
@@ -521,6 +735,7 @@ pub fn select_genre(
 
 /// What a search looks through: the tab's own list where the tab is one,
 /// the whole catalogue otherwise.
+#[derive(Clone)]
 enum Scope {
     /// Releases, and the people and channels by that name.
     Everything,
@@ -547,12 +762,6 @@ fn scope_of(destination: Destination, tab: usize) -> Scope {
     }
 }
 
-/// What a search found.
-enum Found {
-    Releases(Vec<Release>, Vec<Profile>, Vec<Channel>),
-    Collections(Vec<Collection>),
-}
-
 /// Searches, or goes back to the default list when the query is emptied.
 pub fn search(
     window: &MainWindow,
@@ -567,10 +776,9 @@ pub fn search(
         return;
     }
 
-    let (scope, me) = {
+    let scope = {
         let state = state.borrow();
-        let me = state.account.borrow().id;
-        (scope_of(state.destination, state.tab), me)
+        scope_of(state.destination, state.tab)
     };
     // The account's own lists are searched only with the account; without
     // it, the search is of everything.
@@ -588,74 +796,15 @@ pub fn search(
     window.set_results_loading(true);
     clear_found(window, state);
 
-    let weak = window.as_weak();
-    let state = Rc::clone(state);
-    let api = (*client).clone();
     let generation = state.borrow_mut().next_generation();
-
-    tasks::spawn(
-        async move {
-            let releases = |page: anirust_api::Result<anirust_api::Page<Release>>| {
-                page.map(|p| Found::Releases(p.content, Vec::new(), Vec::new()))
-            };
-            match scope {
-                Scope::Everything => {
-                    let releases = api.search_releases(&query, SearchBy::Title, 0).await?;
-                    // The others are extras: a failure there leaves them out
-                    // rather than failing the search.
-                    let people = api
-                        .search_profiles(&query, 0)
-                        .await
-                        .map(|p| p.content)
-                        .unwrap_or_default();
-                    let channels = api
-                        .search_channels(&query, &ChannelSearch::default(), 0)
-                        .await
-                        .map(|p| p.content)
-                        .unwrap_or_default();
-                    Ok(Found::Releases(releases, people, channels))
-                }
-                Scope::List(list) => releases(api.search_list(list, &query, 0).await),
-                Scope::History => releases(api.search_history(&query, 0).await),
-                Scope::Favourites => releases(api.search_favorites(&query, 0).await),
-                Scope::Collections => api
-                    .search_collections(&query, 0)
-                    .await
-                    .map(|p| Found::Collections(p.content)),
-                Scope::MyCollections => {
-                    let mut mine = api
-                        .search_profile_collections(me, 0, &query, 0)
-                        .await?
-                        .content;
-                    let favourites = api.search_favorite_collections(&query, 0).await;
-                    for collection in favourites.map(|p| p.content).unwrap_or_default() {
-                        if mine.iter().all(|c| c.id != collection.id) {
-                            mine.push(collection);
-                        }
-                    }
-                    Ok(Found::Collections(mine))
-                }
-            }
-        },
-        move |found| {
-            let Some(window) = weak.upgrade() else { return };
-            if state.borrow().generation != generation {
-                return;
-            }
-            match found {
-                Ok(Found::Releases(releases, people, channels)) => {
-                    show_found(&window, &state, people, channels, &http);
-                    show(&window, &state, releases, generation, http);
-                }
-                Ok(Found::Collections(collections)) => {
-                    show_collections(&window, &state, collections, generation, http);
-                }
-                Err(error) => {
-                    tracing::error!(%error, "search failed");
-                    window.set_results_loading(false);
-                }
-            }
-        },
+    load(
+        window,
+        state,
+        &client,
+        http,
+        Source::Search(query, scope),
+        0,
+        generation,
     );
 }
 
@@ -701,7 +850,6 @@ pub(crate) fn show(
         return;
     }
 
-    let releases: Vec<Release> = releases.into_iter().take(DEFAULT_LIMIT).collect();
     tracing::info!(count = releases.len(), "results");
     let cards: Vec<ReleaseCard> = releases.iter().map(card_for).collect();
     let model = Rc::new(VecModel::from(cards));
@@ -758,52 +906,6 @@ fn load_poster(
     });
 }
 
-/// Collections as a grid: everybody's, or the account's own followed by
-/// those it favourited.
-fn load_collections(
-    window: &MainWindow,
-    state: &Rc<RefCell<HomeState>>,
-    client: &Client,
-    http: reqwest::Client,
-    generation: u64,
-    me: i64,
-) {
-    let weak = window.as_weak();
-    let state = Rc::clone(state);
-    let api = client.clone();
-    tasks::spawn(
-        async move {
-            if me <= 0 {
-                return api
-                    .collections(0, CollectionSort::Trending)
-                    .await
-                    .map(|page| page.content);
-            }
-            let mut mine = api.profile_collections(me, 0).await?.content;
-            let favourites = api.favorite_collections(0).await.map(|p| p.content);
-            for collection in favourites.unwrap_or_default() {
-                if mine.iter().all(|c| c.id != collection.id) {
-                    mine.push(collection);
-                }
-            }
-            Ok(mine)
-        },
-        move |found| {
-            let Some(window) = weak.upgrade() else { return };
-            if state.borrow().generation != generation {
-                return;
-            }
-            match found {
-                Ok(collections) => show_collections(&window, &state, collections, generation, http),
-                Err(error) => {
-                    tracing::error!(%error, "could not load the collections");
-                    window.set_results_loading(false);
-                }
-            }
-        },
-    );
-}
-
 fn show_collections(
     window: &MainWindow,
     state: &Rc<RefCell<HomeState>>,
@@ -811,16 +913,7 @@ fn show_collections(
     generation: u64,
     http: reqwest::Client,
 ) {
-    let cards: Vec<ReleaseCard> = collections
-        .iter()
-        .map(|c| ReleaseCard {
-            title: c.title.as_str().into(),
-            subtitle: collection_subtitle(c).into(),
-            score: slint::SharedString::default(),
-            poster: slint::Image::default(),
-            poster_loaded: false,
-        })
-        .collect();
+    let cards: Vec<ReleaseCard> = collections.iter().map(collection_card).collect();
     let model = Rc::new(VecModel::from(cards));
     window.set_results(slint::ModelRc::from(Rc::clone(&model)));
     window.set_results_loading(false);
@@ -834,6 +927,16 @@ fn show_collections(
     }
     for (index, url) in images.into_iter().enumerate() {
         load_poster(state, &model, index, generation, http.clone(), url);
+    }
+}
+
+fn collection_card(c: &Collection) -> ReleaseCard {
+    ReleaseCard {
+        title: c.title.as_str().into(),
+        subtitle: collection_subtitle(c).into(),
+        score: slint::SharedString::default(),
+        poster: slint::Image::default(),
+        poster_loaded: false,
     }
 }
 

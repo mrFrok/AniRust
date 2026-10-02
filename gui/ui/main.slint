@@ -196,6 +196,11 @@ export component MainWindow inherits Window {
     callback request-deletion(string);
     callback cancel-deletion();
 
+    /// A further page of the grid is on its way.
+    in property <bool> results-loading-more: false;
+    /// The grid was scrolled near its end.
+    callback load-more-results();
+
     // ---- search beyond releases -------------------------------------------
     in property <[PersonItem]> found-people: [];
     in property <[PersonItem]> found-channels: [];
@@ -653,6 +658,8 @@ export component MainWindow inherits Window {
             report-collection => { root.report("collection", -1); }
             new-collection => { root.new-collection(-1); }
 
+            loading-more: root.results-loading-more;
+            load-more => { root.load-more-results(); }
             found-people: root.found-people;
             found-channels: root.found-channels;
             open-found-person(i) => { root.open-found-person(i); }

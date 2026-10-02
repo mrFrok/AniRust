@@ -28,10 +28,10 @@ tracing-subscriber.workspace = true
 # renderer-software is compiled in as a runtime fallback for machines with no
 # usable GL, matching the approach in the author's other Slint project.
 glow = "0.18"
-# Posters arrive as JPEG or PNG over HTTP; Slint needs decoded pixels. Only
-# those two decoders are enabled — the rest of the format zoo is weight for
-# nothing.
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# Pictures arrive over HTTP and Slint needs decoded pixels. Posters are JPEG
+# or PNG; avatars and pictures in posts are whatever people uploaded, which
+# is WebP and GIF often enough. The rest of the format zoo is left out.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 libloading = "0.9"
 # Where playback positions are kept, and how the file is written.
 dirs.workspace = true

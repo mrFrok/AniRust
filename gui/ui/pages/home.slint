@@ -246,6 +246,9 @@ export component HomePage inherits Rectangle {
 
     /// People and channels a search found beside the releases. Only a search
     /// of the whole catalogue looks for them.
+    in property <bool> loading-more: false;
+    /// Asked for when the grid is scrolled near its end.
+    callback load-more();
     in property <[PersonItem]> found-people: [];
     in property <[PersonItem]> found-channels: [];
     callback open-found-person(int);
@@ -627,9 +630,19 @@ export component HomePage inherits Rectangle {
             vertical-stretch: 1;
         }
 
-        if root.results.length > 0: ScrollView {
+        if root.results.length > 0: grid := ScrollView {
             vertical-stretch: 1;
-            content-height: wall.preferred-height;
+            content-height: wall.preferred-height + (root.loading-more ? 72px : 0px);
+
+            // Within a screen of the end, the next page is asked for. Rust
+            // keeps it to one request at a time and stops at the last page.
+            changed content-y => { self.near-end(); }
+            changed content-height => { self.near-end(); }
+            function near-end() {
+                if (self.content-height - self.visible-height + self.content-y < self.visible-height) {
+                    root.load-more();
+                }
+            }
 
             wall := FlexboxLayout {
                 y: root.gutter;
@@ -646,6 +659,14 @@ export component HomePage inherits Rectangle {
                     height: root.card-height;
                     clicked => { root.open-release(index); }
                 }
+            }
+
+            if root.loading-more: CircularProgressIndicator {
+                indeterminate: true;
+                width: 36px;
+                height: 36px;
+                x: (parent.width - self.width) / 2;
+                y: wall.preferred-height + 18px;
             }
         }
     }

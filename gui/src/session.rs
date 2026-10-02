@@ -242,7 +242,9 @@ pub fn signed_in(
     login: String,
 ) {
     client.set_token(Some(token.token.clone()));
-    remember(token.id, &token.token);
+    // The token's own id is not the account's: the profile's is.
+    let id = profile.id;
+    remember(id, &token.token);
 
     // The answer carries the profile, so the screen is complete before it is
     // first looked at.
@@ -259,7 +261,7 @@ pub fn signed_in(
 
     let mut session = session.borrow_mut();
     session.login = name;
-    session.id = token.id;
+    session.id = id;
     session.authenticated = true;
 }
 
@@ -526,13 +528,25 @@ fn stored_session() -> Option<(i64, String)> {
         }
     };
 
-    let (id, token) = secret.split_once(':')?;
+    // Sessions saved before the fix held the token's own id where the
+    // account's belonged, and opened somebody else's profile as the
+    // account's. They carry no version mark, and are dropped: signing in
+    // once more is the only way to learn the account's id.
+    let Some(current) = secret.strip_prefix(SESSION_FORMAT) else {
+        tracing::info!("a saved session from an older version was dropped; sign in again");
+        forget();
+        return None;
+    };
+    let (id, token) = current.split_once(':')?;
     Some((id.parse().ok()?, token.to_owned()))
 }
 
+/// Marks a saved session as holding the account's id.
+const SESSION_FORMAT: &str = "2:";
+
 pub(crate) fn remember(id: i64, token: &str) {
     let Some(entry) = entry() else { return };
-    if let Err(error) = entry.set_password(&format!("{id}:{token}")) {
+    if let Err(error) = entry.set_password(&format!("{SESSION_FORMAT}{id}:{token}")) {
         tracing::warn!(%error, "could not save the session; it ends with this run");
     }
 }
