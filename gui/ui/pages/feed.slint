@@ -14,7 +14,7 @@
 // decision, and not one this screen makes.
 
 import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, SecondaryTabBar, CircularProgressIndicator, TonalButton, OutlineButton, TextButton, IconButton } from "@material";
+import { MaterialPalette, SecondaryTabBar, CircularProgressIndicator, TonalButton, OutlineButton, TextButton, IconButton, FloatingActionButton, FABStyle } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -55,6 +55,11 @@ component PostCard inherits Rectangle {
     callback toggle-like();
     callback open-channel();
     callback report();
+    callback edit();
+    callback pin();
+    callback delete();
+
+    property <bool> confirming-delete: false;
 
     /// Folded by default when the post is long enough to need it. Each card
     /// keeps its own: unfolding one post is not a reason to unfold them all.
@@ -225,6 +230,42 @@ component PostCard inherits Rectangle {
 
             Rectangle { horizontal-stretch: 1; }
 
+            // The account's own posts, and those in channels it runs.
+            if root.post.can-edit: IconButton {
+                icon: @image-url("../icons/edit.svg");
+                tooltip: Tr.edit;
+                width: 28px;
+                height: 28px;
+                clicked => { root.edit(); }
+            }
+
+            if root.post.can-pin: IconButton {
+                icon: root.post.pinned ? @image-url("../icons/pin-filled.svg") : @image-url("../icons/pin.svg");
+                tooltip: root.post.pinned ? Tr.unpin-post : Tr.pin-post;
+                width: 28px;
+                height: 28px;
+                clicked => { root.pin(); }
+            }
+
+            // Deleting asks twice: the second press is on a button that says
+            // what the first would have done.
+            if root.post.can-delete && !root.confirming-delete: IconButton {
+                icon: @image-url("../icons/trash.svg");
+                tooltip: Tr.delete;
+                width: 28px;
+                height: 28px;
+                clicked => { root.confirming-delete = true; }
+            }
+
+            if root.post.can-delete && root.confirming-delete: TextButton {
+                text: Tr.delete-post-confirm;
+                height: 28px;
+                clicked => {
+                    root.confirming-delete = false;
+                    root.delete();
+                }
+            }
+
             report-button := IconButton {
                 icon: @image-url("../icons/flag.svg");
                 tooltip: Tr.report;
@@ -388,6 +429,14 @@ export component FeedPage inherits Rectangle {
     callback toggle-subscription(int);
     callback open-comments(int);
     callback report-post(int);
+    callback edit-post(int);
+    callback pin-post(int);
+    callback delete-post(int);
+    /// Opens the editor on a new post; a channel's page suggests one to it
+    /// instead when the account cannot post there.
+    callback write-post();
+    /// The channel on screen takes posts from the account, or suggestions.
+    in property <bool> can-write: false;
     /// Reports the channel whose page is open.
     callback report-channel();
     callback toggle-like(int);
@@ -599,10 +648,24 @@ export component FeedPage inherits Rectangle {
                     toggle-subscription => { root.toggle-subscription(index); }
                     open-comments => { root.open-comments(index); }
                     report => { root.report-post(index); }
+                    edit => { root.edit-post(index); }
+                    pin => { root.pin-post(index); }
+                    delete => { root.delete-post(index); }
                     toggle-like => { root.toggle-like(index); }
                     open-channel => { root.open-post-channel(index); }
                 }
             }
         }
+    }
+
+    // Writing: on the feed, into the account's blog or a channel it runs;
+    // on a channel's page, into that channel, or as a suggestion to it.
+    if root.signed-in && (!root.channel-open || root.can-write): FloatingActionButton {
+        style: FABStyle.standard;
+        icon: @image-url("../icons/edit.svg");
+        text: Tr.write-post;
+        x: parent.width - self.width - Spacing.comfortable;
+        y: parent.height - self.height - Spacing.comfortable;
+        clicked => { root.write-post(); }
     }
 }

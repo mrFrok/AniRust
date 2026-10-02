@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Text over several lines, growing with what is written.
+//
+// Built from a bare text input rather than the widget set's editor: the
+// widget set draws its text in the desktop's colours, and a dark window on a
+// light desktop would write black on black. This one takes the app's.
+
+import { MaterialPalette } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+
+export component TextArea inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <length> font-size: Typography.body-large-size;
+    in property <int> font-weight: 400;
+    in property <length> least-height: 56px;
+    callback edited(string);
+
+    height: max(root.least-height, input.preferred-height + 2 * Spacing.small);
+    border-radius: Shape.small;
+    border-width: input.has-focus ? 2px : 1px;
+    border-color: input.has-focus ? MaterialPalette.primary : MaterialPalette.outline;
+    background: MaterialPalette.surface-container-low;
+    clip: true;
+
+    if root.text == "": Text {
+        x: Spacing.medium;
+        y: Spacing.small;
+        text: root.placeholder;
+        color: MaterialPalette.on-surface-variant;
+        font-size: root.font-size;
+    }
+
+    input := TextInput {
+        x: Spacing.medium;
+        y: Spacing.small;
+        width: parent.width - 2 * Spacing.medium;
+        text <=> root.text;
+        single-line: false;
+        wrap: word-wrap;
+        color: MaterialPalette.on-surface;
+        selection-background-color: MaterialPalette.secondary-container;
+        selection-foreground-color: MaterialPalette.on-secondary-container;
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+        edited => { root.edited(self.text); }
+    }
+}

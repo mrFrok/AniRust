@@ -14,6 +14,7 @@ mod bookmarks;
 mod collections;
 mod comments;
 mod downloads;
+mod editor;
 mod feed;
 mod home;
 mod notifications;
@@ -104,7 +105,8 @@ fn main() -> Result<()> {
         email_change: Rc::new(RefCell::new(settings::EmailChange::default())),
         reports: Rc::new(RefCell::new(reports::ReportState::default())),
         standing: Rc::new(RefCell::new(standing::Standing::default())),
-        feed: Rc::new(RefCell::new(feed::FeedState::default())),
+        editor: Rc::new(RefCell::new(editor::EditorState::default())),
+        feed: Rc::new(RefCell::new(feed::FeedState::new(Rc::clone(&account)))),
         comments: Rc::new(RefCell::new(comments::CommentsState::default())),
         notifications: Rc::new(RefCell::new(notifications::NotificationsState::default())),
         people: Rc::new(RefCell::new(people::PeopleState::default())),
@@ -118,6 +120,7 @@ fn main() -> Result<()> {
     wire_collections(&window, &app);
     wire_settings(&window, &app);
     wire_reports(&window, &app);
+    wire_editor(&window, &app);
     wire_feed(&window, &app);
     wire_comments(&window, &app);
     wire_notifications(&window, &app);
@@ -172,6 +175,7 @@ struct App {
     email_change: Rc<RefCell<settings::EmailChange>>,
     reports: Rc<RefCell<reports::ReportState>>,
     standing: Rc<RefCell<standing::Standing>>,
+    editor: Rc<RefCell<editor::EditorState>>,
     comments: Rc<RefCell<comments::CommentsState>>,
     notifications: Rc<RefCell<notifications::NotificationsState>>,
     people: Rc<RefCell<people::PeopleState>>,
@@ -697,6 +701,95 @@ fn wire_feed(window: &MainWindow, app: &Rc<App>) {
             feed::toggle_channel_mute(&window, &app.feed, &app.client, app.http.clone(), index);
         }
     });
+}
+
+fn editor_context<'a>(window: &'a MainWindow, app: &'a App) -> editor::Context<'a> {
+    editor::Context {
+        window,
+        state: &app.editor,
+        client: &app.client,
+        me: app.account.borrow().id,
+    }
+}
+
+fn wire_editor(window: &MainWindow, app: &Rc<App>) {
+    // Writing from the feed goes to the account's blog or a channel it runs;
+    // from a channel's page, to that channel or as a suggestion to it.
+    window.on_write_post({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            let channel = feed::open_channel_whole(&app.feed);
+            editor::open_new(&editor_context(&window, &app), channel);
+        }
+    });
+    on_row!(window, app, on_edit_post, |window, app, index| {
+        if let Some(article) = feed::post_at(&app.feed, index) {
+            editor::open_edit(&editor_context(&window, app), &article);
+        }
+    });
+    on_row!(window, app, on_pin_post, |window, app, index| {
+        feed::toggle_pin(&window, &app.feed, &app.client, app.http.clone(), index)
+    });
+    on_row!(window, app, on_delete_post, |window, app, index| {
+        feed::delete_post(&window, &app.feed, &app.client, index)
+    });
+    on_row!(
+        window,
+        app,
+        on_editor_select_channel,
+        |window, app, index| { editor::select_channel(&editor_context(&window, app), index) }
+    );
+    on_row!(window, app, on_editor_remove_block, |window, app, index| {
+        editor::remove_block(&editor_context(&window, app), index)
+    });
+    {
+        let app = Rc::clone(app);
+        window.on_editor_set_text(move |index, text| {
+            if let Ok(index) = usize::try_from(index) {
+                editor::set_text(&app.editor, index, &text);
+            }
+        });
+    }
+    {
+        let app = Rc::clone(app);
+        window.on_editor_set_caption(move |index, text| {
+            if let Ok(index) = usize::try_from(index) {
+                editor::set_caption(&app.editor, index, &text);
+            }
+        });
+    }
+    {
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        window.on_editor_add_block(move |kind| {
+            let Some(window) = weak.upgrade() else { return };
+            editor::add_block(&editor_context(&window, &app), &kind);
+        });
+    }
+    {
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        window.on_editor_move_block(move |index, delta| {
+            let Some(window) = weak.upgrade() else { return };
+            let Ok(index) = usize::try_from(index) else {
+                return;
+            };
+            editor::move_block(&editor_context(&window, &app), index, delta);
+        });
+    }
+    {
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        window.on_editor_publish(move || {
+            let Some(window) = weak.upgrade() else { return };
+            let again = Rc::clone(&app);
+            editor::publish(&editor_context(&window, &app), move |window| {
+                feed::reload(window, &again.feed, &again.client, again.http.clone(), true);
+            });
+        });
+    }
 }
 
 fn wire_reports(window: &MainWindow, app: &Rc<App>) {

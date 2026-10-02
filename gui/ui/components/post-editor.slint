@@ -1,0 +1,280 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Writing a post: which channel it goes in, and its blocks — paragraphs,
+// headings, lists, quotes and lines between them — in order.
+
+import { ScrollView } from "std-widgets.slint";
+import { MaterialPalette, TextField, FilledButton, TonalButton, TextButton, IconButton, Switch } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+import { DraftBlock, PickerOption } from "../structs.slint";
+import { Dropdown } from "release-parts.slint";
+import { TextArea } from "text-area.slint";
+
+component BlockEditor inherits Rectangle {
+    in property <DraftBlock> block;
+    in property <bool> first;
+    in property <bool> last;
+    callback text-edited(string);
+    callback caption-edited(string);
+    callback move(int);
+    callback remove();
+
+    /// A kind this editor writes; others are carried as they came.
+    property <bool> writable: root.block.kind == "paragraph" || root.block.kind == "header"
+        || root.block.kind == "list" || root.block.kind == "quote";
+
+    height: layout.preferred-height;
+    border-radius: Shape.medium;
+    background: MaterialPalette.surface-container;
+
+    layout := VerticalLayout {
+        padding: Spacing.small;
+        padding-left: Spacing.medium;
+        spacing: Spacing.tight;
+
+        HorizontalLayout {
+            spacing: Spacing.hair;
+
+            Text {
+                text: Tr.block-kind(root.block.kind);
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.label-medium-size;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            IconButton {
+                icon: @image-url("../icons/chevron-up.svg");
+                tooltip: Tr.move-up;
+                enabled: !root.first;
+                clicked => { root.move(-1); }
+            }
+
+            IconButton {
+                icon: @image-url("../icons/chevron-down.svg");
+                tooltip: Tr.move-down;
+                enabled: !root.last;
+                clicked => { root.move(1); }
+            }
+
+            IconButton {
+                icon: @image-url("../icons/close.svg");
+                tooltip: Tr.delete;
+                clicked => { root.remove(); }
+            }
+        }
+
+        if root.block.kind == "delimiter": Rectangle {
+            height: 24px;
+
+            Rectangle {
+                width: 30%;
+                height: 2px;
+                background: MaterialPalette.outline-variant;
+            }
+        }
+
+        if !root.writable && root.block.kind != "delimiter": Text {
+            text: Tr.kept-block;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.body-medium-size;
+            wrap: word-wrap;
+        }
+
+        if root.writable: TextArea {
+            text: root.block.text;
+            placeholder: root.block.kind == "list" ? Tr.list-placeholder : Tr.text-placeholder;
+            font-size: root.block.kind == "header" ? Typography.title-large-size : Typography.body-large-size;
+            font-weight: root.block.kind == "header" ? 700 : 400;
+            edited(text) => { root.text-edited(text); }
+        }
+
+        if root.block.kind == "quote": TextField {
+            label: Tr.quote-caption;
+            text: root.block.caption;
+            edited(text) => { root.caption-edited(text); }
+        }
+    }
+}
+
+export component PostEditor inherits Rectangle {
+    /// A post being changed rather than written.
+    in property <bool> editing: false;
+    /// Suggesting a post to someone else's channel rather than posting.
+    in property <bool> suggesting: false;
+    in property <[PickerOption]> channels: [];
+    in property <int> channel: 0;
+    in property <[DraftBlock]> blocks: [];
+    /// Whether the chosen channel can carry the author's name: blogs always do.
+    in property <bool> can-sign: false;
+    in-out property <bool> signed: false;
+    in property <bool> busy: false;
+    in property <bool> loading: false;
+    /// "", "no-channel", "empty" or "failed".
+    in property <string> error;
+
+    callback select-channel(int);
+    callback add-block(string);
+    callback set-text(int, string);
+    callback set-caption(int, string);
+    callback move-block(int, int);
+    callback remove-block(int);
+    callback publish();
+    callback dismiss();
+
+    background: #000000A6;
+
+    TouchArea {
+        clicked => { root.dismiss(); }
+    }
+
+    Rectangle {
+        width: min(720px, parent.width - 2 * Spacing.comfortable);
+        height: parent.height - 2 * Spacing.comfortable;
+        x: (parent.width - self.width) / 2;
+        y: Spacing.comfortable;
+        border-radius: Shape.extra-large;
+        background: MaterialPalette.surface-container-high;
+        drop-shadow-blur: 32px;
+        drop-shadow-color: #00000080;
+
+        TouchArea {}
+
+        VerticalLayout {
+            padding-top: Spacing.base;
+            padding-bottom: Spacing.base;
+            spacing: Spacing.small;
+
+            HorizontalLayout {
+                padding-left: Spacing.comfortable;
+                padding-right: Spacing.base;
+
+                Text {
+                    text: root.editing ? Tr.edit-post : root.suggesting ? Tr.suggest-post : Tr.new-post;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-large-size;
+                    font-weight: Typography.title-large-weight-em;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                IconButton {
+                    icon: @image-url("../icons/close.svg");
+                    clicked => { root.dismiss(); }
+                }
+            }
+
+            // Where it goes: chosen only for a new post.
+            if !root.editing && !root.suggesting: HorizontalLayout {
+                padding-left: Spacing.comfortable;
+                padding-right: Spacing.comfortable;
+                spacing: Spacing.base;
+
+                Text {
+                    text: Tr.post-to;
+                    color: MaterialPalette.on-surface-variant;
+                    font-size: Typography.body-large-size;
+                    vertical-alignment: center;
+                }
+
+                Dropdown {
+                    horizontal-stretch: 1;
+                    model: root.channels;
+                    current: root.channel;
+                    placeholder: root.loading ? Tr.loading : Tr.no-channels;
+                    selected(i) => { root.select-channel(i); }
+                }
+            }
+
+            ScrollView {
+                vertical-stretch: 1;
+
+                VerticalLayout {
+                    padding-left: Spacing.comfortable;
+                    padding-right: Spacing.comfortable;
+                    spacing: Spacing.small;
+                    alignment: start;
+
+                    if root.blocks.length == 0: Text {
+                        text: Tr.empty-post;
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.body-medium-size;
+                        wrap: word-wrap;
+                    }
+
+                    for block[index] in root.blocks: BlockEditor {
+                        block: block;
+                        first: index == 0;
+                        last: index == root.blocks.length - 1;
+                        text-edited(text) => { root.set-text(index, text); }
+                        caption-edited(text) => { root.set-caption(index, text); }
+                        move(delta) => { root.move-block(index, delta); }
+                        remove => { root.remove-block(index); }
+                    }
+
+                    // What can be added, at the end.
+                    HorizontalLayout {
+                        spacing: Spacing.tight;
+                        alignment: start;
+
+                        TextButton { text: "+ " + Tr.block-kind("paragraph"); clicked => { root.add-block("paragraph"); } }
+                        TextButton { text: "+ " + Tr.block-kind("header"); clicked => { root.add-block("header"); } }
+                        TextButton { text: "+ " + Tr.block-kind("list"); clicked => { root.add-block("list"); } }
+                        TextButton { text: "+ " + Tr.block-kind("quote"); clicked => { root.add-block("quote"); } }
+                        TextButton { text: "+ " + Tr.block-kind("delimiter"); clicked => { root.add-block("delimiter"); } }
+                    }
+                }
+            }
+
+            if root.error != "": Text {
+                x: Spacing.comfortable;
+                text: Tr.post-error(root.error);
+                color: MaterialPalette.error;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                padding-left: Spacing.comfortable;
+                padding-right: Spacing.comfortable;
+                spacing: Spacing.small;
+
+                if root.can-sign: HorizontalLayout {
+                    spacing: Spacing.small;
+
+                    Switch {
+                        width: 52px;
+                        height: 32px;
+                        y: (parent.height - self.height) / 2;
+                        property <bool> wanted: root.signed;
+                        init => { self.checked = root.signed; }
+                        changed wanted => { self.checked = self.wanted; }
+                        changed checked => { root.signed = self.checked; }
+                    }
+
+                    Text {
+                        text: Tr.sign-post;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.body-medium-size;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                TextButton {
+                    text: Tr.cancel;
+                    clicked => { root.dismiss(); }
+                }
+
+                FilledButton {
+                    text: root.busy ? Tr.loading : root.editing ? Tr.save : root.suggesting ? Tr.suggest : Tr.publish;
+                    enabled: !root.busy && root.blocks.length > 0;
+                    clicked => { root.publish(); }
+                }
+            }
+        }
+    }
+}

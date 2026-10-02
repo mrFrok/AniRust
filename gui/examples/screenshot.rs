@@ -28,7 +28,7 @@
 //! `feed-signed-out`, `feed-empty`, `feed-channels`, `feed-channel`, `collections`, `collection`,
 //! `collection-editor`, `collection-picker`, `search`, `sign-up`,
 //! `sign-up-code`, `restore-code`, `settings`, `settings-email`,
-//! `settings-standing`, `report`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
+//! `settings-standing`, `report`, `editor`, `feed-own`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
 //! `comments-signed-out`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
@@ -92,6 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || state == "search"
             || state.starts_with("settings")
             || state.starts_with("report")
+            || state == "editor"
             || state.starts_with("deletion")
         {
             "home".into()
@@ -185,7 +186,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => 0,
         });
         if state != "feed-signed-out" && state != "feed-empty" {
-            ui.set_posts(slint::ModelRc::new(slint::VecModel::from(sample_posts())));
+            let mut posts = sample_posts();
+            // The account's own post, with what it may do to it.
+            if state == "feed-own" {
+                posts[0].can_edit = true;
+                posts[0].can_delete = true;
+                posts[0].can_pin = true;
+            }
+            ui.set_posts(slint::ModelRc::new(slint::VecModel::from(posts)));
         }
         if state == "feed-channels" {
             ui.set_feed_channels(slint::ModelRc::new(
@@ -270,6 +278,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .into(),
         );
         ui.set_email_code_pending(state == "settings-email");
+    }
+    // The post editor, a few blocks in, one of them a picture it keeps.
+    if state == "editor" {
+        ui.set_destination(3);
+        ui.set_signed_in(true);
+        ui.set_editor_open(true);
+        ui.set_editor_channels(slint::ModelRc::new(slint::VecModel::from(vec![
+            PickerOption {
+                label: "mrfrok".into(),
+                ..PickerOption::default()
+            },
+        ])));
+        ui.set_editor_can_sign(false);
+        let block = |kind: &str, text: &str, caption: &str| DraftBlock {
+            kind: kind.into(),
+            text: text.into(),
+            caption: caption.into(),
+        };
+        ui.set_editor_blocks(slint::ModelRc::new(slint::VecModel::from(vec![
+            block("header", "Что посмотреть этой осенью", ""),
+            block(
+                "paragraph",
+                "Короткий список того, что вышло и что стоит начать.",
+                "",
+            ),
+            block("list", "Первое\nВторое\nТретье", ""),
+            block("media", "", ""),
+            block("quote", "Скоро.", "студия"),
+            block("delimiter", "", ""),
+        ])));
     }
     // A report about a comment, a reason picked; and the deletion sheet,
     // before a request and with one in.
@@ -794,6 +832,9 @@ fn sample_posts() -> Vec<FeedPost> {
         votes: 37,
         liked: false,
         pinned: false,
+        can_edit: false,
+        can_delete: false,
+        can_pin: false,
     };
     vec![
         FeedPost {

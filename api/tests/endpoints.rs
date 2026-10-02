@@ -860,6 +860,7 @@ async fn article_create_sends_the_body_as_a_string() {
         blocks: vec![anirust_api::ArticleBlock {
             kind: "paragraph".into(),
             data: json!({ "text": "привет" }),
+            ..anirust_api::ArticleBlock::default()
         }],
         ..anirust_api::ArticlePayload::default()
     };

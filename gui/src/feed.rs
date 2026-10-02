@@ -61,9 +61,23 @@ pub struct FeedState {
     channel_items: Option<Rc<VecModel<ChannelItem>>>,
     /// A channel's own page, when one is open over the tabs.
     open_channel: Option<Channel>,
+    /// Who is signed in, to know the account's own posts.
+    account: Rc<RefCell<crate::session::Session>>,
 }
 
 impl FeedState {
+    #[must_use]
+    pub fn new(account: Rc<RefCell<crate::session::Session>>) -> Self {
+        Self {
+            account,
+            ..Self::default()
+        }
+    }
+
+    fn me(&self) -> i64 {
+        self.account.borrow().id
+    }
+
     fn next_generation(&mut self) -> u64 {
         self.generation += 1;
         self.generation
@@ -422,6 +436,11 @@ fn channel_item(channel: &Channel) -> ChannelItem {
 
 fn show_open_channel(window: &MainWindow, channel: &Channel, http: &reqwest::Client) {
     window.set_open_channel_item(channel_item(channel));
+    window.set_feed_can_write(
+        channel.is_creator
+            || channel.is_administrator_or_higher
+            || channel.is_article_suggestion_enabled,
+    );
     if channel.avatar.starts_with("http") {
         let weak = window.as_weak();
         tasks::spawn(
@@ -461,6 +480,101 @@ fn channel_model(channels: &[Channel], http: &reqwest::Client) -> Rc<VecModel<Ch
         );
     }
     model
+}
+
+/// The whole post at a row, for the editor.
+#[must_use]
+pub fn post_at(state: &Rc<RefCell<FeedState>>, index: usize) -> Option<Article> {
+    state.borrow().articles.get(index).cloned()
+}
+
+/// The channel whose page is open, whole.
+#[must_use]
+pub fn open_channel_whole(state: &Rc<RefCell<FeedState>>) -> Option<Channel> {
+    state.borrow().open_channel.clone()
+}
+
+/// Reads again whatever the feed is showing: the open channel, or the tab.
+pub fn reload(
+    window: &MainWindow,
+    state: &Rc<RefCell<FeedState>>,
+    client: &Client,
+    http: reqwest::Client,
+    signed_in: bool,
+) {
+    let showing = state.borrow().open_channel.clone();
+    match showing {
+        Some(channel) => open_channel(window, state, client, http, channel),
+        None => open(window, state, client, http, signed_in),
+    }
+}
+
+/// Pins a post at the top of its channel, or unpins it.
+pub fn toggle_pin(
+    window: &MainWindow,
+    state: &Rc<RefCell<FeedState>>,
+    client: &Client,
+    http: reqwest::Client,
+    index: usize,
+) {
+    let Some((id, now)) = state
+        .borrow()
+        .articles
+        .get(index)
+        .map(|a| (a.id, !a.is_pinned))
+    else {
+        return;
+    };
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    let api = client.clone();
+    let again = client.clone();
+    tasks::spawn(
+        async move { api.article_pin(id, now).await },
+        move |result| {
+            let Some(window) = weak.upgrade() else { return };
+            match result {
+                // Read again: a pin moves the post, and may unpin another.
+                Ok(()) => reload(&window, &state, &again, http, true),
+                Err(error) => tracing::warn!(%error, id, "the post was not pinned"),
+            }
+        },
+    );
+}
+
+/// Deletes a post. The card has asked twice.
+pub fn delete_post(
+    window: &MainWindow,
+    state: &Rc<RefCell<FeedState>>,
+    client: &Client,
+    index: usize,
+) {
+    let Some(id) = state.borrow().articles.get(index).map(|a| a.id) else {
+        return;
+    };
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    let api = client.clone();
+    tasks::spawn(async move { api.article_delete(id).await }, move |result| {
+        if let Err(error) = result {
+            tracing::warn!(%error, id, "the post was not deleted");
+            return;
+        }
+        if weak.upgrade().is_none() {
+            return;
+        }
+        // Off the screen where it still is: by id, since rows may have moved.
+        let mut state = state.borrow_mut();
+        let Some(at) = state.articles.iter().position(|a| a.id == id) else {
+            return;
+        };
+        state.articles.remove(at);
+        if let Some(model) = &state.posts
+            && at < model.row_count()
+        {
+            model.remove(at);
+        }
+    });
 }
 
 /// The post a row of the feed stands for: its id and a title for the
@@ -651,7 +765,8 @@ fn show(
 
     // Deleted posts arrive as tombstones; there is nothing to read in one.
     let articles: Vec<Article> = articles.into_iter().filter(|a| !a.is_deleted).collect();
-    let posts: Vec<FeedPost> = articles.iter().map(|a| post_for(a, now)).collect();
+    let me = state.borrow().me();
+    let posts: Vec<FeedPost> = articles.iter().map(|a| post_for(a, now, me)).collect();
     let model = Rc::new(VecModel::from(posts));
     window.set_posts(slint::ModelRc::from(Rc::clone(&model)));
 
@@ -696,7 +811,10 @@ fn show(
 }
 
 /// One post as the screen shows it.
-fn post_for(article: &Article, now: i64) -> FeedPost {
+fn post_for(article: &Article, now: i64, me: i64) -> FeedPost {
+    let own = me > 0 && article.author.id == me;
+    // The channel's runners may pin and remove what is in it.
+    let runs = article.channel.is_creator || article.channel.is_administrator_or_higher;
     let channel = &article.channel;
     // A personal blog is a channel named after its owner; the owner's name is
     // the one a reader knows, so that is the one shown.
@@ -721,6 +839,9 @@ fn post_for(article: &Article, now: i64) -> FeedPost {
         votes: count(article.vote_count),
         liked: article.vote == UP,
         pinned: article.is_pinned,
+        can_edit: own,
+        can_delete: own || runs,
+        can_pin: runs || (own && article.channel.is_blog),
     }
 }
 
@@ -804,7 +925,7 @@ mod tests {
             },
             ..Article::default()
         };
-        let post = post_for(&article, 0);
+        let post = post_for(&article, 0, 0);
         assert_eq!(post.channel.as_str(), "mrFrok");
         assert!(!post.can_subscribe);
     }
@@ -820,7 +941,7 @@ mod tests {
             },
             ..Article::default()
         };
-        let post = post_for(&article, 0);
+        let post = post_for(&article, 0, 0);
         assert_eq!(post.channel.as_str(), "GDA | News");
         assert!(post.can_subscribe);
         assert!(post.subscribed);

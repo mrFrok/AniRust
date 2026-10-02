@@ -50,6 +50,10 @@ pub struct Channel {
     #[serde(deserialize_with = "nullable")]
     pub is_muted: bool,
     #[serde(deserialize_with = "nullable")]
+    pub is_article_suggestion_enabled: bool,
+    #[serde(deserialize_with = "nullable")]
+    pub is_commenting_enabled: bool,
+    #[serde(deserialize_with = "nullable")]
     pub is_creator: bool,
     #[serde(deserialize_with = "nullable")]
     pub is_administrator_or_higher: bool,
@@ -66,13 +70,86 @@ pub struct Channel {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct ArticleBlock {
+    /// The editor's id for the block, unique within the post.
+    #[serde(
+        deserialize_with = "nullable",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub id: String,
     #[serde(rename = "type", deserialize_with = "nullable")]
     pub kind: String,
     /// Kept as it came: its shape depends on `kind`.
     pub data: serde_json::Value,
 }
 
+/// The editor's format version, as the official client writes it.
+pub const ARTICLE_VERSION: &str = "2.26.5";
+
 impl ArticleBlock {
+    fn new(kind: &str, data: serde_json::Value) -> Self {
+        Self {
+            id: String::new(),
+            kind: kind.to_owned(),
+            data,
+        }
+    }
+
+    /// A paragraph of text.
+    #[must_use]
+    pub fn paragraph(text: &str) -> Self {
+        Self::new(
+            "paragraph",
+            serde_json::json!({ "text": text, "text_length": text.chars().count() }),
+        )
+    }
+
+    /// A heading; `level` is 1 to 6, as in HTML.
+    #[must_use]
+    pub fn header(text: &str, level: u8) -> Self {
+        Self::new(
+            "header",
+            serde_json::json!({
+                "text": text,
+                "level": level.clamp(1, 6),
+                "text_length": text.chars().count(),
+            }),
+        )
+    }
+
+    /// A list, numbered or not.
+    #[must_use]
+    pub fn list(items: &[String], ordered: bool) -> Self {
+        Self::new(
+            "list",
+            serde_json::json!({
+                "style": if ordered { "ordered" } else { "unordered" },
+                "items": items,
+                "item_count": items.len(),
+            }),
+        )
+    }
+
+    /// A quotation, with whom it is by.
+    #[must_use]
+    pub fn quote(text: &str, caption: &str) -> Self {
+        Self::new(
+            "quote",
+            serde_json::json!({
+                "text": text,
+                "caption": caption,
+                "alignment": "left",
+                "text_length": text.chars().count(),
+                "caption_length": caption.chars().count(),
+            }),
+        )
+    }
+
+    /// A line between parts of a post.
+    #[must_use]
+    pub fn delimiter() -> Self {
+        Self::new("delimiter", serde_json::json!({}))
+    }
+
     /// The block's text, with the editor's inline markup taken out.
     ///
     /// Paragraphs, headers and quotes carry `text`; a list carries `items`,
@@ -141,6 +218,52 @@ pub struct ArticlePayload {
     pub version: String,
     #[serde(deserialize_with = "nullable")]
     pub blocks: Vec<ArticleBlock>,
+    #[serde(deserialize_with = "nullable")]
+    pub block_count: usize,
+}
+
+impl ArticlePayload {
+    /// A body of these blocks, written now. Blocks without an id are given
+    /// one, since the editor tells blocks apart by it.
+    #[must_use]
+    pub fn of(blocks: Vec<ArticleBlock>) -> Self {
+        let time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| {
+                i64::try_from(since.as_millis()).unwrap_or(i64::MAX)
+            });
+        let blocks: Vec<ArticleBlock> = blocks
+            .into_iter()
+            .enumerate()
+            .map(|(at, mut block)| {
+                if block.id.is_empty() {
+                    block.id = block_id(time, at);
+                }
+                block
+            })
+            .collect();
+        Self {
+            time,
+            version: ARTICLE_VERSION.to_owned(),
+            block_count: blocks.len(),
+            blocks,
+        }
+    }
+}
+
+/// Ten characters from the stamp and the block's place, in the editor's
+/// alphabet: unique within a post, which is all an id has to be.
+fn block_id(time: i64, at: usize) -> String {
+    const ALPHABET: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-";
+    let mut n = (time.unsigned_abs() << 8) ^ (at as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    (0..10)
+        .map(|_| {
+            let c = ALPHABET[(n % 64) as usize] as char;
+            n /= 64;
+            n ^= 0x5DEE_CE66_D;
+            c
+        })
+        .collect()
 }
 
 /// A post in the feed.
@@ -245,6 +368,7 @@ mod feed_tests {
 
     fn block(kind: &str, data: serde_json::Value) -> ArticleBlock {
         ArticleBlock {
+            id: String::new(),
             kind: kind.to_owned(),
             data,
         }
@@ -322,5 +446,31 @@ mod feed_tests {
         .expect("nulls degrade into defaults");
         assert_eq!(article.id, 7);
         assert!(article.payload.blocks.is_empty());
+    }
+
+    #[test]
+    fn a_written_post_reads_back_as_it_was_written() {
+        let payload = ArticlePayload::of(vec![
+            ArticleBlock::header("Анонс", 2),
+            ArticleBlock::paragraph("Второй сезон выйдет весной."),
+            ArticleBlock::list(&["раз".to_owned(), "два".to_owned()], false),
+            ArticleBlock::quote("Скоро.", "студия"),
+            ArticleBlock::delimiter(),
+        ]);
+        assert_eq!(payload.block_count, 5);
+        assert_eq!(payload.version, ARTICLE_VERSION);
+        let ids: std::collections::HashSet<_> =
+            payload.blocks.iter().map(|b| b.id.clone()).collect();
+        assert_eq!(ids.len(), 5, "every block has its own id");
+        assert!(ids.iter().all(|id| id.len() == 10));
+
+        let text = serde_json::to_string(&payload).unwrap();
+        let back: ArticlePayload = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.blocks[0].kind, "header");
+        assert_eq!(back.blocks[0].data["level"], 2);
+        assert_eq!(back.blocks[1].plain_text(), "Второй сезон выйдет весной.");
+        assert_eq!(back.blocks[2].plain_text(), "• раз\n• два");
+        assert_eq!(back.blocks[3].data["caption"], "студия");
+        assert_eq!(back.blocks[4].kind, "delimiter");
     }
 }

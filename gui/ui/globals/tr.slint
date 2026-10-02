@@ -241,6 +241,44 @@ export global Tr {
         ? "Жалоба отправлена. Модераторы посмотрят."
         : "Reported. The moderators will look into it.";
     out property <string> close: lang == "ru" ? "Закрыть" : "Close";
+    out property <string> new-post: lang == "ru" ? "Новая запись" : "New post";
+    out property <string> edit-post: lang == "ru" ? "Изменить запись" : "Edit post";
+    out property <string> suggest-post: lang == "ru" ? "Предложить запись" : "Suggest a post";
+    out property <string> write-post: lang == "ru" ? "Написать" : "Write";
+    out property <string> post-to: lang == "ru" ? "Куда" : "Post to";
+    out property <string> no-channels: lang == "ru" ? "Негде писать" : "Nowhere to post";
+    out property <string> empty-post: lang == "ru"
+        ? "Запись собирается из блоков: добавьте первый ниже."
+        : "A post is made of blocks: add the first one below.";
+    out property <string> text-placeholder: lang == "ru" ? "Текст" : "Text";
+    out property <string> list-placeholder: lang == "ru" ? "Пункты, по одному в строке" : "Items, one to a line";
+    out property <string> quote-caption: lang == "ru" ? "Чьи слова" : "Whose words";
+    out property <string> move-up: lang == "ru" ? "Выше" : "Move up";
+    out property <string> move-down: lang == "ru" ? "Ниже" : "Move down";
+    out property <string> sign-post: lang == "ru" ? "Подписать своим именем" : "Sign with my name";
+    out property <string> publish: lang == "ru" ? "Опубликовать" : "Publish";
+    out property <string> suggest: lang == "ru" ? "Предложить" : "Suggest";
+    out property <string> pin-post: lang == "ru" ? "Закрепить" : "Pin";
+    out property <string> unpin-post: lang == "ru" ? "Открепить" : "Unpin";
+    out property <string> delete-post-confirm: lang == "ru" ? "Удалить запись?" : "Delete the post?";
+    out property <string> kept-block: lang == "ru"
+        ? "Картинка или встраивание — останется как было."
+        : "A picture or an embed: it stays as it was.";
+    out property <string> create-blog: lang == "ru" ? "Завести блог" : "Start a blog";
+    public pure function block-kind(kind: string) -> string {
+        kind == "header" ? (lang == "ru" ? "Заголовок" : "Heading")
+        : kind == "list" ? (lang == "ru" ? "Список" : "List")
+        : kind == "quote" ? (lang == "ru" ? "Цитата" : "Quote")
+        : kind == "delimiter" ? (lang == "ru" ? "Разделитель" : "Divider")
+        : kind == "paragraph" ? (lang == "ru" ? "Абзац" : "Paragraph")
+        : (lang == "ru" ? "Вложение" : "Attachment")
+    }
+    public pure function post-error(key: string) -> string {
+        key == "no-channel" ? (lang == "ru" ? "Выберите, куда писать." : "Choose where to post.")
+        : key == "empty" ? (lang == "ru" ? "В записи нет текста." : "The post has no text.")
+        : key == "no-blog" ? (lang == "ru" ? "Блог пока не завести: сервису мало репутации аккаунта." : "No blog yet: the service wants more reputation first.")
+        : (lang == "ru" ? "Не получилось. Попробуйте ещё раз." : "That did not work. Try again.")
+    }
     out property <string> tab-collections: lang == "ru" ? "Коллекции" : "Collections";
     out property <string> my-collections: lang == "ru" ? "Мои коллекции" : "My collections";
     out property <string> new-collection: lang == "ru" ? "Новая коллекция" : "New collection";

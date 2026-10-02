@@ -156,6 +156,11 @@ export struct FeedPost {
     /// Whether the account has given it a heart.
     liked: bool,
     pinned: bool,
+    /// The account wrote it, and may change it.
+    can-edit: bool,
+    can-delete: bool,
+    /// The account runs the channel, and may pin it.
+    can-pin: bool,
 }
 
 /// Something on the release page that leads somewhere else: another release
@@ -294,4 +299,14 @@ export struct EnforcementItem {
     /// What the moderators answered an appeal with.
     answer: string,
     can-appeal: bool,
+}
+
+/// One block of a post being written.
+export struct DraftBlock {
+    /// "paragraph", "header", "list", "quote" or "delimiter".
+    kind: string,
+    /// A list's items, one to a line.
+    text: string,
+    /// Whom a quote is by.
+    caption: string,
 }
