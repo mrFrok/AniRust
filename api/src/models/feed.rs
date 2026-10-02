@@ -260,7 +260,7 @@ fn block_id(time: i64, at: usize) -> String {
         .map(|_| {
             let c = ALPHABET[(n % 64) as usize] as char;
             n /= 64;
-            n ^= 0x5DEE_CE66_D;
+            n ^= 0x0005_DEEC_E66D;
             c
         })
         .collect()
