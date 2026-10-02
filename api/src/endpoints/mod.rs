@@ -24,6 +24,7 @@ mod discover;
 mod episode;
 mod feed;
 mod notification;
+mod people;
 mod preference;
 mod release;
 
@@ -31,6 +32,7 @@ pub use account::SignInError;
 pub use article::{ArticleEntryPoint, ArticleEventKind};
 pub use discover::ChannelSearch;
 pub use episode::{DubberChannel, EpisodeSort};
+pub use people::{Badge, FriendOutcome, LoginChange, ProfileInfo, Socials};
 
 /// Mirrors `PageableResponse<T>`. Pages are 0-based.
 #[derive(Deserialize)]

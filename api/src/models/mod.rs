@@ -35,7 +35,7 @@ pub use notification::{
     NotificationDelete, NotificationKind, NotificationPreferences, NotificationSwitch,
     ReleaseCompact, SourceCompact,
 };
-pub use profile::{Profile, ProfileList, ProfileToken};
+pub use profile::{FriendStatus, Profile, ProfileList, ProfileToken, Share, WatchDay};
 pub use release::{
     Filter, FilterSort, Related, Release, ReleaseCategory, ReleaseStatus, SearchBy,
     StreamingPlatform,

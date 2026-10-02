@@ -1294,3 +1294,195 @@ async fn notification_preference_bodies() {
         .await
         .expect("by voice-over");
 }
+
+// ---- A6: people ------------------------------------------------------------
+
+endpoint! {
+    profile_info: "GET" "/profile/info",
+    token: true,
+    reply: json!({ "code": 0, "rating_score": 5 }),
+    call: |c| c.profile_info(),
+}
+
+endpoint! {
+    profile_socials: "GET" "/profile/social/5",
+    token: true,
+    reply: json!({ "code": 0, "tg_page": "x" }),
+    call: |c| c.profile_socials(5),
+}
+
+endpoint! {
+    login_history: "GET" "/profile/login/history/all/5/0",
+    token: true,
+    reply: page(),
+    call: |c| c.login_history(5, 0),
+}
+
+endpoint! {
+    profile_moderate: "POST" "/profile/process/5",
+    token: true,
+    reply: ack(),
+    call: |c| c.profile_moderate(5, false, None, None),
+}
+
+endpoint! {
+    friends: "GET" "/profile/friend/all/5/0",
+    token: true,
+    reply: page(),
+    call: |c| c.friends(5, 0),
+}
+
+endpoint! {
+    friend_recommendations: "GET" "/profile/friend/recommendations",
+    token: true,
+    reply: page(),
+    call: |c| c.friend_recommendations(),
+}
+
+endpoint! {
+    friend_requests_in: "GET" "/profile/friend/requests/in/0",
+    token: true,
+    reply: page(),
+    call: |c| c.friend_requests_in(0),
+}
+
+endpoint! {
+    friend_requests_in_last: "GET" "/profile/friend/requests/in/last",
+    token: true,
+    ["count" = "3"]
+    reply: page(),
+    call: |c| c.friend_requests_in_last(3),
+}
+
+endpoint! {
+    friend_requests_out: "GET" "/profile/friend/requests/out/0",
+    token: true,
+    reply: page(),
+    call: |c| c.friend_requests_out(0),
+}
+
+endpoint! {
+    friend_requests_out_last: "GET" "/profile/friend/requests/out/last",
+    token: true,
+    ["count" = "3"]
+    reply: page(),
+    call: |c| c.friend_requests_out_last(3),
+}
+
+endpoint! {
+    friend_request_hide: "GET" "/profile/friend/request/hide/5",
+    token: true,
+    reply: ack(),
+    call: |c| c.friend_request_hide(5),
+}
+
+endpoint! {
+    rated_releases: "GET" "/profile/vote/release/voted/5/0",
+    token: true,
+    reply: page(),
+    call: |c| c.rated_releases(5, 0, None),
+}
+
+endpoint! {
+    unrated_releases: "GET" "/profile/vote/release/unvoted/0",
+    token: true,
+    reply: page(),
+    call: |c| c.unrated_releases(0),
+}
+
+endpoint! {
+    unrated_releases_last: "GET" "/profile/vote/release/unvoted/last",
+    token: true,
+    reply: page(),
+    call: |c| c.unrated_releases_last(),
+}
+
+endpoint! {
+    badges: "GET" "/profile/preference/badge/all/0",
+    token: true,
+    reply: json!({ "code": 0, "content": [{ "id": 1, "name": "b", "image_url": "u", "type": 1 }], "profile": {} }),
+    call: |c| c.badges(0),
+}
+
+endpoint! {
+    badge_wear: "GET" "/profile/preference/badge/edit/1",
+    token: true,
+    reply: ack(),
+    call: |c| c.badge_wear(1),
+}
+
+endpoint! {
+    badge_remove: "GET" "/profile/preference/badge/remove",
+    token: true,
+    reply: ack(),
+    call: |c| c.badge_remove(),
+}
+
+endpoint! {
+    blocked: "GET" "/profile/blocklist/all/0",
+    token: true,
+    reply: page(),
+    call: |c| c.blocked(0),
+}
+
+endpoint! {
+    unblock: "GET" "/profile/blocklist/remove/5",
+    token: true,
+    reply: ack(),
+    call: |c| c.unblock(5),
+}
+
+endpoint! {
+    role_holders: "GET" "/role/all/0/3",
+    token: true,
+    reply: page(),
+    call: |c| c.role_holders(3, 0),
+}
+
+/// The friend endpoints answer success with codes of their own. Each code is
+/// served in turn and read back as what it means.
+#[tokio::test]
+async fn friend_requests_read_their_own_codes() {
+    use anirust_api::FriendOutcome;
+
+    async fn answer(route: &str, code: i32) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(route))
+            .and(query_param("token", TOKEN))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "code": code })))
+            .mount(&server)
+            .await;
+        server
+    }
+
+    let sent = answer("/profile/friend/request/send/5", 3).await;
+    assert_eq!(
+        client(&sent).friend_request_send(5).await.ok(),
+        Some(FriendOutcome::Sent)
+    );
+
+    let confirmed = answer("/profile/friend/request/send/5", 2).await;
+    assert_eq!(
+        client(&confirmed).friend_request_send(5).await.ok(),
+        Some(FriendOutcome::Confirmed)
+    );
+
+    let limit = answer("/profile/friend/request/send/5", 6).await;
+    assert!(
+        client(&limit).friend_request_send(5).await.is_err(),
+        "a limit is a refusal"
+    );
+
+    let unfriended = answer("/profile/friend/request/remove/5", 3).await;
+    assert_eq!(
+        client(&unfriended).friend_request_remove(5).await.ok(),
+        Some(FriendOutcome::FriendshipRemoved)
+    );
+
+    let already = answer("/profile/blocklist/add/5", 2).await;
+    assert!(
+        client(&already).block(5).await.is_ok(),
+        "already blocked is what was asked for"
+    );
+}

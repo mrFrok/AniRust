@@ -1,0 +1,237 @@
+{
+ "code": 0,
+ "profile": {
+  "id": 1001,
+  "register_date": 1584096111,
+  "watching_count": 6,
+  "plan_count": 195,
+  "completed_count": 188,
+  "hold_on_count": 17,
+  "dropped_count": 7,
+  "watched_episode_count": 2242,
+  "watched_time": 50577,
+  "is_sponsor": false,
+  "is_verified": false,
+  "watch_dynamics": [
+   {
+    "id": 14681650,
+    "day": 25,
+    "count": 0,
+    "timestamp": 1706130311
+   },
+   {
+    "id": 17700247,
+    "day": 29,
+    "count": 2,
+    "timestamp": 1722200710
+   },
+   {
+    "id": 632352,
+    "day": 30,
+    "count": 2,
+    "timestamp": 1724965510
+   },
+   {
+    "id": 19815494,
+    "day": 23,
+    "count": 0,
+    "timestamp": 1729631111
+   },
+   {
+    "id": 1141353,
+    "day": 1,
+    "count": 3,
+    "timestamp": 1733000710
+   },
+   {
+    "id": 887569,
+    "day": 31,
+    "count": 0,
+    "timestamp": 1738271111
+   },
+   {
+    "id": 10272860,
+    "day": 17,
+    "count": 2,
+    "timestamp": 1739739911
+   },
+   {
+    "id": 16342842,
+    "day": 12,
+    "count": 1,
+    "timestamp": 1741727111
+   },
+   {
+    "id": 6000178,
+    "day": 21,
+    "count": 0,
+    "timestamp": 1742504710
+   },
+   {
+    "id": 3610693,
+    "day": 11,
+    "count": 2,
+    "timestamp": 1744319111
+   },
+   {
+    "id": 4802024,
+    "day": 16,
+    "count": 0,
+    "timestamp": 1744751111
+   },
+   {
+    "id": 1391129,
+    "day": 2,
+    "count": 1,
+    "timestamp": 1746133510
+   },
+   {
+    "id": 2635878,
+    "day": 7,
+    "count": 6,
+    "timestamp": 1746565511
+   },
+   {
+    "id": 2881260,
+    "day": 8,
+    "count": 3,
+    "timestamp": 1746651911
+   },
+   {
+    "id": 4310738,
+    "day": 14,
+    "count": 0,
+    "timestamp": 1747170311
+   },
+   {
+    "id": 6245743,
+    "day": 22,
+    "count": 0,
+    "timestamp": 1747861511
+   },
+   {
+    "id": 7584586,
+    "day": 28,
+    "count": 1,
+    "timestamp": 1748379911
+   },
+   {
+    "id": 18256730,
+    "day": 4,
+    "count": 0,
+    "timestamp": 1748984700
+   },
+   {
+    "id": 5754431,
+    "day": 20,
+    "count": 0,
+    "timestamp": 1752959112
+   },
+   {
+    "id": 3364486,
+    "day": 10,
+    "count": 1,
+    "timestamp": 1754773512
+   },
+   {
+    "id": 4556302,
+    "day": 15,
+    "count": 0,
+    "timestamp": 1771103116
+   },
+   {
+    "id": 12461357,
+    "day": 3,
+    "count": 0,
+    "timestamp": 1772485515
+   },
+   {
+    "id": 8609563,
+    "day": 5,
+    "count": 1,
+    "timestamp": 1772658314
+   },
+   {
+    "id": 23829224,
+    "day": 26,
+    "count": 0,
+    "timestamp": 1774472715
+   },
+   {
+    "id": 2390151,
+    "day": 6,
+    "count": 0,
+    "timestamp": 1775423116
+   },
+   {
+    "id": 4073191,
+    "day": 13,
+    "count": 0,
+    "timestamp": 1776027916
+   },
+   {
+    "id": 10554585,
+    "day": 19,
+    "count": 0,
+    "timestamp": 1779138315
+   },
+   {
+    "id": 5293743,
+    "day": 18,
+    "count": 0,
+    "timestamp": 1784322316
+   },
+   {
+    "id": 6739175,
+    "day": 24,
+    "count": 0,
+    "timestamp": 1787519116
+   },
+   {
+    "id": 12732,
+    "day": 27,
+    "count": 0,
+    "timestamp": 1787778318
+   },
+   {
+    "id": 3118735,
+    "day": 9,
+    "count": 0,
+    "timestamp": 1788901518
+   }
+  ],
+  "friend_status": null,
+  "preferred_genres": [
+   {
+    "name": "комедия",
+    "percentage": 12
+   },
+   {
+    "name": "фэнтези",
+    "percentage": 10
+   },
+   {
+    "name": "экшен",
+    "percentage": 9
+   }
+  ],
+  "preferred_audiences": [
+   {
+    "name": "сёнен",
+    "percentage": 7
+   }
+  ],
+  "preferred_themes": [
+   {
+    "name": "исэкай",
+    "percentage": 5
+   }
+  ],
+  "is_stats_hidden": false,
+  "is_counts_hidden": false,
+  "is_online": false,
+  "login": "user1",
+  "avatar": "",
+  "status": ""
+ }
+}

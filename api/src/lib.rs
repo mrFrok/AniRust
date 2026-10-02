@@ -60,15 +60,16 @@ pub(crate) mod serde_ext;
 
 pub use client::{Ack, Client, ClientBuilder, DEFAULT_BASE_URL};
 pub use endpoints::{
-    ArticleEntryPoint, ArticleEventKind, ChannelSearch, DubberChannel, EpisodeSort, SignInError,
+    ArticleEntryPoint, ArticleEventKind, Badge, ChannelSearch, DubberChannel, EpisodeSort,
+    FriendOutcome, LoginChange, ProfileInfo, SignInError, Socials,
 };
 pub use error::{ApiCode, Error, Result};
 pub use models::{
     Article, ArticleBlock, ArticleCompact, ArticlePayload, Channel, ChannelCompact, ChannelProfile,
     Collection, Comment, CommentCompact, CommentModeration, CommentSort, CommentTarget,
     CommentVote, Dubber, Embedded, Episode, EpisodeCompact, EpisodeUpdate, FeedSearch, Filter,
-    FilterSort, Interesting, Named, Notification, NotificationDelete, NotificationKind,
-    NotificationPreferences, NotificationSwitch, Page, Profile, ProfileCompact, ProfileList,
-    ProfileSlim, ProfileToken, Related, Release, ReleaseCategory, ReleaseCompact, ReleaseStatus,
-    Schedule, SearchBy, Source, SourceCompact, StreamingPlatform,
+    FilterSort, FriendStatus, Interesting, Named, Notification, NotificationDelete,
+    NotificationKind, NotificationPreferences, NotificationSwitch, Page, Profile, ProfileCompact,
+    ProfileList, ProfileSlim, ProfileToken, Related, Release, ReleaseCategory, ReleaseCompact,
+    ReleaseStatus, Schedule, SearchBy, Share, Source, SourceCompact, StreamingPlatform, WatchDay,
 };

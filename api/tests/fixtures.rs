@@ -116,3 +116,29 @@ fn a_page_of_notifications_of_every_kind() {
     );
     assert_eq!(page.content[3].id, 4);
 }
+
+/// `GET profile/{id}` for an account whose statistics are public, the fields
+/// the profile screen draws from. Everything identifying was replaced; the
+/// numbers and their shapes are as served.
+#[test]
+fn a_public_profile_carries_its_statistics() {
+    #[derive(serde::Deserialize)]
+    struct Wrapped {
+        profile: anirust_api::Profile,
+    }
+    let wrapped: Wrapped = load("profile_public.json");
+    let p = wrapped.profile;
+    assert!(!p.is_stats_hidden);
+    assert!(p.watched_episode_count > 0);
+    assert!(
+        p.watched_time > p.watched_episode_count,
+        "minutes, not episodes"
+    );
+    assert!(!p.watch_dynamics.is_empty());
+    assert!(
+        p.preferred_genres
+            .iter()
+            .all(|g| (0..=100).contains(&g.percentage))
+    );
+    assert!(p.friend_status.is_none(), "nobody signed in");
+}

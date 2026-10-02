@@ -212,6 +212,22 @@ impl Client {
         self.read_token().map(|_| ()).ok_or(Error::Unauthenticated)
     }
 
+    /// Sends a request and answers with its `code`, whatever it is.
+    ///
+    /// For the endpoints whose success is a code of its own — a friend request
+    /// is 2 when it was accepted and 3 when it was sent — where the caller
+    /// decides which codes mean what.
+    pub(crate) async fn send_code(&self, mut spec: RequestSpec) -> Result<i32> {
+        #[derive(Deserialize)]
+        struct Code {
+            #[serde(default)]
+            code: i32,
+        }
+        spec.any_code = true;
+        let answer: Code = self.send(spec).await?;
+        Ok(answer.code)
+    }
+
     /// Sends a request by path and answers with the body exactly as it came.
     ///
     /// For capturing responses as test fixtures and for looking at an endpoint
@@ -328,6 +344,14 @@ impl Client {
         // diagnosed from the logged body instead of a packet capture.
         let body = response.text().await?;
 
+        // The whole body, code and all, for a caller that judges the code
+        // itself. Read without the envelope: the envelope is what takes the
+        // code away.
+        if spec.any_code {
+            return serde_json::from_str::<T>(&body)
+                .map_err(|source| Error::Decode { source, body });
+        }
+
         match serde_json::from_str::<Envelope<T>>(&body) {
             Ok(envelope) => {
                 let code = ApiCode::from_raw(envelope.code);
@@ -404,6 +428,9 @@ pub(crate) struct RequestSpec {
     headers: Vec<(&'static str, Cow<'static, str>)>,
     body: Body,
     with_token: bool,
+    /// Hand back the body whatever its `code`, for the few endpoints that
+    /// answer success with a code other than 0.
+    any_code: bool,
 }
 
 impl RequestSpec {
@@ -415,6 +442,7 @@ impl RequestSpec {
             headers: Vec::new(),
             body: Body::Empty,
             with_token: false,
+            any_code: false,
         }
     }
 
