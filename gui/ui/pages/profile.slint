@@ -11,6 +11,7 @@
 // can act on is decoration, and this client has no room for decoration it
 // cannot click.
 
+import { ScrollView } from "std-widgets.slint";
 import { MaterialPalette, ListTile, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton, FilledCard, IconButton, Switch, TextButton, TonalButton } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
@@ -318,7 +319,13 @@ export component ProfilePage inherits Rectangle {
     horizontal-stretch: 1;
     vertical-stretch: 1;
 
-    VerticalLayout {
+    // The page is longer than most windows once the lists, friends and
+    // settings are on it, so it scrolls as one.
+    ScrollView {
+        width: 100%;
+        height: 100%;
+
+    page := VerticalLayout {
         padding: Spacing.base;
         spacing: Spacing.base;
         alignment: start;
@@ -1045,5 +1052,6 @@ export component ProfilePage inherits Rectangle {
                 }
             }
         }
+    }
     }
 }
