@@ -16,7 +16,7 @@ import { MaterialPalette, IconButton, FloatingActionButton, FABStyle, TonalButto
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
-import { PickerOption, EpisodeItem, LinkItem } from "../structs.slint";
+import { VideoItem, PickerOption, EpisodeItem, LinkItem } from "../structs.slint";
 import { EpisodePicker, Poster, Dropdown } from "../components/release-parts.slint";
 
 /// A heading and a wrapping row of chips under it.
@@ -42,6 +42,85 @@ component LinkRow inherits VerticalLayout {
         for item[index] in root.items: ActionChip {
             text: item.detail != "" ? item.label + " · " + item.detail : item.label;
             clicked => { root.picked(index); }
+        }
+    }
+}
+
+/// The release's videos, a row of thumbnails scrolled sideways.
+component VideoRow inherits VerticalLayout {
+    in property <string> heading;
+    in property <[VideoItem]> items;
+    callback picked(int);
+
+    spacing: Spacing.tight;
+    padding-top: Spacing.small;
+
+    Text {
+        text: root.heading;
+        color: MaterialPalette.on-surface-variant;
+        font-size: Typography.label-medium-size;
+    }
+
+    Flickable {
+        height: 150px;
+        interactive: self.content-width > self.width;
+        content-width: row.preferred-width;
+
+        row := HorizontalLayout {
+            spacing: Spacing.small;
+            alignment: start;
+
+            for item[index] in root.items: Rectangle {
+                width: 192px;
+
+                VerticalLayout {
+                    spacing: Spacing.hair;
+
+                    Rectangle {
+                        height: 108px;
+                        border-radius: Shape.medium;
+                        clip: true;
+                        background: MaterialPalette.surface-container-high;
+                        border-width: touch.has-hover ? 2px : 0px;
+                        border-color: MaterialPalette.primary;
+
+                        Image {
+                            source: item.image;
+                            image-fit: cover;
+                            width: 100%;
+                            height: 100%;
+                            visible: item.image-loaded;
+                        }
+
+                        Image {
+                            source: @image-url("../icons/play.svg");
+                            colorize: #FFFFFF;
+                            width: 28px;
+                            height: 28px;
+                            opacity: 0.85;
+                        }
+                    }
+
+                    Text {
+                        text: item.title;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.body-small-size;
+                        overflow: elide;
+                    }
+
+                    Text {
+                        text: item.detail;
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.label-small-size;
+                        overflow: elide;
+                    }
+                }
+
+                touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.picked(index); }
+                }
+            }
         }
     }
 }
@@ -130,6 +209,9 @@ export component ReleasePage inherits Rectangle {
     callback open-comments();
     in property <[LinkItem]> related: [];
     in property <[LinkItem]> platforms: [];
+    /// Trailers, openings and the like, opened where they are hosted.
+    in property <[VideoItem]> videos: [];
+    callback open-video(int);
     callback open-related(int);
     callback open-platform(int);
 
@@ -503,6 +585,12 @@ export component ReleasePage inherits Rectangle {
                                 heading: Tr.watch-elsewhere;
                                 items: root.platforms;
                                 picked(i) => { root.open-platform(i); }
+                            }
+
+                            if root.videos.length > 0: VideoRow {
+                                heading: Tr.videos;
+                                items: root.videos;
+                                picked(i) => { root.open-video(i); }
                             }
                         }
                     }

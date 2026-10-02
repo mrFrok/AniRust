@@ -14,7 +14,7 @@ import { CommentsSheet } from "components/comments.slint";
 import { NotificationsSheet } from "components/notifications.slint";
 import { CollectionEditor, CollectionPicker } from "components/collections.slint";
 import { AccountSettingsSheet } from "components/account-settings.slint";
-import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem, CollectionItem, AccountSettings } from "structs.slint";
+import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem, CollectionItem, AccountSettings, VideoItem } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -147,6 +147,8 @@ export component MainWindow inherits Window {
     in property <[LinkItem]> release-platforms: [];
     callback open-related(int);
     callback open-platform(int);
+    in property <[VideoItem]> release-videos: [];
+    callback open-video(int);
     callback toggle-watched(int);
     callback toggle-all-watched();
     callback toggle-dubber-pin();
@@ -609,6 +611,8 @@ export component MainWindow inherits Window {
         set-vote(n) => { root.set-release-vote(n); }
         related: root.release-related;
         platforms: root.release-platforms;
+        videos: root.release-videos;
+        open-video(i) => { root.open-video(i); }
         open-related(i) => { root.open-related(i); }
         comment-count: root.release-comment-count;
         open-comments => { root.open-release-comments(); }

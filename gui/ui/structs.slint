@@ -275,3 +275,12 @@ export struct AccountSettings {
     login-next-change: string,
     avatar-banned: bool,
 }
+
+/// A video about a release — a trailer, an opening — as its row shows it.
+export struct VideoItem {
+    title: string,
+    /// What kind of video, and where it is hosted.
+    detail: string,
+    image: image,
+    image-loaded: bool,
+}

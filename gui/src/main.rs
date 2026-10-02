@@ -1266,6 +1266,15 @@ fn wire_release(window: &MainWindow, app: &Rc<App>) {
         }
     });
 
+    window.on_open_video({
+        let app = Rc::clone(&app);
+        move |index| {
+            if let Ok(index) = usize::try_from(index) {
+                release::open_video(&app.release, index);
+            }
+        }
+    });
+
     window.on_open_platform({
         let app = Rc::clone(&app);
         move |index| {

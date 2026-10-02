@@ -12,13 +12,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use slint::{ComponentHandle, VecModel};
+use slint::{ComponentHandle, Model, VecModel};
 
 use anirust_api::{Client, Dubber, Episode, EpisodeSort, ProfileList, Release, Source};
 
 use crate::progress::Store;
 
-use crate::{EpisodeItem, LinkItem, MainWindow, PickerOption, tasks};
+use crate::{EpisodeItem, LinkItem, MainWindow, PickerOption, VideoItem, tasks};
 
 /// What the release screen is showing.
 ///
@@ -38,6 +38,8 @@ pub struct ReleaseState {
     pub related: Vec<Release>,
     /// Where each of the platform chips leads.
     pub platforms: Vec<String>,
+    /// Where each of the video thumbnails leads.
+    pub videos: Vec<String>,
     /// What this machine remembers, which fills in what an unauthenticated
     /// account cannot.
     pub progress: Rc<RefCell<Store>>,
@@ -182,6 +184,7 @@ pub fn load(
     window.set_release_related(slint::ModelRc::new(VecModel::<LinkItem>::default()));
     window.set_release_platforms(slint::ModelRc::new(VecModel::<LinkItem>::default()));
     load_platforms(window, state, &client, release_id);
+    load_videos(window, state, &client, http.clone(), release_id);
 
     let weak = window.as_weak();
     let state = Rc::clone(state);
@@ -446,6 +449,90 @@ fn load_platforms(
             state.borrow_mut().platforms = platforms.into_iter().map(|p| p.url).collect();
         },
     );
+}
+
+/// Loads the release's videos: every kind of them, newest first within each.
+fn load_videos(
+    window: &MainWindow,
+    state: &Rc<RefCell<ReleaseState>>,
+    client: &Client,
+    http: reqwest::Client,
+    release_id: i64,
+) {
+    window.set_release_videos(slint::ModelRc::new(VecModel::<VideoItem>::default()));
+    state.borrow_mut().videos.clear();
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    let api = client.clone();
+    tasks::spawn(
+        async move { api.release_videos(release_id).await },
+        move |videos| {
+            let Some(window) = weak.upgrade() else { return };
+            if state.borrow().release_id != release_id {
+                return;
+            }
+            let videos = match videos {
+                Ok(videos) => videos,
+                Err(error) => {
+                    tracing::debug!(%error, release_id, "no videos");
+                    return;
+                }
+            };
+            // Only those with a page to open.
+            let videos: Vec<_> = videos
+                .blocks
+                .into_iter()
+                .flat_map(|block| block.videos)
+                .filter(|video| is_web_link(&video.url))
+                .collect();
+            let model = Rc::new(VecModel::from(
+                videos
+                    .iter()
+                    .map(|video| VideoItem {
+                        title: video.title.as_str().into(),
+                        detail: video_detail(video).into(),
+                        image: slint::Image::default(),
+                        image_loaded: false,
+                    })
+                    .collect::<Vec<_>>(),
+            ));
+            window.set_release_videos(slint::ModelRc::from(Rc::clone(&model)));
+            for (index, video) in videos.iter().enumerate() {
+                if !video.image.starts_with("http") {
+                    continue;
+                }
+                let model = Rc::clone(&model);
+                tasks::spawn(
+                    tasks::fetch_image(http.clone(), video.image.clone()),
+                    move |result| {
+                        let Ok(buffer) = result else { return };
+                        if let Some(mut item) = model.row_data(index) {
+                            item.image = slint::Image::from_rgba8(buffer);
+                            item.image_loaded = true;
+                            model.set_row_data(index, item);
+                        }
+                    },
+                );
+            }
+            state.borrow_mut().videos = videos.into_iter().map(|v| v.url).collect();
+        },
+    );
+}
+
+/// What kind of video, and where it is hosted.
+fn video_detail(video: &anirust_api::ReleaseVideo) -> String {
+    match (video.category.name.as_str(), video.hosting.name.as_str()) {
+        ("", host) => host.to_owned(),
+        (kind, "") => kind.to_owned(),
+        (kind, host) => format!("{kind} · {host}"),
+    }
+}
+
+/// Opens one of the release's videos where it is hosted.
+pub fn open_video(state: &Rc<RefCell<ReleaseState>>, index: usize) {
+    if let Some(url) = state.borrow().videos.get(index) {
+        open_in_browser(url);
+    }
 }
 
 /// Whether a link is one a browser should be handed: http or https and

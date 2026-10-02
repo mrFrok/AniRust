@@ -509,6 +509,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         window.dispatch_event(WindowEvent::PointerMoved {
             position: LogicalPosition::new(x, y),
         });
+        // And a turn of the wheel there, for what is below the fold of a
+        // scrolled area: `ANIRUST_SHOT_SCROLL=pixels`, positive downwards.
+        if let Some(pixels) = std::env::var("ANIRUST_SHOT_SCROLL")
+            .ok()
+            .and_then(|pixels| pixels.trim().parse::<f32>().ok())
+        {
+            draw(&window);
+            window.dispatch_event(WindowEvent::PointerScrolled {
+                position: LogicalPosition::new(x, y),
+                delta_x: 0.0,
+                delta_y: -pixels,
+            });
+        }
     }
     draw(&window);
     draw(&window);
@@ -565,6 +578,17 @@ fn populate(ui: &MainWindow) {
     ui.set_release_platforms(slint::ModelRc::new(slint::VecModel::from(vec![
         link("Crunchyroll", ""),
         link("Wink", ""),
+    ])));
+    let video = |title: &str, detail: &str| VideoItem {
+        title: title.into(),
+        detail: detail.into(),
+        image: stand_in_avatar(),
+        image_loaded: true,
+    };
+    ui.set_release_videos(slint::ModelRc::new(slint::VecModel::from(vec![
+        video("Трейлер", "Трейлеры · YouTube"),
+        video("Опенинг «Trip -innocent of D-»", "Опенинги · YouTube"),
+        video("Эндинг", "Эндинги · YouTube"),
     ])));
 
     ui.set_dubbers(slint::ModelRc::new(slint::VecModel::from(vec![
