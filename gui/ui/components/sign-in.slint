@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The sign-in form.
+// The sign-in form, and the two ways into an account without a password that
+// works: making one, and setting a forgotten one anew.
 //
 // A sheet over whatever is on screen rather than a screen of its own: signing
 // in is something done in passing, and coming back to where you were is the
@@ -12,15 +13,31 @@ import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 
 export component SignInSheet inherits Rectangle {
+    /// Which form is up: "sign-in", "sign-up", "sign-up-code", "restore" or
+    /// "restore-code". The forms with a code come after the service has
+    /// emailed one; Rust moves to them.
+    in-out property <string> mode: "sign-in";
     in-out property <string> login;
     in-out property <string> password;
+    in-out property <string> email;
+    in-out property <string> code;
     in property <bool> busy: false;
-    /// Which message to show, named by Rust: "", "unknown-login",
-    /// "wrong-password" or "failed".
+    /// Which message to show, named by Rust; see `Tr.auth-error`. Those that
+    /// belong to one field are shown under it.
     in property <string> error;
+    /// Free logins the service offers in place of a taken one.
+    in property <[string]> suggestions: [];
 
     callback submit();
+    /// Asks for the emailed code again.
+    callback resend();
     callback dismiss();
+
+    property <bool> login-error: root.error == "unknown-login" || root.error == "bad-login" || root.error == "login-taken" || root.error == "not-found";
+    property <bool> email-error: root.error == "bad-email" || root.error == "email-taken" || root.error == "email-service";
+    property <bool> password-error: root.error == "wrong-password" || root.error == "bad-password";
+    property <bool> code-error: root.error == "wrong-code" || root.error == "code-expired";
+    property <bool> waiting-for-code: root.mode == "sign-up-code" || root.mode == "restore-code";
 
     // Scrim. Clicking it is the same as cancelling, which is what every sheet
     // in the world does.
@@ -53,14 +70,20 @@ export component SignInSheet inherits Rectangle {
             alignment: start;
 
             Text {
-                text: Tr.sign-in-title;
+                text: root.mode == "sign-up" || root.mode == "sign-up-code"
+                    ? Tr.sign-up-title
+                    : root.mode == "restore" || root.mode == "restore-code"
+                        ? Tr.restore-title
+                        : Tr.sign-in-title;
                 color: MaterialPalette.on-surface;
                 font-size: Typography.title-large-size;
                 font-weight: Typography.title-large-weight-em;
             }
 
             Text {
-                text: Tr.sign-in-why;
+                text: root.waiting-for-code
+                    ? Tr.code-sent
+                    : root.mode == "restore" ? Tr.restore-why : Tr.sign-in-why;
                 color: MaterialPalette.on-surface-variant;
                 font-size: Typography.body-medium-size;
                 wrap: word-wrap;
@@ -68,29 +91,87 @@ export component SignInSheet inherits Rectangle {
 
             // A rejected login and a rejected password are faults of one
             // field each, so each is reported under the field it belongs to.
-            // Only a failure that belongs to neither gets a line of its own.
-            TextField {
-                label: Tr.login-field;
+            // Only a failure that belongs to none gets a line of its own.
+            if !root.waiting-for-code: TextField {
+                label: root.mode == "sign-up" ? Tr.new-login-field : Tr.login-field;
                 text <=> root.login;
-                has-error: root.error == "unknown-login";
-                supporting-text: root.error == "unknown-login" ? Tr.unknown-login : "";
+                has-error: root.login-error;
+                supporting-text: root.login-error ? Tr.auth-error(root.error) : "";
                 accepted(text) => { root.submit(); }
             }
 
-            TextField {
-                label: Tr.password-field;
+            if root.suggestions.length > 0 && root.error == "login-taken": HorizontalLayout {
+                spacing: Spacing.small;
+                alignment: start;
+
+                for suggestion in root.suggestions: TextButton {
+                    text: suggestion;
+                    clicked => { root.login = suggestion; }
+                }
+            }
+
+            if root.mode == "sign-up": TextField {
+                label: Tr.email-field;
+                text <=> root.email;
+                has-error: root.email-error;
+                supporting-text: root.email-error ? Tr.auth-error(root.error) : "";
+                accepted(text) => { root.submit(); }
+            }
+
+            if root.waiting-for-code: TextField {
+                label: Tr.code-field;
+                text <=> root.code;
+                has-error: root.code-error;
+                supporting-text: root.code-error ? Tr.auth-error(root.error) : "";
+                accepted(text) => { root.submit(); }
+            }
+
+            // Restoring asks for the new password beside the code: the code
+            // is what proves it is the owner setting it.
+            if root.mode != "restore" && root.mode != "sign-up-code": TextField {
+                label: root.mode == "restore-code" ? Tr.new-password-field : Tr.password-field;
                 input-type: InputType.password;
                 text <=> root.password;
-                has-error: root.error == "wrong-password";
-                supporting-text: root.error == "wrong-password" ? Tr.wrong-password : "";
+                has-error: root.password-error;
+                supporting-text: root.password-error ? Tr.auth-error(root.error) : "";
                 accepted(text) => { root.submit(); }
             }
 
-            if root.error != "" && root.error != "unknown-login" && root.error != "wrong-password": Text {
-                text: Tr.sign-in-failed;
+            if root.error != "" && !root.login-error && !root.email-error && !root.password-error && !root.code-error: Text {
+                text: Tr.auth-error(root.error);
                 color: MaterialPalette.error;
                 font-size: Typography.body-medium-size;
                 wrap: word-wrap;
+            }
+
+            // The other forms, from this one.
+            if root.mode == "sign-in": HorizontalLayout {
+                alignment: space-between;
+
+                TextButton {
+                    text: Tr.create-account;
+                    clicked => { root.mode = "sign-up"; }
+                }
+
+                TextButton {
+                    text: Tr.forgot-password;
+                    clicked => { root.mode = "restore"; }
+                }
+            }
+
+            if root.mode != "sign-in": HorizontalLayout {
+                alignment: start;
+
+                TextButton {
+                    text: Tr.have-account;
+                    clicked => { root.mode = "sign-in"; }
+                }
+
+                if root.waiting-for-code: TextButton {
+                    text: Tr.resend-code;
+                    enabled: !root.busy;
+                    clicked => { root.resend(); }
+                }
             }
 
             HorizontalLayout {
@@ -103,8 +184,17 @@ export component SignInSheet inherits Rectangle {
                 }
 
                 FilledButton {
-                    text: root.busy ? Tr.loading : Tr.sign-in;
-                    enabled: !root.busy && root.login != "" && root.password != "";
+                    text: root.busy
+                        ? Tr.loading
+                        : root.mode == "sign-in"
+                            ? Tr.sign-in
+                            : root.waiting-for-code ? Tr.confirm : Tr.continue;
+                    enabled: !root.busy && (
+                        root.mode == "sign-in" ? root.login != "" && root.password != ""
+                        : root.mode == "sign-up" ? root.login != "" && root.email != "" && root.password != ""
+                        : root.mode == "restore" ? root.login != ""
+                        : root.mode == "sign-up-code" ? root.code != ""
+                        : root.code != "" && root.password != "");
                     clicked => { root.submit(); }
                 }
             }

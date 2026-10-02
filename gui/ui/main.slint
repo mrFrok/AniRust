@@ -363,10 +363,17 @@ export component MainWindow inherits Window {
     in-out property <string> login;
     in-out property <string> password;
     in property <bool> sign-in-busy: false;
-    /// Named by Rust: "", "unknown-login", "wrong-password" or "failed".
+    /// Named by Rust; the sheet words it with `Tr.auth-error`.
     in-out property <string> sign-in-error;
+    /// Which of the sheet's forms is up; see `SignInSheet.mode`.
+    in-out property <string> sign-in-mode: "sign-in";
+    in-out property <string> sign-up-email;
+    in-out property <string> sign-in-code;
+    in property <[string]> login-suggestions: [];
 
+    /// Submits whichever form is up.
     callback submit-sign-in();
+    callback resend-sign-in-code();
     callback sign-out();
 
     /// Which appearance is chosen, as a position in the row the profile
@@ -721,13 +728,24 @@ export component MainWindow inherits Window {
     if root.show-sign-in: SignInSheet {
         width: 100%;
         height: 100%;
+        mode <=> root.sign-in-mode;
         login <=> root.login;
         password <=> root.password;
+        email <=> root.sign-up-email;
+        code <=> root.sign-in-code;
         busy: root.sign-in-busy;
         error: root.sign-in-error;
+        suggestions: root.login-suggestions;
 
         submit => { root.submit-sign-in(); }
-        dismiss => { root.show-sign-in = false; root.password = ""; }
+        resend => { root.resend-sign-in-code(); }
+        dismiss => {
+            root.show-sign-in = false;
+            root.password = "";
+            root.sign-in-code = "";
+            root.sign-in-mode = "sign-in";
+            root.sign-in-error = "";
+        }
     }
 
     forward-focus: keys;

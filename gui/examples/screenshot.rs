@@ -26,7 +26,8 @@
 //! `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`,
 //! `profile-light`, `home-downloading`, `feed`, `feed-latest`,
 //! `feed-signed-out`, `feed-empty`, `feed-channels`, `feed-channel`, `collections`, `collection`,
-//! `collection-editor`, `collection-picker`, `search`, `comments`, `comments-replying`,
+//! `collection-editor`, `collection-picker`, `search`, `sign-up`,
+//! `sign-up-code`, `restore-code`, `comments`, `comments-replying`,
 //! `comments-signed-out`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
@@ -73,7 +74,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     populate_home(&ui);
     ui.set_screen(
         if state.starts_with("home")
-            || state == "sign-in"
+            || state.starts_with("sign-")
+            || state.starts_with("restore")
             || state == "downloads"
             || state == "saved"
             || state == "loading"
@@ -419,6 +421,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_login("mrfrok".into());
         ui.set_password("hunter2".into());
         ui.set_sign_in_error("wrong-password".into());
+    }
+    // Registering: a taken login with the service's suggestions, then the
+    // code; and restoring, at the code with the new password beside it.
+    if state == "sign-up" {
+        ui.set_show_sign_in(true);
+        ui.set_sign_in_mode("sign-up".into());
+        ui.set_login("mrfrok".into());
+        ui.set_sign_up_email("me@example.com".into());
+        ui.set_password("hunter2".into());
+        ui.set_sign_in_error("login-taken".into());
+        ui.set_login_suggestions(slint::ModelRc::new(slint::VecModel::from(vec![
+            slint::SharedString::from("mrfrok1"),
+            "mrfrok_2026".into(),
+        ])));
+    }
+    if state == "sign-up-code" {
+        ui.set_show_sign_in(true);
+        ui.set_sign_in_mode("sign-up-code".into());
+        ui.set_sign_in_code("12345".into());
+        ui.set_sign_in_error("code-expired".into());
+    }
+    if state == "restore-code" {
+        ui.set_show_sign_in(true);
+        ui.set_sign_in_mode("restore-code".into());
     }
     window.set_size(PhysicalSize::new(width, height));
 

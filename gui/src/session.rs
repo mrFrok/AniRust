@@ -17,7 +17,7 @@ use std::rc::Rc;
 
 use slint::ComponentHandle;
 
-use anirust_api::{Client, Profile, Release, SignInError};
+use anirust_api::{Client, Profile, ProfileToken, Release, SignInError};
 use slint::{Model, VecModel};
 
 use crate::{Account, HistoryItem, MainWindow, tasks};
@@ -219,27 +219,7 @@ pub fn sign_in(
 
             match result {
                 Ok((profile, token)) => {
-                    client.set_token(Some(token.token.clone()));
-                    remember(token.id, &token.token);
-
-                    // The sign-in answers with the profile, so the screen is
-                    // complete before it is first looked at.
-                    let mut profile = profile;
-                    if profile.login.is_empty() {
-                        profile.login = login;
-                    }
-                    let name = profile.login.clone();
-
-                    show_profile(&window, &profile, http);
-                    window.set_signed_in(true);
-                    crate::notifications::refresh_count(&window, &client);
-                    window.set_show_sign_in(false);
-                    window.set_password("".into());
-
-                    let mut session = session.borrow_mut();
-                    session.login = name;
-                    session.id = token.id;
-                    session.authenticated = true;
+                    signed_in(&window, &session, &client, http, profile, &token, login);
                 }
                 Err(error) => {
                     tracing::info!(%error, "sign-in refused");
@@ -248,6 +228,39 @@ pub fn sign_in(
             }
         },
     );
+}
+
+/// Takes up a session the service has just handed over — by signing in, by
+/// finishing registration, or by setting a forgotten password anew.
+pub fn signed_in(
+    window: &MainWindow,
+    session: &Rc<RefCell<Session>>,
+    client: &Client,
+    http: reqwest::Client,
+    mut profile: Profile,
+    token: &ProfileToken,
+    login: String,
+) {
+    client.set_token(Some(token.token.clone()));
+    remember(token.id, &token.token);
+
+    // The answer carries the profile, so the screen is complete before it is
+    // first looked at.
+    if profile.login.is_empty() {
+        profile.login = login;
+    }
+    let name = profile.login.clone();
+
+    show_profile(window, &profile, http);
+    window.set_signed_in(true);
+    crate::notifications::refresh_count(window, client);
+    window.set_show_sign_in(false);
+    window.set_password("".into());
+
+    let mut session = session.borrow_mut();
+    session.login = name;
+    session.id = token.id;
+    session.authenticated = true;
 }
 
 /// Ends the session, here and in the store.

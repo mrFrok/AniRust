@@ -368,4 +368,41 @@ export global Tr {
     out property <string> sign-in-failed: lang == "ru"
         ? "Не удалось войти. Попробуйте позже."
         : "Could not sign in. Try again later.";
+    out property <string> sign-up-title: lang == "ru" ? "Регистрация" : "Create an account";
+    out property <string> restore-title: lang == "ru" ? "Восстановление пароля" : "Reset your password";
+    out property <string> restore-why: lang == "ru"
+        ? "Пришлём код на почту, к которой привязан аккаунт."
+        : "A code goes to the email the account is tied to.";
+    out property <string> code-sent: lang == "ru"
+        ? "Мы отправили код на почту. Введите его здесь."
+        : "A code is on its way to your email. Enter it here.";
+    out property <string> new-login-field: lang == "ru" ? "Логин" : "Login";
+    out property <string> email-field: lang == "ru" ? "Почта" : "Email";
+    out property <string> code-field: lang == "ru" ? "Код из письма" : "Code from the email";
+    out property <string> new-password-field: lang == "ru" ? "Новый пароль" : "New password";
+    out property <string> create-account: lang == "ru" ? "Создать аккаунт" : "Create an account";
+    out property <string> forgot-password: lang == "ru" ? "Забыли пароль?" : "Forgot password?";
+    out property <string> have-account: lang == "ru" ? "Ко входу" : "Back to sign in";
+    out property <string> resend-code: lang == "ru" ? "Отправить код ещё раз" : "Send the code again";
+    out property <string> confirm: lang == "ru" ? "Подтвердить" : "Confirm";
+    out property <string> continue: lang == "ru" ? "Продолжить" : "Continue";
+
+    /// The words for a refusal Rust has named.
+    public pure function auth-error(key: string) -> string {
+        key == "unknown-login" ? root.unknown-login
+        : key == "wrong-password" ? root.wrong-password
+        : key == "bad-login" ? (lang == "ru" ? "Такой логин не подойдёт" : "That login will not do")
+        : key == "login-taken" ? (lang == "ru" ? "Логин занят" : "That login is taken")
+        : key == "bad-email" ? (lang == "ru" ? "Это не похоже на почту" : "That does not look like an email")
+        : key == "email-taken" ? (lang == "ru" ? "На эту почту уже есть аккаунт" : "That email already has an account")
+        : key == "email-service" ? (lang == "ru" ? "Почту этого сервиса не принимают" : "That email service is not accepted")
+        : key == "bad-password" ? (lang == "ru" ? "Пароль слишком простой или короткий" : "The password is too short or too simple")
+        : key == "wrong-code" ? (lang == "ru" ? "Неверный код" : "Wrong code")
+        : key == "code-expired" ? (lang == "ru" ? "Код устарел — отправьте новый" : "The code expired; send a new one")
+        : key == "cannot-send" ? (lang == "ru" ? "Не получилось отправить письмо. Попробуйте позже." : "The email could not be sent. Try again later.")
+        : key == "too-many" ? (lang == "ru" ? "Слишком много регистраций. Попробуйте позже." : "Too many sign-ups. Try again later.")
+        : key == "not-found" ? (lang == "ru" ? "Такого аккаунта нет" : "No such account")
+        : key == "start-over" ? (lang == "ru" ? "Что-то пошло не так. Начните сначала." : "Something went wrong. Start over.")
+        : (lang == "ru" ? "Не получилось. Попробуйте позже." : "That did not work. Try again later.")
+    }
 }

@@ -19,6 +19,7 @@ mod notifications;
 mod people;
 mod preferences;
 mod progress;
+mod register;
 mod release;
 mod session;
 mod tasks;
@@ -95,6 +96,7 @@ fn main() -> Result<()> {
         ))))),
         home: Rc::new(RefCell::new(HomeState::new(Rc::clone(&account)))),
         collections: Rc::new(RefCell::new(collections::CollectionsState::default())),
+        pending: Rc::new(RefCell::new(register::Pending::default())),
         feed: Rc::new(RefCell::new(feed::FeedState::default())),
         comments: Rc::new(RefCell::new(comments::CommentsState::default())),
         notifications: Rc::new(RefCell::new(notifications::NotificationsState::default())),
@@ -157,6 +159,7 @@ struct App {
     home: Rc<RefCell<HomeState>>,
     feed: Rc<RefCell<feed::FeedState>>,
     collections: Rc<RefCell<collections::CollectionsState>>,
+    pending: Rc<RefCell<register::Pending>>,
     comments: Rc<RefCell<comments::CommentsState>>,
     notifications: Rc<RefCell<notifications::NotificationsState>>,
     people: Rc<RefCell<people::PeopleState>>,
@@ -209,6 +212,10 @@ fn wire_account(window: &MainWindow, app: &Rc<App>) {
         let weak = weak.clone();
         move || {
             let Some(window) = weak.upgrade() else { return };
+            if window.get_sign_in_mode() != "sign-in" {
+                register::submit(&register_context(&window, &app));
+                return;
+            }
             session::sign_in(
                 &window,
                 &app.account,
@@ -217,6 +224,15 @@ fn wire_account(window: &MainWindow, app: &Rc<App>) {
                 window.get_login().trim().to_string(),
                 window.get_password().to_string(),
             );
+        }
+    });
+
+    window.on_resend_sign_in_code({
+        let app = Rc::clone(&app);
+        let weak = weak.clone();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            register::resend(&register_context(&window, &app));
         }
     });
 
@@ -669,6 +685,16 @@ fn wire_feed(window: &MainWindow, app: &Rc<App>) {
             feed::toggle_channel_mute(&window, &app.feed, &app.client, app.http.clone(), index);
         }
     });
+}
+
+fn register_context<'a>(window: &'a MainWindow, app: &'a App) -> register::Context<'a> {
+    register::Context {
+        window,
+        pending: &app.pending,
+        session: &app.account,
+        client: &app.client,
+        http: app.http.clone(),
+    }
 }
 
 fn collections_context<'a>(window: &'a MainWindow, app: &'a App) -> collections::Context<'a> {
