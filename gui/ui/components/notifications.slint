@@ -1,0 +1,259 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The bell's sheet: notifications along the right edge of the window, the
+// same place the comments open, for the same reason — they are glanced at
+// beside whatever is on screen, not travelled to.
+
+import { ScrollView } from "std-widgets.slint";
+import { MaterialPalette, IconButton, TextButton, OutlineButton, CircularProgressIndicator } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+import { NotificationItem } from "../structs.slint";
+import { Dropdown } from "release-parts.slint";
+
+component NotificationRow inherits Rectangle {
+    in property <NotificationItem> item;
+    callback open();
+    callback delete();
+
+    property <bool> hovered: touch.has-hover || remove.has-hover;
+
+    height: layout.preferred-height;
+    border-radius: Shape.medium;
+    background: root.hovered && root.item.can-open
+        ? MaterialPalette.surface-container-high
+        : (root.item.unseen ? MaterialPalette.surface-container : transparent);
+
+    touch := TouchArea {
+        z: -1;
+        mouse-cursor: root.item.can-open ? pointer : default;
+        clicked => { if (root.item.can-open) { root.open(); } }
+    }
+
+    layout := HorizontalLayout {
+        padding: Spacing.medium;
+        spacing: Spacing.medium;
+
+        // Unseen is a dot, which is what every list of this kind uses for it.
+        VerticalLayout {
+            alignment: start;
+            padding-top: 6px;
+
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: root.item.unseen ? MaterialPalette.primary : transparent;
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: Spacing.hair;
+
+            Text {
+                text: Tr.notification-headline(root.item.kind);
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.label-medium-size;
+            }
+
+            Text {
+                text: root.item.subject;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.title-small-size;
+                font-weight: Typography.title-small-weight-em;
+                overflow: elide;
+            }
+
+            if root.item.detail != "": Text {
+                text: root.item.detail;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+                max-lines: 3;
+                overflow: elide;
+            }
+
+            Text {
+                text: Tr.ago(root.item.minutes-ago);
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.label-small-size;
+            }
+        }
+
+        Rectangle {
+            width: 40px;
+
+            if root.item.can-delete && root.hovered: VerticalLayout {
+                alignment: start;
+
+                IconButton {
+                    icon: @image-url("../icons/close.svg");
+                    clicked => { root.delete(); }
+                }
+            }
+
+            remove := TouchArea { z: -1; }
+        }
+    }
+}
+
+export component NotificationsSheet inherits Rectangle {
+    in property <[NotificationItem]> items: [];
+    in property <bool> loading: false;
+    in property <bool> has-more: false;
+    /// Which list, as the order of the menu: all, episodes, replies, friends,
+    /// related, posts, comments on posts, comments on collections.
+    in property <int> kind: 0;
+
+    callback close();
+    callback select-kind(int);
+    callback load-more();
+    callback mark-all-seen();
+    callback clear-all();
+    callback open(int);
+    callback delete(int);
+
+    /// Clearing everything is the one thing here that cannot be taken back,
+    /// so the button asks once before it does it.
+    property <bool> confirming: false;
+
+    background: #00000066;
+
+    TouchArea {
+        clicked => { root.close(); }
+    }
+
+    Rectangle {
+        x: parent.width - self.width;
+        width: min(480px, parent.width);
+        height: 100%;
+        background: MaterialPalette.surface-container-low;
+
+        TouchArea {}
+
+        VerticalLayout {
+            HorizontalLayout {
+                padding: Spacing.base;
+                padding-right: Spacing.small;
+                spacing: Spacing.small;
+
+                Text {
+                    text: Tr.notifications;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-large-size;
+                    font-weight: Typography.title-large-weight-em;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                VerticalLayout {
+                    alignment: center;
+
+                    Dropdown {
+                        width: 170px;
+                        model: [
+                            { label: Tr.nk-all },
+                            { label: Tr.nk-episodes },
+                            { label: Tr.nk-replies },
+                            { label: Tr.nk-friends },
+                            { label: Tr.nk-related },
+                            { label: Tr.nk-articles },
+                            { label: Tr.nk-article-comments },
+                            { label: Tr.nk-collection-comments },
+                        ];
+                        current: root.kind;
+                        selected(i) => { root.confirming = false; root.select-kind(i); }
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+
+                    IconButton {
+                        icon: @image-url("../icons/close.svg");
+                        clicked => { root.close(); }
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                padding-left: Spacing.base;
+                padding-right: Spacing.base;
+                spacing: Spacing.small;
+                alignment: start;
+
+                TextButton {
+                    text: Tr.mark-all-seen;
+                    clicked => { root.mark-all-seen(); }
+                }
+
+                TextButton {
+                    text: root.confirming ? Tr.clear-all-confirm : Tr.clear-all;
+                    clicked => {
+                        if (root.confirming) {
+                            root.confirming = false;
+                            root.clear-all();
+                        } else {
+                            root.confirming = true;
+                        }
+                    }
+                }
+            }
+
+            if root.loading && root.items.length == 0: HorizontalLayout {
+                vertical-stretch: 1;
+                alignment: center;
+
+                VerticalLayout {
+                    alignment: center;
+
+                    CircularProgressIndicator {
+                        indeterminate: true;
+                        width: 40px;
+                        height: 40px;
+                    }
+                }
+            }
+
+            if !root.loading && root.items.length == 0: Text {
+                vertical-stretch: 1;
+                text: Tr.no-notifications;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.body-large-size;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            if root.items.length > 0: ScrollView {
+                vertical-stretch: 1;
+                content-height: list.preferred-height + Spacing.base;
+
+                list := VerticalLayout {
+                    x: Spacing.small;
+                    width: parent.width - 2 * Spacing.small;
+                    spacing: Spacing.tight;
+                    alignment: start;
+
+                    for item[index] in root.items: NotificationRow {
+                        item: item;
+                        open => { root.open(index); }
+                        delete => { root.delete(index); }
+                    }
+
+                    if root.has-more: HorizontalLayout {
+                        alignment: center;
+                        padding: Spacing.small;
+
+                        OutlineButton {
+                            text: root.loading ? Tr.loading : Tr.load-more;
+                            enabled: !root.loading;
+                            clicked => { root.load-more(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

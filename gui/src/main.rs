@@ -14,6 +14,7 @@ mod comments;
 mod downloads;
 mod feed;
 mod home;
+mod notifications;
 mod preferences;
 mod progress;
 mod release;
@@ -92,6 +93,7 @@ fn main() -> Result<()> {
         home: Rc::new(RefCell::new(HomeState::default())),
         feed: Rc::new(RefCell::new(feed::FeedState::default())),
         comments: Rc::new(RefCell::new(comments::CommentsState::default())),
+        notifications: Rc::new(RefCell::new(notifications::NotificationsState::default())),
         queue: Rc::new(RefCell::new(downloads::Queue::default())),
         account: Rc::new(RefCell::new(Session::default())),
         playing: Rc::new(RefCell::new(None)),
@@ -101,6 +103,7 @@ fn main() -> Result<()> {
     wire_home(&window, &app);
     wire_feed(&window, &app);
     wire_comments(&window, &app);
+    wire_notifications(&window, &app);
     wire_account(&window, &app);
     wire_release(&window, &app);
     let advance = wire_player(&window, &app);
@@ -126,6 +129,9 @@ fn main() -> Result<()> {
         None => home::open(&window, &app.home, Rc::clone(&app.client), app.http.clone()),
     }
 
+    // Held for as long as the window runs: dropping the timer stops it.
+    let _bell = notifications::start_polling(&window, &app.client);
+
     window.run().context("running the event loop")?;
     Ok(())
 }
@@ -144,6 +150,7 @@ struct App {
     home: Rc<RefCell<HomeState>>,
     feed: Rc<RefCell<feed::FeedState>>,
     comments: Rc<RefCell<comments::CommentsState>>,
+    notifications: Rc<RefCell<notifications::NotificationsState>>,
     queue: Rc<RefCell<downloads::Queue>>,
     account: Rc<RefCell<Session>>,
     /// The stream currently loaded, so the quality menu and the skip button
@@ -273,6 +280,81 @@ macro_rules! on_row {
             $body;
         });
     }};
+}
+
+fn wire_notifications(window: &MainWindow, app: &Rc<App>) {
+    window.on_open_notifications({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            notifications::open(&window, &app.notifications, &app.client);
+        }
+    });
+    window.on_close_notifications({
+        let weak = window.as_weak();
+        move || {
+            if let Some(window) = weak.upgrade() {
+                window.set_notifications_open(false);
+            }
+        }
+    });
+    window.on_select_notification_kind({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            notifications::select_kind(&window, &app.notifications, &app.client, index);
+        }
+    });
+    window.on_load_more_notifications({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            notifications::load_more(&window, &app.notifications, &app.client);
+        }
+    });
+    window.on_mark_notifications_seen({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            notifications::mark_all_seen(&window, &app.notifications, &app.client);
+        }
+    });
+    window.on_clear_notifications({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            notifications::clear_all(&window, &app.notifications, &app.client);
+        }
+    });
+    on_row!(window, app, on_delete_notification, |window, app, index| {
+        notifications::delete(&window, &app.notifications, &app.client, index)
+    });
+    on_row!(window, app, on_open_notification, |window, app, index| {
+        if let Some(release_id) = notifications::release_at(&app.notifications, index) {
+            window.set_notifications_open(false);
+            window.set_screen("release".into());
+            release::load(
+                &window,
+                &app.release,
+                Rc::clone(&app.client),
+                app.http.clone(),
+                release_id,
+            );
+        }
+    });
+    window.on_flip_notify({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            notifications::flip(&window, &app.client, index);
+        }
+    });
 }
 
 fn wire_comments(window: &MainWindow, app: &Rc<App>) {
@@ -484,6 +566,7 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
             // it. What it shows goes stale as soon as an episode is watched.
             if index == PROFILE_DESTINATION {
                 session::refresh_profile(&window, &app.account, &app.client, app.http.clone());
+                notifications::load_switches(&window, &app.client);
                 session::load_recent(
                     &window,
                     &app.account,

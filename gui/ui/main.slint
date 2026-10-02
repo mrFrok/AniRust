@@ -11,7 +11,8 @@ import { DownloadsPage } from "pages/downloads.slint";
 import { ProfilePage } from "pages/profile.slint";
 import { FeedPage } from "pages/feed.slint";
 import { CommentsSheet } from "components/comments.slint";
-import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem } from "structs.slint";
+import { NotificationsSheet } from "components/notifications.slint";
+import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -219,6 +220,24 @@ export component MainWindow inherits Window {
     /// toolbar's badge counts.
     in property <int> downloads-working: 0;
 
+    // ---- notifications ---------------------------------------------------
+    in property <int> unseen: 0;
+    in-out property <bool> notifications-open: false;
+    in property <[NotificationItem]> notification-items: [];
+    in property <bool> notifications-loading: false;
+    in property <bool> notifications-has-more: false;
+    in property <int> notification-kind: 0;
+    in property <[bool]> notify-switches: [];
+    callback open-notifications();
+    callback close-notifications();
+    callback select-notification-kind(int);
+    callback load-more-notifications();
+    callback mark-notifications-seen();
+    callback clear-notifications();
+    callback open-notification(int);
+    callback delete-notification(int);
+    callback flip-notify(int);
+
     // ---- comments --------------------------------------------------------
     /// The thread open in the sheet, if one is.
     in-out property <bool> comments-open: false;
@@ -355,6 +374,8 @@ export component MainWindow inherits Window {
             select-appearance(i) => { root.select-appearance(i); }
             open-list(i) => { root.open-list(i); }
             open-recent(i) => { root.open-recent(i); }
+            notify: root.notify-switches;
+            flip-notify(i) => { root.flip-notify(i); }
             remove-recent(i) => { root.remove-recent(i); }
         }
 
@@ -408,6 +429,8 @@ export component MainWindow inherits Window {
             open-random => { root.open-random(); }
             notice: root.notice;
             downloads-working: root.downloads-working;
+            unseen: root.unseen;
+            open-notifications => { root.open-notifications(); }
 
             search(q) => { root.search(q); }
             open-downloads => { root.select-destination(5); }
@@ -529,6 +552,22 @@ export component MainWindow inherits Window {
         }
     }
 
+    if root.notifications-open: NotificationsSheet {
+        width: 100%;
+        height: 100%;
+        items: root.notification-items;
+        loading: root.notifications-loading;
+        has-more: root.notifications-has-more;
+        kind: root.notification-kind;
+        close => { root.close-notifications(); }
+        select-kind(i) => { root.select-notification-kind(i); }
+        load-more => { root.load-more-notifications(); }
+        mark-all-seen => { root.mark-notifications-seen(); }
+        clear-all => { root.clear-notifications(); }
+        open(i) => { root.open-notification(i); }
+        delete(i) => { root.delete-notification(i); }
+    }
+
     // Under the sign-in form, which the sheet itself can ask for.
     if root.comments-open: CommentsSheet {
         width: 100%;
@@ -581,11 +620,15 @@ export component MainWindow inherits Window {
     // upscaling, interpolation — take letters YouTube leaves free.
     keys := FocusScope {
         key-pressed(event) => {
+            if (root.notifications-open && event.text == Key.Escape) {
+                root.close-notifications();
+                return accept;
+            }
             if (root.comments-open && event.text == Key.Escape) {
                 root.close-comments();
                 return accept;
             }
-            if (root.show-sign-in || root.comments-open || !root.playing) { return reject; }
+            if (root.show-sign-in || root.comments-open || root.notifications-open || !root.playing) { return reject; }
 
             // ---- transport ----
             if (event.text == " " || event.text == "k") { root.toggle-pause(); return accept; }

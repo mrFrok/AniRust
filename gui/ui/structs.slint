@@ -169,3 +169,29 @@ export struct CommentItem {
     /// The episode a release comment was written at, or 0.
     episode: int,
 }
+
+/// One notification, as the bell's sheet shows it.
+///
+/// The sentence is put together on the Slint side, from `kind` and the two
+/// names, because the words are the translations'.
+export struct NotificationItem {
+    /// episode, friend, article, reply, related, article-comment,
+    /// collection-comment — or anything else, shown plainly.
+    kind: string,
+    /// Who or what it is about: a release, a person, a channel.
+    subject: string,
+    /// What there is to quote: an episode and its voice-over, a comment.
+    detail: string,
+    minutes-ago: int,
+    unseen: bool,
+    /// Whether a delete exists for this kind; posts have none.
+    can-delete: bool,
+    /// Whether clicking it leads anywhere this client can open.
+    can-open: bool,
+}
+
+/// One switch on the notification settings.
+export struct SwitchItem {
+    label: string,
+    on: bool,
+}

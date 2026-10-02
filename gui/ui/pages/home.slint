@@ -62,6 +62,9 @@ export component HomePage inherits Rectangle {
     /// How many downloads are still going, for the badge on the button that
     /// opens the queue. Zero hides it: a badge that always shows is a decal.
     in property <int> downloads-working: 0;
+    /// Unseen notifications, for the bell's badge. Only with an account.
+    in property <int> unseen: 0;
+    callback open-notifications();
 
     callback open-downloads();
     callback search(string);
@@ -167,6 +170,31 @@ export component HomePage inherits Rectangle {
                                 height: 100%;
                                 accepted => { root.search(self.text); }
                             }
+                        }
+                    }
+                }
+
+                // The bell, only with an account: notifications are the
+                // account's, and a bell that can never ring is a decoration.
+                if root.signed-in: VerticalLayout {
+                    alignment: center;
+
+                    Rectangle {
+                        width: 40px;
+                        height: 40px;
+
+                        IconButton {
+                            width: 100%;
+                            height: 100%;
+                            icon: @image-url("../icons/bell.svg");
+                            tooltip: Tr.notifications;
+                            clicked => { root.open-notifications(); }
+                        }
+
+                        if root.unseen > 0: Badge {
+                            x: parent.width - self.width + 4px;
+                            y: -2px;
+                            text: root.unseen > 99 ? "99+" : root.unseen;
                         }
                     }
                 }

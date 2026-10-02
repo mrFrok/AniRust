@@ -11,7 +11,7 @@
 // can act on is decoration, and this client has no room for decoration it
 // cannot click.
 
-import { MaterialPalette, ListTile, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton, FilledCard, IconButton } from "@material";
+import { MaterialPalette, ListTile, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton, FilledCard, IconButton, Switch } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -194,6 +194,9 @@ export component ProfilePage inherits Rectangle {
     /// One of the account's own lists, by its place in the bookmarks tabs.
     callback open-list(int);
     /// What was watched lately, newest first, and opening one of them.
+    /// The notification switches, in the order of the labels below.
+    in property <[bool]> notify: [];
+    callback flip-notify(int);
     in property <[HistoryItem]> recent: [];
     callback open-recent(int);
     callback remove-recent(int);
@@ -628,6 +631,60 @@ export component ProfilePage inherits Rectangle {
                     z: -1;
                     mouse-cursor: pointer;
                     clicked => { root.open-recent(index); }
+                }
+            }
+        }
+
+        // ---- what brings a notification ------------------------------------
+        if root.signed-in && root.notify.length > 0: VerticalLayout {
+            spacing: Spacing.tight;
+            // A label and its switch read as a pair only when they are not a
+            // window apart.
+            max-width: 560px;
+
+            Text {
+                text: Tr.notification-settings;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.title-medium-size;
+                font-weight: Typography.title-medium-weight-em;
+            }
+
+            for label[i] in [
+                Tr.ns-episodes, Tr.ns-first-episode, Tr.ns-comments, Tr.ns-related,
+                Tr.ns-articles, Tr.ns-my-article-comments, Tr.ns-my-collection-comments,
+                Tr.ns-selected-releases, Tr.ns-reports,
+            ]: HorizontalLayout {
+                spacing: Spacing.base;
+                height: 40px;
+
+                Text {
+                    text: label;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.body-large-size;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                VerticalLayout {
+                    alignment: center;
+
+                    // Its own width and no more: a switch stretched across
+                    // the row is a slider that does not slide.
+                    Switch {
+                        width: 52px;
+                        height: 32px;
+                        checked: i < root.notify.length && root.notify[i];
+                        // Put back to what Rust says at once: the switch is a
+                        // picture of the server's setting, which the click
+                        // asks to turn over, not a setting of its own.
+                        changed checked => {
+                            let wanted = i < root.notify.length && root.notify[i];
+                            if (self.checked != wanted) {
+                                self.checked = wanted;
+                                root.flip-notify(i);
+                            }
+                        }
+                    }
                 }
             }
         }

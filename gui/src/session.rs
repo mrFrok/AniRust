@@ -219,6 +219,7 @@ pub fn sign_in(
 
                     show_profile(&window, &profile, http);
                     window.set_signed_in(true);
+                    crate::notifications::refresh_count(&window, &client);
                     window.set_show_sign_in(false);
                     window.set_password("".into());
 
@@ -247,6 +248,8 @@ pub fn sign_out(window: &MainWindow, session: &Rc<RefCell<Session>>, client: &Cl
     window.set_account(Account::default());
     window.set_avatar_loaded(false);
     window.set_recent(slint::ModelRc::new(VecModel::<HistoryItem>::default()));
+    window.set_unseen(0);
+    window.set_notifications_open(false);
 }
 
 /// Loads what the account watched lately, for the profile screen.

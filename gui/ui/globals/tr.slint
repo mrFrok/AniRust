@@ -160,6 +160,40 @@ export global Tr {
                 ? n + " " + root.plural(n, "ответ", "ответа", "ответов")
                 : n + (n == 1 ? " reply" : " replies"))
     }
+    out property <string> notifications: lang == "ru" ? "Уведомления" : "Notifications";
+    out property <string> mark-all-seen: lang == "ru" ? "Прочитать все" : "Mark all seen";
+    out property <string> clear-all: lang == "ru" ? "Очистить" : "Clear";
+    out property <string> clear-all-confirm: lang == "ru" ? "Точно очистить все?" : "Really clear all?";
+    out property <string> no-notifications: lang == "ru" ? "Уведомлений нет." : "No notifications.";
+    out property <string> notification-settings: lang == "ru" ? "Что присылать" : "What to send";
+    out property <string> nk-all: lang == "ru" ? "Все" : "All";
+    out property <string> nk-episodes: lang == "ru" ? "Серии" : "Episodes";
+    out property <string> nk-friends: lang == "ru" ? "Друзья" : "Friends";
+    out property <string> nk-replies: lang == "ru" ? "Ответы" : "Replies";
+    out property <string> nk-related: lang == "ru" ? "Связанные" : "Related";
+    out property <string> nk-articles: lang == "ru" ? "Записи" : "Posts";
+    out property <string> nk-article-comments: lang == "ru" ? "К записям" : "On posts";
+    out property <string> nk-collection-comments: lang == "ru" ? "К коллекциям" : "On collections";
+    /// The line a notification opens with, by its kind.
+    public pure function notification-headline(kind: string) -> string {
+        kind == "episode" ? (root.lang == "ru" ? "Новая серия" : "New episode")
+        : kind == "friend" ? (root.lang == "ru" ? "Друзья" : "Friends")
+        : kind == "article" ? (root.lang == "ru" ? "Новая запись" : "New post")
+        : kind == "reply" ? (root.lang == "ru" ? "Ответ на ваш комментарий" : "Reply to your comment")
+        : kind == "related" ? (root.lang == "ru" ? "Вышел связанный релиз" : "A related release is out")
+        : kind == "article-comment" ? (root.lang == "ru" ? "Комментарий к записи" : "Comment on a post")
+        : kind == "collection-comment" ? (root.lang == "ru" ? "Комментарий к коллекции" : "Comment on a collection")
+        : (root.lang == "ru" ? "Уведомление" : "Notification")
+    }
+    out property <string> ns-episodes: lang == "ru" ? "Новые серии" : "New episodes";
+    out property <string> ns-first-episode: lang == "ru" ? "Только первая серия из озвучек" : "Only the first voice-over of an episode";
+    out property <string> ns-comments: lang == "ru" ? "Ответы на комментарии" : "Replies to comments";
+    out property <string> ns-related: lang == "ru" ? "Связанные релизы" : "Related releases";
+    out property <string> ns-articles: lang == "ru" ? "Записи каналов" : "Channel posts";
+    out property <string> ns-my-article-comments: lang == "ru" ? "Комментарии к моим записям" : "Comments on my posts";
+    out property <string> ns-my-collection-comments: lang == "ru" ? "Комментарии к моим коллекциям" : "Comments on my collections";
+    out property <string> ns-selected-releases: lang == "ru" ? "Серии только выбранных релизов" : "Episodes of chosen releases only";
+    out property <string> ns-reports: lang == "ru" ? "Итоги моих жалоб" : "Outcomes of my reports";
     out property <string> not-in-list: lang == "ru" ? "Не в списке" : "Not in a list";
     out property <string> add-to-favourites: lang == "ru" ? "В избранное" : "Add to favourites";
     out property <string> remove-from-favourites: lang == "ru" ? "Убрать из избранного" : "Remove from favourites";

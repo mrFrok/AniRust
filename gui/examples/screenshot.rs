@@ -83,6 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || state == "amoled"
             || state.starts_with("feed")
             || state == "schedule"
+            || state.starts_with("notifications")
         {
             "home".into()
         } else {
@@ -174,6 +175,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ui.set_posts(slint::ModelRc::new(slint::VecModel::from(sample_posts())));
         }
     }
+    // The bell with a count, and its sheet open over the grid.
+    if state.starts_with("notifications") {
+        ui.set_signed_in(true);
+        ui.set_account_name("mrfrok".into());
+        ui.set_unseen(3);
+        ui.set_notifications_open(state == "notifications");
+        let n = |kind: &str, subject: &str, detail: &str, minutes: i32, unseen: bool| {
+            NotificationItem {
+                kind: kind.into(),
+                subject: subject.into(),
+                detail: detail.into(),
+                minutes_ago: minutes,
+                unseen,
+                can_delete: kind != "article",
+                can_open: kind == "episode" || kind == "reply" || kind == "related",
+            }
+        };
+        ui.set_notification_items(slint::ModelRc::new(slint::VecModel::from(vec![
+            n(
+                "episode",
+                "Re:Zero. Жизнь с нуля 4",
+                "17 серия · AniLibria",
+                40,
+                true,
+            ),
+            n(
+                "reply",
+                "user2",
+                "Согласен, вторая половина сильнее.",
+                300,
+                true,
+            ),
+            n("friend", "user5", "", 1500, true),
+            n(
+                "article",
+                "Новостной канал",
+                "Анонс второго сезона.",
+                3000,
+                false,
+            ),
+            n("related", "Демоны старшей школы: Герой", "", 9000, false),
+        ])));
+    }
     // The schedule: the home tabs at their fullest, and the chip row as days.
     if state == "schedule" {
         ui.set_destination(0);
@@ -229,6 +273,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
         ui.set_avatar(stand_in_avatar());
         ui.set_avatar_loaded(true);
+        ui.set_notify_switches(slint::ModelRc::new(slint::VecModel::from(vec![
+            true, false, true, true, false, true, true, false, false,
+        ])));
         ui.set_recent(slint::ModelRc::new(slint::VecModel::from(vec![
             recent("Реинкарнация безработного 3", 13, 64),
             recent("Re:Zero. Жизнь с нуля 4", 17, 2_890),
