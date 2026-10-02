@@ -14,7 +14,9 @@ use std::time::Duration;
 
 use slint::{ComponentHandle, Model, VecModel};
 
-use anirust_api::{Client, Dubber, Episode, EpisodeSort, ProfileList, Release, Source};
+use anirust_api::{
+    Client, CommentSort, CommentTarget, Dubber, Episode, EpisodeSort, ProfileList, Release, Source,
+};
 
 use crate::progress::Store;
 
@@ -184,6 +186,7 @@ pub fn load(
     window.set_release_related(slint::ModelRc::new(VecModel::<LinkItem>::default()));
     window.set_release_platforms(slint::ModelRc::new(VecModel::<LinkItem>::default()));
     load_platforms(window, state, &client, release_id);
+    load_comment_count(window, state, &client, release_id);
     load_videos(window, state, &client, http.clone(), release_id);
 
     let weak = window.as_weak();
@@ -451,6 +454,37 @@ fn load_platforms(
     );
 }
 
+/// Counts the release's comments. The release itself says how many it
+/// carries as a preview — five — not how many there are; the thread knows.
+fn load_comment_count(
+    window: &MainWindow,
+    state: &Rc<RefCell<ReleaseState>>,
+    client: &Client,
+    release_id: i64,
+) {
+    window.set_release_comment_count(0);
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    let api = client.clone();
+    tasks::spawn(
+        async move {
+            api.comments(CommentTarget::Release, release_id, 0, CommentSort::Newest)
+                .await
+        },
+        move |result| {
+            let Some(window) = weak.upgrade() else { return };
+            if state.borrow().release_id != release_id {
+                return;
+            }
+            match result {
+                Ok(page) => window
+                    .set_release_comment_count(i32::try_from(page.total_count).unwrap_or(i32::MAX)),
+                Err(error) => tracing::debug!(%error, release_id, "the comments were not counted"),
+            }
+        },
+    );
+}
+
 /// Loads the release's videos: every kind of them, newest first within each.
 fn load_videos(
     window: &MainWindow,
@@ -571,7 +605,6 @@ pub fn open_in_browser(url: &str) {
 
 /// What the account thinks of the release: its list, favourite, rating.
 fn show_account_view(window: &MainWindow, release: &Release) {
-    window.set_release_comment_count(i32::try_from(release.comments()).unwrap_or(i32::MAX));
     window.set_release_list(list_index(release.list()));
     window.set_release_favourite(release.is_favorite);
     window.set_release_vote(release.your_vote.clamp(0, 5));
