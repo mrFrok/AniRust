@@ -172,6 +172,8 @@ export component Dropdown inherits Rectangle {
 /// last is why the list is worth building at all rather than showing bare
 /// numbers — someone following the manga skips those.
 export component EpisodeRow inherits Rectangle {
+    /// The number column, wide enough for the longest number in the list.
+    in property <length> number-width: 30px;
     in property <EpisodeItem> episode;
     in property <bool> playing: false;
     callback clicked;
@@ -209,7 +211,7 @@ export component EpisodeRow inherits Rectangle {
             font-weight: Typography.title-medium-weight-em;
             vertical-alignment: center;
             horizontal-alignment: right;
-            width: 30px;
+            width: root.number-width;
         }
 
         VerticalLayout {
@@ -448,6 +450,9 @@ export component EpisodePicker inherits VerticalLayout {
             alignment: start;
 
             for item in root.episodes: EpisodeRow {
+                // Numbers run to four digits on the longest series.
+                number-width: root.episodes.length >= 1000 ? 48px
+                    : root.episodes.length >= 100 ? 38px : 30px;
                 episode: item;
                 playing: item.position == root.current;
                 clicked => { root.play-episode(item.position); }

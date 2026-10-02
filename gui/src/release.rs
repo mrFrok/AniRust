@@ -20,7 +20,7 @@ use anirust_api::{
 
 use crate::progress::Store;
 
-use crate::{EpisodeItem, LinkItem, MainWindow, PickerOption, VideoItem, tasks};
+use crate::{EpisodeItem, FranchiseItem, LinkItem, MainWindow, PickerOption, VideoItem, tasks};
 
 /// What the release screen is showing.
 ///
@@ -42,6 +42,8 @@ pub struct ReleaseState {
     pub platforms: Vec<String>,
     /// Where each of the video thumbnails leads.
     pub videos: Vec<String>,
+    /// The whole franchise, oldest first, as its sheet lists it.
+    pub franchise: Vec<Release>,
     /// What this machine remembers, which fills in what an unauthenticated
     /// account cannot.
     pub progress: Rc<RefCell<Store>>,
@@ -394,6 +396,8 @@ fn show_release(window: &MainWindow, release: &Release) {
             .into(),
     );
     window.set_release_rateable(!release.is_unreleased());
+    window.set_release_watchable(!release.is_unreleased());
+    window.set_release_note(release.note.trim().into());
     window.set_release_episodes_label(
         format!("{}/{}", release.episodes_released, release.episodes_total).into(),
     );
@@ -417,6 +421,122 @@ fn show_related(window: &MainWindow, state: &Rc<RefCell<ReleaseState>>, release:
         .collect();
     window.set_release_related(slint::ModelRc::new(VecModel::from(items)));
     state.borrow_mut().related = others;
+}
+
+/// Opens the whole franchise, oldest first: every page of it, sorted by
+/// when each release first aired, then by year and season for those the
+/// service gives no date.
+pub fn open_franchise(
+    window: &MainWindow,
+    state: &Rc<RefCell<ReleaseState>>,
+    client: &Client,
+    http: reqwest::Client,
+) {
+    let (current, related) = {
+        let state = state.borrow();
+        let Some(release) = state.release.as_ref() else {
+            return;
+        };
+        (release.id, release.related.as_ref().map(|r| r.id))
+    };
+    let Some(related) = related.filter(|id| *id > 0) else {
+        return;
+    };
+    window.set_franchise_items(slint::ModelRc::new(VecModel::<FranchiseItem>::default()));
+    window.set_franchise_loading(true);
+    window.set_franchise_open(true);
+
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    let api = client.clone();
+    tasks::spawn(
+        async move {
+            let mut all = Vec::new();
+            for page in 0..20 {
+                let found = api.related(related, page).await?;
+                let more = found.has_next();
+                all.extend(found.content);
+                if !more {
+                    break;
+                }
+            }
+            Ok::<_, anirust_api::Error>(all)
+        },
+        move |result| {
+            let Some(window) = weak.upgrade() else { return };
+            window.set_franchise_loading(false);
+            let mut releases = match result {
+                Ok(releases) => releases,
+                Err(error) => {
+                    tracing::warn!(%error, related, "the franchise was not loaded");
+                    return;
+                }
+            };
+            releases.sort_by_key(chronology);
+            let items: Vec<FranchiseItem> = releases
+                .iter()
+                .map(|r| FranchiseItem {
+                    title: r.title().into(),
+                    detail: franchise_detail(r).into(),
+                    poster: slint::Image::default(),
+                    poster_loaded: false,
+                    current: r.id == current,
+                })
+                .collect();
+            let model = Rc::new(VecModel::from(items));
+            window.set_franchise_items(slint::ModelRc::from(Rc::clone(&model)));
+            for (index, release) in releases.iter().enumerate() {
+                let url = release.poster_url();
+                if url.is_empty() {
+                    continue;
+                }
+                let model = Rc::clone(&model);
+                tasks::spawn(tasks::fetch_image(http.clone(), url), move |result| {
+                    let Ok(buffer) = result else { return };
+                    if let Some(mut item) = model.row_data(index) {
+                        item.poster = slint::Image::from_rgba8(buffer);
+                        item.poster_loaded = true;
+                        model.set_row_data(index, item);
+                    }
+                });
+            }
+            state.borrow_mut().franchise = releases;
+        },
+    );
+}
+
+/// The release at a row of the franchise sheet.
+#[must_use]
+pub fn franchise_at(state: &Rc<RefCell<ReleaseState>>, index: usize) -> Option<i64> {
+    state.borrow().franchise.get(index).map(|r| r.id)
+}
+
+/// Where a release falls in its franchise: when it first aired, or failing
+/// that its year and season. Those with neither go last.
+fn chronology(release: &Release) -> (i64, i64, i32) {
+    let year = release
+        .year
+        .trim()
+        .parse::<i64>()
+        .ok()
+        .filter(|y| *y > 1900);
+    match (release.aired_on_date, year) {
+        (aired, _) if aired > 0 => (aired, 0, 0),
+        // The middle of the year, so a dated release of the same year sorts
+        // around it rather than always after.
+        (_, Some(year)) => ((year - 1970) * 31_556_952 + 15_778_476, 1, release.season),
+        _ => (i64::MAX, 2, 0),
+    }
+}
+
+/// Its kind and its year, as far as either is known.
+fn franchise_detail(release: &Release) -> String {
+    match (release.category.name.as_str(), release.year.as_str()) {
+        ("", "") => String::new(),
+        (kind, "") => kind.to_owned(),
+        ("", year) => year.to_owned(),
+        (kind, year) => format!("{kind} · {year}"),
+    }
 }
 
 /// The services carrying the release. Anonymous, and on its own: the page is
@@ -1074,6 +1194,24 @@ fn says_only_the_number(name: &str, position: i32) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_franchise_runs_from_its_first_airing() {
+        let release = |aired: i64, year: &str| Release {
+            aired_on_date: aired,
+            year: year.to_owned(),
+            ..Release::default()
+        };
+        let mut all = [
+            release(0, ""),
+            release(1_600_000_000, "2020"),
+            release(0, "2012"),
+            release(1_300_000_000, "2011"),
+        ];
+        all.sort_by_key(chronology);
+        let years: Vec<&str> = all.iter().map(|r| r.year.as_str()).collect();
+        assert_eq!(years, ["2011", "2012", "2020", ""]);
+    }
     use super::*;
 
     #[test]

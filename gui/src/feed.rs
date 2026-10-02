@@ -834,6 +834,7 @@ fn post_for(article: &Article, now: i64, me: i64) -> FeedPost {
         picture: slint::Image::default(),
         picture_loaded: false,
         has_picture: article.first_image().is_some(),
+        picture_ratio: article.first_image_ratio().unwrap_or(0.0),
         comments: count(article.comment_count),
         votes: count(article.vote_count),
         liked: article.vote == UP,

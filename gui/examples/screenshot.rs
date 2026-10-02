@@ -29,7 +29,8 @@
 //! `collection-editor`, `collection-picker`, `search`, `sign-up`,
 //! `sign-up-code`, `restore-code`, `settings`, `settings-email`,
 //! `settings-standing`, `report`, `editor`, `feed-own`, `admin`, `admin-suggested`,
-//! `admin-new`, `sign-out`, `app-settings`, `profile-teal`,
+//! `admin-new`, `sign-out`, `app-settings`, `release-announced`,
+//! `release-note`, `franchise`, `profile-teal`,
 //! `profile-teal-glass`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
 //! `comments-signed-out`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
@@ -289,6 +290,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_accent(Accent::Teal);
         ui.set_accent_index(3);
         ui.set_translucent(state == "profile-teal-glass");
+    }
+    // A release that is only announced; a team note; the whole franchise.
+    if state == "release-announced" {
+        ui.set_release_watchable(false);
+        ui.set_release_rateable(false);
+        ui.set_release_score("".into());
+    }
+    if state == "release-note" || state == "franchise" {
+        ui.set_release_note(
+            "Фильм является краткой версией истории двух сезонов. К просмотру не обязателен."
+                .into(),
+        );
+    }
+    if state == "franchise" {
+        ui.set_franchise_open(true);
+        let item = |title: &str, detail: &str, current: bool| FranchiseItem {
+            title: title.into(),
+            detail: detail.into(),
+            poster: stand_in_avatar(),
+            poster_loaded: true,
+            current,
+        };
+        ui.set_franchise_items(slint::ModelRc::new(slint::VecModel::from(vec![
+            item("Демоны старшей школы", "ТВ-сериал · 2012", true),
+            item("Демоны старшей школы: OVA", "OVA · 2012", false),
+            item("Демоны старшей школы: Новая", "ТВ-сериал · 2013", false),
+            item("Демоны старшей школы: Рождённые", "ТВ-сериал · 2015", false),
+            item("Демоны старшей школы: Герой", "ТВ-сериал · 2018", false),
+        ])));
     }
     // The settings destination, signed in, with its switches.
     if state.starts_with("app-settings") {
@@ -892,6 +922,7 @@ fn sample_posts() -> Vec<FeedPost> {
         can_edit: false,
         can_delete: false,
         can_pin: false,
+        picture_ratio: 0.0,
     };
     vec![
         FeedPost {

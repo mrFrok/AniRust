@@ -151,6 +151,8 @@ export struct FeedPost {
     picture: image,
     picture-loaded: bool,
     has-picture: bool,
+    /// Its height over its width; 0 when the post does not say.
+    picture-ratio: float,
     comments: int,
     votes: int,
     /// Whether the account has given it a heart.
@@ -317,4 +319,15 @@ export struct DraftBlock {
 export struct SuggestionItem {
     author: string,
     text: string,
+}
+
+/// One release of a franchise, in the list of all of them.
+export struct FranchiseItem {
+    title: string,
+    /// Its kind and when it came out.
+    detail: string,
+    poster: image,
+    poster-loaded: bool,
+    /// The release whose page this was opened from.
+    current: bool,
 }

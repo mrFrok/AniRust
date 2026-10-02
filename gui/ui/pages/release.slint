@@ -23,25 +23,47 @@ import { EpisodePicker, Poster, Dropdown } from "../components/release-parts.sli
 component LinkRow inherits VerticalLayout {
     in property <string> heading;
     in property <[LinkItem]> items;
+    /// A button at the end of the heading, when there is more to see.
+    in property <string> action;
     callback picked(int);
+    callback act();
 
     spacing: Spacing.tight;
     padding-top: Spacing.small;
 
-    Text {
-        text: root.heading;
-        color: MaterialPalette.on-surface-variant;
-        font-size: Typography.label-medium-size;
-    }
-
-    FlexboxLayout {
-        flex-wrap: wrap;
-        alignment: start;
+    HorizontalLayout {
         spacing: Spacing.small;
 
-        for item[index] in root.items: ActionChip {
-            text: item.detail != "" ? item.label + " · " + item.detail : item.label;
-            clicked => { root.picked(index); }
+        Text {
+            text: root.heading;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.label-medium-size;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        if root.action != "": TextButton {
+            text: root.action;
+            clicked => { root.act(); }
+        }
+    }
+
+    // One line, scrolled sideways, rather than wrapped: a row that wraps
+    // works its height out for one line and is then drawn on three, and the
+    // page under it ends too soon.
+    Flickable {
+        height: 40px;
+        interactive: self.content-width > self.width;
+        content-width: chips.preferred-width;
+
+        chips := HorizontalLayout {
+            spacing: Spacing.small;
+            alignment: start;
+
+            for item[index] in root.items: ActionChip {
+                text: item.detail != "" ? item.label + " · " + item.detail : item.label;
+                clicked => { root.picked(index); }
+            }
         }
     }
 }
@@ -227,6 +249,13 @@ export component ReleasePage inherits Rectangle {
     // ---- to Rust ---------------------------------------------------------
     callback set-list(int);
     callback toggle-favourite();
+    /// Something can be played: the release is out. Only announced, the page
+    /// is the release itself, without a player or a list.
+    in property <bool> watchable: true;
+    /// A note from the service's team, shown as given.
+    in property <string> note;
+    /// The whole franchise, oldest first, is asked for.
+    callback open-franchise();
     /// Out, so it can be rated. A release that is only announced cannot.
     in property <bool> rateable: true;
     callback add-to-collection();
@@ -266,6 +295,8 @@ export component ReleasePage inherits Rectangle {
     /// is placed from. Stated rather than measured: the button it belongs to
     /// is one of two that take that place, and neither is always there.
     property <length> start-height: 56px;
+    /// The list of episodes beside the picture.
+    property <length> picker-width: 380px;
 
     /// Whether the episode list goes under the player instead of beside it.
     ///
@@ -379,31 +410,55 @@ export component ReleasePage inherits Rectangle {
         }
 
         // ---- body --------------------------------------------------------
-        HorizontalLayout {
+        //
+        // One page that scrolls as a whole: the picture with the list of
+        // episodes beside it, as tall as the picture and no taller, then the
+        // release under both. In theatre the picture is the whole view, and
+        // there is nothing to scroll to and no bar to show.
+        // A plain flickable rather than a scroll view: the scroll view keeps
+        // a strip down the side and along the foot for its bars whether or
+        // not they show, which in theatre is a frame round the picture. The
+        // bar is drawn by hand instead, thin, and only off theatre.
+        page := Flickable {
             vertical-stretch: 1;
-            padding: root.theatre ? 0px : Spacing.base;
-            spacing: root.theatre ? 0px : Spacing.base;
+            // Its own constraints, stated: left to its content, the page's
+            // height would follow the body, and the body's picture follows
+            // the page's height.
+            min-height: 0px;
+            preferred-height: 0px;
+            max-height: 100000px;
+            min-width: 0px;
+            preferred-width: 0px;
+            max-width: 100000px;
+            interactive: !root.theatre;
+            content-width: self.width;
+            content-height: body.preferred-height;
 
-            // The whole column scrolls — picture, list on a narrow window,
-            // and the release under them — rather than the picture taking
-            // the height and the release getting a strip below it. In theatre
-            // the picture fills the view and there is nothing to scroll to.
-            column := ScrollView {
-                horizontal-stretch: 1;
-
-            VerticalLayout {
+            body := VerticalLayout {
+                width: page.width;
+                padding: root.theatre ? 0px : Spacing.base;
                 spacing: root.theatre ? 0px : Spacing.base;
 
-                // ---- the player ------------------------------------------
+                // ---- the picture, and what to play beside it ------------
                 //
-                // 16:9 of the column's width, from the scroll view's own
-                // width rather than the box's: a box sizing itself from its
-                // own width is a layout loop. Never taller than the view, so
-                // the controls under it stay in reach.
+                // Not there for a release that is only announced: there is
+                // nothing to play, and a black box with an empty list beside
+                // it says so worse than the release's own page does.
+                HorizontalLayout {
+                    spacing: root.theatre ? 0px : Spacing.base;
+                    visible: root.watchable || root.theatre;
+                    // 16:9 of the width the picture gets, from the page's
+                    // own width — a box sizing itself from its own width is
+                    // a layout loop — and never taller than the view.
+                    height: !self.visible ? 0px
+                        : root.theatre ? page.height
+                        : max(220px, min(
+                            (page.width - 2 * Spacing.base
+                                - (root.narrow ? 0px : root.picker-width + Spacing.base)) * 9 / 16,
+                            page.height - 2 * Spacing.base));
+
                 Rectangle {
-                    height: root.theatre
-                        ? column.height
-                        : max(180px, min(column.width * 9 / 16, column.height - Spacing.base));
+                    horizontal-stretch: 1;
                     background: #000000;
                     border-radius: root.theatre ? 0px : Shape.large;
                     clip: true;
@@ -465,13 +520,28 @@ export component ReleasePage inherits Rectangle {
                     }
                 }
 
-                // On a narrow window the list sits under the picture instead
-                // of beside it, and the description gives up its place — the
-                // column has room for two of the three, and the description is
-                // the one nobody came for.
-                if root.narrow && !root.theatre: EpisodePicker {
-                    // A fixed height, with its own list scrolling inside: the
-                    // page scrolls past it as a whole.
+                    if !root.narrow && !root.theatre: EpisodePicker {
+                    width: root.picker-width;
+                    dubbers: root.dubbers;
+                    dubber: root.dubber;
+                    sources: root.sources;
+                    source: root.source;
+                    episodes: root.episodes;
+                    current: root.current-episode;
+                    current-index: root.current-index;
+                    all-watched: root.all-watched;
+                    select-dubber(i) => { root.select-dubber(i); }
+                    select-source(i) => { root.select-source(i); }
+                    play-episode(p) => { root.play-episode(p); }
+                    download-episode(p) => { root.download-episode(p); }
+                    toggle-watched(p) => { root.toggle-watched(p); }
+                    toggle-all-watched => { root.toggle-all-watched(); }
+                    toggle-pin => { root.toggle-pin(); }
+                }
+                }
+
+                // On a narrow window the list sits under the picture.
+                if root.narrow && !root.theatre && root.watchable: EpisodePicker {
                     height: 420px;
                     dubbers: root.dubbers;
                     dubber: root.dubber;
@@ -480,21 +550,36 @@ export component ReleasePage inherits Rectangle {
                     episodes: root.episodes;
                     current: root.current-episode;
                     current-index: root.current-index;
+                    all-watched: root.all-watched;
                     select-dubber(i) => { root.select-dubber(i); }
                     select-source(i) => { root.select-source(i); }
                     play-episode(p) => { root.play-episode(p); }
-                download-episode(p) => { root.download-episode(p); }
-                toggle-watched(p) => { root.toggle-watched(p); }
-                toggle-all-watched => { root.toggle-all-watched(); }
-                toggle-pin => { root.toggle-pin(); }
-                all-watched: root.all-watched;
+                    download-episode(p) => { root.download-episode(p); }
+                    toggle-watched(p) => { root.toggle-watched(p); }
+                    toggle-all-watched => { root.toggle-all-watched(); }
+                    toggle-pin => { root.toggle-pin(); }
+                }
+
+                // A word from the service's own team about this release —
+                // that a film retells a series, that an order matters.
+                if !root.theatre && root.note != "": Rectangle {
+                    border-radius: Shape.large;
+                    background: MaterialPalette.secondary-container;
+                    height: note-text.preferred-height + 2 * Spacing.medium;
+
+                    note-text := Text {
+                        x: Spacing.base;
+                        width: parent.width - 2 * Spacing.base;
+                        y: Spacing.medium;
+                        text: root.note;
+                        color: MaterialPalette.on-secondary-container;
+                        font-size: Typography.body-medium-size;
+                        wrap: word-wrap;
+                    }
                 }
 
                 // ---- the release itself ----------------------------------
                 if !root.theatre: HorizontalLayout {
-                    padding-bottom: Spacing.base;
-
-                    HorizontalLayout {
                         spacing: Spacing.base;
                         alignment: start;
 
@@ -561,6 +646,11 @@ export component ReleasePage inherits Rectangle {
                             }
 
                             Text {
+                                // Measured at the width it is drawn at: a
+                                // wrapped paragraph in a layout reports the
+                                // height of one line, and the page under it
+                                // then ends too soon.
+                                min-height: description-measure.preferred-height;
                                 text: root.description;
                                 color: MaterialPalette.on-surface;
                                 font-size: Typography.body-medium-size;
@@ -591,7 +681,9 @@ export component ReleasePage inherits Rectangle {
                             if root.related.length > 0: LinkRow {
                                 heading: Tr.franchise;
                                 items: root.related;
+                                action: Tr.show-all;
                                 picked(i) => { root.open-related(i); }
+                                act => { root.open-franchise(); }
                             }
 
                             if root.platforms.length > 0: LinkRow {
@@ -607,30 +699,30 @@ export component ReleasePage inherits Rectangle {
                             }
                         }
                     }
-                }
-            }
-            }
-
-            // ---- choosing what to play -----------------------------------
-            if !root.narrow && !root.theatre: EpisodePicker {
-                width: 400px;
-                dubbers: root.dubbers;
-                dubber: root.dubber;
-                sources: root.sources;
-                source: root.source;
-                episodes: root.episodes;
-                current: root.current-episode;
-                current-index: root.current-index;
-                select-dubber(i) => { root.select-dubber(i); }
-                select-source(i) => { root.select-source(i); }
-                play-episode(p) => { root.play-episode(p); }
-                download-episode(p) => { root.download-episode(p); }
-                toggle-watched(p) => { root.toggle-watched(p); }
-                toggle-all-watched => { root.toggle-all-watched(); }
-                toggle-pin => { root.toggle-pin(); }
-                all-watched: root.all-watched;
             }
         }
+    }
+
+    // The description as it wraps in its column — the page's width less its
+    // padding, the poster and the gap — for its true height. Invisible.
+    description-measure := Text {
+        visible: false;
+        width: max(1px, page.width - 3 * Spacing.base - 150px);
+        text: root.description;
+        font-size: Typography.body-medium-size;
+        wrap: word-wrap;
+    }
+
+    // The page's own scroll bar: where the view is in the page, and how much
+    // of it shows. Drawn over the page's right edge, so it takes no room.
+    if !root.theatre && page.content-height > page.height + 1px: Rectangle {
+        x: page.absolute-position.x - root.absolute-position.x + page.width - 6px;
+        y: page.absolute-position.y - root.absolute-position.y
+            + (page.height - self.height) * (-page.content-y / (page.content-height - page.height));
+        width: 4px;
+        height: max(32px, page.height * page.height / page.content-height);
+        border-radius: 2px;
+        background: MaterialPalette.on-surface-variant.with-alpha(0.45);
     }
 
     /// Whether the account has any progress here, which is the difference

@@ -158,15 +158,20 @@ component PostCard inherits Rectangle {
             }
         }
 
+        // As tall as the picture's own shape makes it at this width, up to a
+        // limit, and shown whole: cropping a picture someone posted cuts off
+        // what they posted it for.
         if root.post.has-picture: Rectangle {
-            height: 280px;
+            height: clamp(
+                (root.width - 2 * Spacing.base) * (root.post.picture-ratio > 0 ? root.post.picture-ratio : 0.5625),
+                120px, 560px);
             border-radius: Shape.medium;
             background: MaterialPalette.surface-container-high;
             clip: true;
 
             Image {
                 source: root.post.picture;
-                image-fit: cover;
+                image-fit: contain;
                 width: 100%;
                 height: 100%;
                 visible: root.post.picture-loaded;

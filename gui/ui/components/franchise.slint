@@ -1,0 +1,144 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// A franchise's releases, oldest first: the order to watch them in, as far as
+// the dates say.
+
+import { ScrollView } from "std-widgets.slint";
+import { MaterialPalette, IconButton } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+import { FranchiseItem } from "../structs.slint";
+
+export component FranchiseSheet inherits Rectangle {
+    in property <[FranchiseItem]> items: [];
+    in property <bool> loading: false;
+    callback open(int);
+    callback dismiss();
+
+    background: #000000A6;
+
+    TouchArea {
+        clicked => { root.dismiss(); }
+    }
+
+    Rectangle {
+        width: min(560px, parent.width - 2 * Spacing.comfortable);
+        height: parent.height - 2 * Spacing.comfortable;
+        x: (parent.width - self.width) / 2;
+        y: Spacing.comfortable;
+        border-radius: Shape.extra-large;
+        background: MaterialPalette.surface-container-high;
+        drop-shadow-blur: 32px;
+        drop-shadow-color: #00000080;
+
+        TouchArea {}
+
+        VerticalLayout {
+            padding-top: Spacing.base;
+            padding-bottom: Spacing.base;
+
+            HorizontalLayout {
+                padding-left: Spacing.comfortable;
+                padding-right: Spacing.base;
+
+                Text {
+                    text: Tr.franchise-history;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-large-size;
+                    font-weight: Typography.title-large-weight-em;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                IconButton {
+                    icon: @image-url("../icons/close.svg");
+                    clicked => { root.dismiss(); }
+                }
+            }
+
+            if root.loading: Text {
+                x: Spacing.comfortable;
+                text: Tr.loading;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.body-medium-size;
+            }
+
+            ScrollView {
+                vertical-stretch: 1;
+
+                VerticalLayout {
+                    padding-left: Spacing.base;
+                    padding-right: Spacing.base;
+                    alignment: start;
+
+                    for item[index] in root.items: Rectangle {
+                        height: 84px;
+                        border-radius: Shape.medium;
+                        background: item.current
+                            ? MaterialPalette.secondary-container
+                            : touch.has-hover ? MaterialPalette.surface-container-highest : transparent;
+
+                        HorizontalLayout {
+                            padding: Spacing.small;
+                            spacing: Spacing.medium;
+
+                            // Its place in the order, first to last.
+                            Text {
+                                width: 28px;
+                                text: index + 1;
+                                color: MaterialPalette.on-surface-variant;
+                                font-size: Typography.title-medium-size;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                            }
+
+                            Rectangle {
+                                width: 48px;
+                                border-radius: Shape.small;
+                                background: MaterialPalette.surface-container;
+                                clip: true;
+
+                                Image {
+                                    source: item.poster;
+                                    image-fit: cover;
+                                    width: 100%;
+                                    height: 100%;
+                                    visible: item.poster-loaded;
+                                }
+                            }
+
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: Spacing.hair;
+
+                                Text {
+                                    text: item.title;
+                                    color: item.current
+                                        ? MaterialPalette.on-secondary-container
+                                        : MaterialPalette.on-surface;
+                                    font-size: Typography.body-large-size;
+                                    wrap: word-wrap;
+                                    max-lines: 2;
+                                }
+
+                                Text {
+                                    text: item.current ? item.detail + " · " + Tr.this-release : item.detail;
+                                    color: MaterialPalette.on-surface-variant;
+                                    font-size: Typography.label-medium-size;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+
+                        touch := TouchArea {
+                            mouse-cursor: item.current ? default : pointer;
+                            clicked => { if (!item.current) { root.open(index); } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

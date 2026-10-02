@@ -318,6 +318,21 @@ impl Article {
             .join("\n\n")
     }
 
+    /// The first picture's shape, height over width, when the post says.
+    #[must_use]
+    pub fn first_image_ratio(&self) -> Option<f32> {
+        self.payload
+            .blocks
+            .iter()
+            .filter(|block| block.kind == "media")
+            .filter_map(|block| block.data.get("items")?.as_array()?.first().cloned())
+            .find_map(|item| {
+                let width = item.get("width")?.as_f64()?;
+                let height = item.get("height")?.as_f64()?;
+                (width > 0.0 && height > 0.0).then(|| (height / width) as f32)
+            })
+    }
+
     /// The first picture in the post, which is the one a feed shows.
     #[must_use]
     pub fn first_image(&self) -> Option<String> {

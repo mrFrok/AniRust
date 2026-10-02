@@ -11,6 +11,7 @@ import { DownloadsPage } from "pages/downloads.slint";
 import { ProfilePage } from "pages/profile.slint";
 import { SettingsPage } from "pages/settings.slint";
 import { Rail } from "components/rail.slint";
+import { FranchiseSheet } from "components/franchise.slint";
 import { FeedPage } from "pages/feed.slint";
 import { CommentsSheet } from "components/comments.slint";
 import { NotificationsSheet } from "components/notifications.slint";
@@ -21,7 +22,7 @@ import { DeletionSheet } from "components/deletion.slint";
 import { PostEditor } from "components/post-editor.slint";
 import { ChannelAdmin } from "components/channel-admin.slint";
 import { ConfirmSheet } from "components/confirm.slint";
-import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem, CollectionItem, AccountSettings, VideoItem, EnforcementItem, DraftBlock, SuggestionItem } from "structs.slint";
+import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem, CollectionItem, AccountSettings, VideoItem, EnforcementItem, DraftBlock, SuggestionItem, FranchiseItem } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -78,6 +79,13 @@ export component MainWindow inherits Window {
     in property <string> release-status;
     in property <string> release-description;
     in property <string> release-score;
+    in property <bool> release-watchable: true;
+    in property <string> release-note;
+    callback open-franchise();
+    in-out property <bool> franchise-open: false;
+    in property <bool> franchise-loading: false;
+    in property <[FranchiseItem]> franchise-items: [];
+    callback open-franchise-item(int);
     in property <bool> release-rateable: true;
     in property <string> release-episodes-label;
     in property <image> release-poster;
@@ -748,6 +756,9 @@ export component MainWindow inherits Window {
         description: root.release-description;
         score: root.release-score;
         rateable: root.release-rateable;
+        watchable: root.release-watchable;
+        note: root.release-note;
+        open-franchise => { root.open-franchise(); }
         episodes-label: root.release-episodes-label;
         poster: root.release-poster;
         poster-loaded: root.poster-loaded;
@@ -956,6 +967,15 @@ export component MainWindow inherits Window {
         dismiss => { root.admin-open = false; }
     }
 
+    if root.franchise-open: FranchiseSheet {
+        width: 100%;
+        height: 100%;
+        items: root.franchise-items;
+        loading: root.franchise-loading;
+        open(i) => { root.open-franchise-item(i); }
+        dismiss => { root.franchise-open = false; }
+    }
+
     if root.report-open: ReportSheet {
         width: 100%;
         height: 100%;
@@ -1089,7 +1109,7 @@ export component MainWindow inherits Window {
                 root.close-comments();
                 return accept;
             }
-            if (root.show-sign-in || root.comments-open || root.notifications-open || root.collection-editor-open || root.collection-picker-open || root.settings-open || root.report-open || root.deletion-open || root.editor-open || root.admin-open || root.confirm-sign-out || !root.playing) { return reject; }
+            if (root.show-sign-in || root.comments-open || root.notifications-open || root.collection-editor-open || root.collection-picker-open || root.settings-open || root.report-open || root.deletion-open || root.editor-open || root.admin-open || root.confirm-sign-out || root.franchise-open || !root.playing) { return reject; }
 
             // ---- transport ----
             if (event.text == " " || event.text == "k") { root.toggle-pause(); return accept; }

@@ -1680,6 +1680,37 @@ fn wire_release(window: &MainWindow, app: &Rc<App>) {
         }
     });
 
+    window.on_open_franchise({
+        let app = Rc::clone(&app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            release::open_franchise(&window, &app.release, &app.client, app.http.clone());
+        }
+    });
+
+    window.on_open_franchise_item({
+        let app = Rc::clone(&app);
+        let weak = window.as_weak();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            let Some(release_id) = usize::try_from(index)
+                .ok()
+                .and_then(|at| release::franchise_at(&app.release, at))
+            else {
+                return;
+            };
+            window.set_franchise_open(false);
+            release::load(
+                &window,
+                &app.release,
+                Rc::clone(&app.client),
+                app.http.clone(),
+                release_id,
+            );
+        }
+    });
+
     window.on_open_related({
         let app = Rc::clone(&app);
         let weak = window.as_weak();
