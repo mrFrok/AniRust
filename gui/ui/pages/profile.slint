@@ -501,29 +501,11 @@ export component ProfilePage inherits Rectangle {
     in property <Account> account;
     in property <image> avatar;
     in property <bool> avatar-loaded: false;
-    /// Which appearance is chosen, as a position in the row of them. Rust owns
-    /// the list and the order; this only says which one is lit.
-    in property <int> appearance: 0;
 
     callback sign-in();
-    callback sign-out();
     callback open-settings();
-    callback select-appearance(int);
-    /// The player opens as it was left.
-    in property <bool> remember-player: true;
-    /// Which accent is chosen, as its place in the row; and whether the
-    /// window is see-through.
-    in property <int> accent: 0;
-    in property <bool> translucent: false;
-    callback select-accent(int);
-    callback set-translucent(bool);
-    callback set-remember-player(bool);
     /// One of the account's own lists, by its place in the bookmarks tabs.
     callback open-list(int);
-    /// What was watched lately, newest first, and opening one of them.
-    /// The notification switches, in the order of the labels below.
-    in property <[bool]> notify: [];
-    callback flip-notify(int);
     in property <[HistoryItem]> recent: [];
     callback open-recent(int);
     callback remove-recent(int);
