@@ -306,6 +306,9 @@ export component MainWindow inherits Window {
     out property <bool> scrubbing: player.scrubbing;
 
     callback toggle-pause();
+    callback pointer-hidden(length, length);
+    in property <bool> force-4k: false;
+    callback toggle-force-4k();
     callback seek-fraction(float);
     callback seek-relative(float);
     callback skip-opening();
@@ -769,6 +772,9 @@ export component MainWindow inherits Window {
         // around it.
         player := PlayerPage {
             visible: root.playing;
+            pointer-hidden(x, y) => { root.pointer-hidden(x, y); }
+            force-4k: root.force-4k;
+            toggle-force-4k => { root.toggle-force-4k(); }
 
             video-frame: root.video-frame;
             has-video: root.has-video;

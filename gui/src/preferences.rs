@@ -129,6 +129,8 @@ pub struct PlayerPreferences {
     pub upscale: usize,
     pub interpolation: bool,
     pub decoder: usize,
+    /// Upscale to 4K whatever the window's size.
+    pub force_4k: bool,
 }
 
 impl Default for PlayerPreferences {
@@ -140,6 +142,7 @@ impl Default for PlayerPreferences {
             upscale: 0,
             interpolation: false,
             decoder: 0,
+            force_4k: false,
         }
     }
 }

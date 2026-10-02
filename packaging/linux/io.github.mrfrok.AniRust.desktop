@@ -10,4 +10,4 @@ Icon=io.github.mrfrok.AniRust
 Terminal=false
 Categories=AudioVideo;Video;Player;
 Keywords=anime;anixart;player;mpv;аниме;
-StartupWMClass=AniRust
+StartupWMClass=io.github.mrfrok.AniRust

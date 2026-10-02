@@ -33,6 +33,9 @@ export component PlayerPage inherits Rectangle {
     in property <string> speed-label: "1x";
     /// Index into the upscale presets: 0 off, 1 fast, 2 balanced, 3 quality.
     in property <int> upscale: 0;
+    /// Rendering at 4K whatever the window's size.
+    in property <bool> force-4k: false;
+    callback toggle-force-4k();
     in property <bool> interpolation: false;
     in property <bool> has-skip: false;
     /// Whether the source has an episode either side of this one, so the
@@ -62,6 +65,9 @@ export component PlayerPage inherits Rectangle {
 
     // ---- to Rust ---------------------------------------------------------
     callback toggle-pause();
+    /// The controls have hidden themselves; the pointer, at this point in
+    /// the window, should go with them.
+    callback pointer-hidden(length, length);
     callback seek-fraction(float);
     callback seek-relative(float);
     callback skip-opening();
@@ -213,6 +219,11 @@ export component PlayerPage inherits Rectangle {
             }
             root.chrome-visible = false;
             self.running = false;
+            // The cursor a TouchArea asks for takes effect on the next
+            // pointer event, and a hand resting on the mouse sends none.
+            root.pointer-hidden(
+                hover.absolute-position.x + hover.mouse-x,
+                hover.absolute-position.y + hover.mouse-y);
         }
     }
 
@@ -592,6 +603,13 @@ export component PlayerPage inherits Rectangle {
                         description: Tr.interpolation-hint;
                         selected: root.interpolation;
                         clicked => { root.toggle-interpolation(); }
+                    }
+
+                    SettingOption {
+                        label: Tr.force-4k;
+                        description: Tr.force-4k-hint;
+                        selected: root.force-4k;
+                        clicked => { root.toggle-force-4k(); }
                     }
                 }
 

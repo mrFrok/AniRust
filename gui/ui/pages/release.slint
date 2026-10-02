@@ -384,21 +384,26 @@ export component ReleasePage inherits Rectangle {
             padding: root.theatre ? 0px : Spacing.base;
             spacing: root.theatre ? 0px : Spacing.base;
 
-            VerticalLayout {
+            // The whole column scrolls — picture, list on a narrow window,
+            // and the release under them — rather than the picture taking
+            // the height and the release getting a strip below it. In theatre
+            // the picture fills the view and there is nothing to scroll to.
+            column := ScrollView {
                 horizontal-stretch: 1;
+
+            VerticalLayout {
                 spacing: root.theatre ? 0px : Spacing.base;
 
                 // ---- the player ------------------------------------------
                 //
-                // Takes whatever the column has left, which is the point of
-                // the screen: everything else below it is sized outright so
-                // the picture gets the remainder rather than the leftovers.
+                // 16:9 of the column's width, from the scroll view's own
+                // width rather than the box's: a box sizing itself from its
+                // own width is a layout loop. Never taller than the view, so
+                // the controls under it stay in reach.
                 Rectangle {
-                    // Weighted so the box lands near 16:9 once the list has
-                    // taken its share: video letterboxed into a squat box is
-                    // black bars where picture should be.
-                    vertical-stretch: 5;
-                    min-height: 180px;
+                    height: root.theatre
+                        ? column.height
+                        : max(180px, min(column.width * 9 / 16, column.height - Spacing.base));
                     background: #000000;
                     border-radius: root.theatre ? 0px : Shape.large;
                     clip: true;
@@ -465,11 +470,9 @@ export component ReleasePage inherits Rectangle {
                 // column has room for two of the three, and the description is
                 // the one nobody came for.
                 if root.narrow && !root.theatre: EpisodePicker {
-                    // Shares by stretch rather than by a fraction of the
-                    // page's height: reading that height here to size a child
-                    // of it is what a layout loop is made of.
-                    vertical-stretch: 4;
-                    min-height: 220px;
+                    // A fixed height, with its own list scrolling inside: the
+                    // page scrolls past it as a whole.
+                    height: 420px;
                     dubbers: root.dubbers;
                     dubber: root.dubber;
                     sources: root.sources;
@@ -488,8 +491,8 @@ export component ReleasePage inherits Rectangle {
                 }
 
                 // ---- the release itself ----------------------------------
-                if !root.narrow && !root.theatre: ScrollView {
-                    height: 220px;
+                if !root.theatre: HorizontalLayout {
+                    padding-bottom: Spacing.base;
 
                     HorizontalLayout {
                         spacing: Spacing.base;
@@ -605,6 +608,7 @@ export component ReleasePage inherits Rectangle {
                         }
                     }
                 }
+            }
             }
 
             // ---- choosing what to play -----------------------------------

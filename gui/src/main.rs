@@ -14,6 +14,7 @@ mod bookmarks;
 mod channel_admin;
 mod collections;
 mod comments;
+mod desktop;
 mod downloads;
 mod editor;
 mod feed;
@@ -70,6 +71,7 @@ fn main() -> Result<()> {
     let opening = release_id_from_args()?;
     tasks::init()?;
 
+    desktop::identify();
     let window = MainWindow::new().context("creating the window")?;
     window.set_lang(if is_russian_locale() {
         "ru".into()
@@ -1976,6 +1978,7 @@ fn start(
     window.set_quality(0);
     window.set_has_skip(stream.opening.is_some());
 
+    let source_url = best.url.clone();
     let mut source = MediaSource::new(&best.url).headers(
         stream
             .headers
@@ -1987,7 +1990,7 @@ fn start(
     }
 
     if let Err(error) = bridge.play(source) {
-        tracing::error!(%error, "could not start playback");
+        tracing::error!(error = format!("{error:#}"), url = %source_url, "could not start playback");
         window.set_state("idle".into());
         window.set_playing(false);
         window.set_episode_failed(true);
@@ -2068,6 +2071,7 @@ struct Settings {
     speed: Cell<f64>,
     upscale: Cell<usize>,
     interpolation: Cell<bool>,
+    force_4k: Cell<bool>,
     quality: Cell<usize>,
     decoder: Cell<usize>,
     /// mpv track ids behind the subtitle and audio menus.
@@ -2094,6 +2098,7 @@ impl Settings {
             speed: Cell::new(kept.speed),
             upscale: Cell::new(kept.upscale.min(PRESETS.len() - 1)),
             interpolation: Cell::new(kept.interpolation),
+            force_4k: Cell::new(kept.force_4k),
             quality: Cell::new(0),
             decoder: Cell::new(kept.decoder.min(DECODERS.len() - 1)),
             subtitles: RefCell::new(Vec::new()),
@@ -2152,6 +2157,9 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         tracing::warn!(%error, "the kept player settings were not applied");
     }
 
+    bridge.set_force_4k(kept.force_4k);
+    window.set_force_4k(kept.force_4k);
+
     // Writes the player's settings out, when they are kept.
     let keep: Rc<dyn Fn()> = {
         let prefs = Rc::clone(&app.prefs);
@@ -2166,10 +2174,38 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
             all.player.interpolation = settings.interpolation.get();
             all.player.decoder = settings.decoder.get();
             all.player.volume = player.volume();
+            all.player.force_4k = settings.force_4k.get();
             prefs.set(all);
             all.save();
         })
     };
+
+    // Re-sends the pointer where it is, so the cursor the hidden controls
+    // asked for is applied without waiting for the mouse to move.
+    {
+        let keep_now = Rc::clone(&keep);
+        let chosen = Rc::clone(settings);
+        let bridge = Rc::clone(bridge);
+        let weak = window.as_weak();
+        window.on_toggle_force_4k(move || {
+            let Some(window) = weak.upgrade() else { return };
+            let on = !chosen.force_4k.get();
+            chosen.force_4k.set(on);
+            bridge.set_force_4k(on);
+            window.set_force_4k(on);
+            keep_now();
+        });
+    }
+
+    let weak = window.as_weak();
+    window.on_pointer_hidden(move |x, y| {
+        let Some(window) = weak.upgrade() else { return };
+        window
+            .window()
+            .dispatch_event(slint::platform::WindowEvent::PointerMoved {
+                position: slint::LogicalPosition::new(x, y),
+            });
+    });
 
     window.on_toggle_pause(move || {
         if let Err(error) = player.toggle_pause() {

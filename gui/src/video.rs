@@ -290,6 +290,10 @@ pub struct VideoBridge {
     /// window's size, and the interface should be able to say so rather than
     /// quietly reporting the input resolution.
     rendered: Rc<Cell<(u32, u32)>>,
+    /// Render at 4K whatever the window's size: the upscaled picture is made
+    /// at 3840×2160 and the display scales it down to fit — more detail
+    /// from the shaders, at the GPU's expense.
+    force_4k: Rc<Cell<bool>>,
     /// Whether the picture is advancing, sampled off the render loop.
     ///
     /// Asking mpv on every frame costs a property query — and a lock inside
@@ -323,6 +327,7 @@ impl VideoBridge {
             live: Rc::new(RefCell::new(None)),
             pending: Rc::new(RefCell::new(None)),
             rendered: Rc::new(Cell::new((0, 0))),
+            force_4k: Rc::new(Cell::new(false)),
             advancing: Rc::new(Cell::new(false)),
             repaint_kick: RefCell::new(None),
         })
@@ -353,6 +358,10 @@ impl VideoBridge {
     /// Called from the status poll rather than from the render loop itself,
     /// so the hot path never asks mpv. Passing `false` lets the loop wind
     /// down; the kick timer restarts it when playback resumes.
+    pub fn set_force_4k(&self, on: bool) {
+        self.force_4k.set(on);
+    }
+
     pub fn set_advancing(&self, advancing: bool) {
         self.advancing.set(advancing);
     }
@@ -381,6 +390,7 @@ impl VideoBridge {
         let live = Rc::clone(&self.live);
         let pending = Rc::clone(&self.pending);
         let rendered = Rc::clone(&self.rendered);
+        let force_4k = Rc::clone(&self.force_4k);
         let advancing = Rc::clone(&self.advancing);
         let weak = component.as_weak();
         // Handed to mpv so it can wake the UI when a frame is ready. Cloned
@@ -441,10 +451,14 @@ impl VideoBridge {
                             return;
                         };
 
-                        let surface_size = (
-                            component.window().size().width,
-                            component.window().size().height,
-                        );
+                        let surface_size = if force_4k.get() {
+                            (MAX_TARGET_SIDE, MAX_TARGET_SIDE * 9 / 16)
+                        } else {
+                            (
+                                component.window().size().width,
+                                component.window().size().height,
+                            )
+                        };
                         match draw(player, live, surface_size, &rendered) {
                             Ok(Some(image)) => {
                                 live.frames_drawn += 1;

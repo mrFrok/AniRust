@@ -312,6 +312,10 @@ export global Tr {
     out property <string> translucent-why: lang == "ru"
         ? "Фон окна становится полупрозрачным. Размытие под ним — дело оконного менеджера, если он это умеет."
         : "The window's background turns half see-through. Any blur behind it is the window manager's, where it has one.";
+    out property <string> force-4k: lang == "ru" ? "Рендер в 4K" : "Render at 4K";
+    out property <string> force-4k-hint: lang == "ru"
+        ? "Апскейл всегда до 3840×2160, а не до размера окна. Картинка детальнее, видеокарте тяжелее."
+        : "Upscale to 3840×2160 always, not to the window's size. More detail, more work for the GPU.";
     out property <string> tab-collections: lang == "ru" ? "Коллекции" : "Collections";
     out property <string> my-collections: lang == "ru" ? "Мои коллекции" : "My collections";
     out property <string> new-collection: lang == "ru" ? "Новая коллекция" : "New collection";
