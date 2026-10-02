@@ -211,6 +211,15 @@ export global Tr {
             : "~ " + floor(minutes / 1440) + (floor(minutes / 1440) == 1 ? " day " : " days ")
                 + floor(Math.mod(minutes, 1440) / 60) + (floor(Math.mod(minutes, 1440) / 60) == 1 ? " hour" : " hours")
     }
+    out property <string> my-profile: lang == "ru" ? "Мой профиль" : "My profile";
+    out property <string> add-friend: lang == "ru" ? "Добавить в друзья" : "Add friend";
+    out property <string> accept-friend: lang == "ru" ? "Принять" : "Accept";
+    out property <string> cancel-request: lang == "ru" ? "Отменить заявку" : "Cancel request";
+    out property <string> unfriend: lang == "ru" ? "Удалить из друзей" : "Unfriend";
+    out property <string> decline: lang == "ru" ? "Отклонить" : "Decline";
+    out property <string> block: lang == "ru" ? "Заблокировать" : "Block";
+    out property <string> unblock: lang == "ru" ? "Разблокировать" : "Unblock";
+    out property <string> friend-requests: lang == "ru" ? "Заявки в друзья" : "Friend requests";
     out property <string> not-in-list: lang == "ru" ? "Не в списке" : "Not in a list";
     out property <string> add-to-favourites: lang == "ru" ? "В избранное" : "Add to favourites";
     out property <string> remove-from-favourites: lang == "ru" ? "Убрать из избранного" : "Remove from favourites";

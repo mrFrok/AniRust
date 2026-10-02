@@ -111,6 +111,7 @@ pub fn restore(
 pub fn refresh_profile(
     window: &MainWindow,
     session: &Rc<RefCell<Session>>,
+    people: &Rc<RefCell<crate::people::PeopleState>>,
     client: &Client,
     http: reqwest::Client,
 ) {
@@ -123,10 +124,22 @@ pub fn refresh_profile(
     };
     let weak = window.as_weak();
     let api = client.clone();
+    let people = Rc::clone(people);
     tasks::spawn(async move { api.profile(id).await }, move |profile| {
         let Some(window) = weak.upgrade() else { return };
         match profile {
-            Ok(profile) => show_profile(&window, &profile, http),
+            // Only if the account's own profile is still the one wanted: the
+            // viewer may have opened someone else's while this was out.
+            Ok(profile) if window.get_profile_is_mine() => {
+                show_profile(&window, &profile, http.clone());
+                crate::people::show_friends(
+                    &window,
+                    &people,
+                    profile.friends_preview.clone(),
+                    &http,
+                );
+            }
+            Ok(_) => {}
             Err(error) => tracing::debug!(%error, "the profile could not be refreshed"),
         }
     });
@@ -332,9 +345,16 @@ pub(crate) fn minutes_since(then: i64, now: i64) -> i32 {
     i32::try_from(minutes).unwrap_or(i32::MAX)
 }
 
-/// Puts a profile on the screen, picture and all.
+/// Puts the account's own profile on the screen: its name in the toolbar
+/// as well as everything on the profile page.
 fn show_profile(window: &MainWindow, profile: &Profile, http: reqwest::Client) {
     window.set_account_name(profile.login.as_str().into());
+    show_account(window, profile, http);
+}
+
+/// Puts a profile on the profile page, picture and all — the account's own
+/// or anyone else's. The toolbar is not touched: it names who is signed in.
+pub(crate) fn show_account(window: &MainWindow, profile: &Profile, http: reqwest::Client) {
     window.set_account(Account {
         login: profile.login.as_str().into(),
         status: profile.status.as_str().into(),
@@ -357,6 +377,15 @@ fn show_profile(window: &MainWindow, profile: &Profile, http: reqwest::Client) {
         dynamics: ints(last_days(&profile.watch_dynamics).map(|day| count(day.count))),
         dynamics_days: ints(last_days(&profile.watch_dynamics).map(|day| day.day)),
         stats_hidden: profile.is_stats_hidden,
+        friend_status: match profile.friend_status {
+            None => -1,
+            Some(anirust_api::FriendStatus::RequestSent) => 0,
+            Some(anirust_api::FriendStatus::RequestReceived) => 1,
+            Some(anirust_api::FriendStatus::Friends) => 2,
+        },
+        blocked: profile.is_blocked,
+        friend_requests_closed: profile.is_friend_requests_disallowed,
+        online: profile.is_online,
     });
 
     // The account's own picture. The field is a URL where it has been seen at

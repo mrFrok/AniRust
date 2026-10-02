@@ -11,11 +11,11 @@
 // can act on is decoration, and this client has no room for decoration it
 // cannot click.
 
-import { MaterialPalette, ListTile, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton, FilledCard, IconButton, Switch } from "@material";
+import { MaterialPalette, ListTile, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton, FilledCard, IconButton, Switch, TextButton } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
-import { Account, HistoryItem } from "../structs.slint";
+import { Account, HistoryItem, PersonItem } from "../structs.slint";
 
 /// One wedge of the ring.
 ///
@@ -123,6 +123,67 @@ component Reading inherits Rectangle {
             font-size: Typography.body-medium-size;
             font-weight: Typography.body-medium-weight-em;
             vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// A person in a row of people: face, name, and a dot when online.
+component PersonChip inherits Rectangle {
+    in property <PersonItem> person;
+    callback clicked;
+
+    height: 52px;
+    border-radius: Shape.medium;
+    background: touch.has-hover ? MaterialPalette.surface-container-high : MaterialPalette.surface-container;
+
+    HorizontalLayout {
+        padding-left: Spacing.small;
+        padding-right: Spacing.medium;
+        spacing: Spacing.medium;
+
+        VerticalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 18px;
+                background: MaterialPalette.primary-container;
+                clip: true;
+
+                Image {
+                    source: root.person.avatar;
+                    image-fit: cover;
+                    width: 100%;
+                    height: 100%;
+                    visible: root.person.avatar-loaded;
+                }
+            }
+        }
+
+        Text {
+            text: root.person.login;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.body-large-size;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+
+        if root.person.online: VerticalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: MaterialPalette.tertiary;
+            }
         }
     }
 
@@ -258,6 +319,18 @@ component Stat inherits Rectangle {
 
 export component ProfilePage inherits Rectangle {
     in property <bool> signed-in: false;
+    /// Whether this is the account's own profile or someone else's. Someone
+    /// else's leaves out what is the account's alone: its history, its
+    /// settings, signing out.
+    in property <bool> mine: true;
+    in property <[PersonItem]> friends: [];
+    in property <[PersonItem]> requests: [];
+    callback back-to-mine();
+    callback friend-action();
+    callback toggle-block();
+    callback open-friend(int);
+    callback open-request(int);
+    callback answer-request(int, bool);
     in property <Account> account;
     in property <image> avatar;
     in property <bool> avatar-loaded: false;
@@ -307,6 +380,16 @@ export component ProfilePage inherits Rectangle {
         padding: Spacing.base;
         spacing: Spacing.base;
         alignment: start;
+
+        if !root.mine: HorizontalLayout {
+            alignment: start;
+
+            TextButton {
+                icon: @image-url("../icons/back.svg");
+                text: Tr.my-profile;
+                clicked => { root.back-to-mine(); }
+            }
+        }
 
         // ---- who ---------------------------------------------------------
         HorizontalLayout {
@@ -408,9 +491,29 @@ export component ProfilePage inherits Rectangle {
                     clicked => { root.sign-in(); }
                 }
 
-                if root.signed-in: OutlineButton {
+                if root.signed-in && root.mine: OutlineButton {
                     text: Tr.sign-out;
                     clicked => { root.sign-out(); }
+                }
+
+                // Someone else's: the one friend button, saying what it will
+                // do — the standing between the two decides — and a block.
+                if root.signed-in && !root.mine: HorizontalLayout {
+                    spacing: Spacing.small;
+
+                    if !root.account.blocked: FilledButton {
+                        text: root.account.friend-status == 2 ? Tr.unfriend
+                            : root.account.friend-status == 1 ? Tr.accept-friend
+                            : root.account.friend-status == 0 ? Tr.cancel-request
+                            : Tr.add-friend;
+                        enabled: root.account.friend-status >= 0 || !root.account.friend-requests-closed;
+                        clicked => { root.friend-action(); }
+                    }
+
+                    OutlineButton {
+                        text: root.account.blocked ? Tr.unblock : Tr.block;
+                        clicked => { root.toggle-block(); }
+                    }
                 }
             }
         }
@@ -461,35 +564,35 @@ export component ProfilePage inherits Rectangle {
                                 label: Tr.list-watching;
                                 value: root.account.watching;
                                 tint: root.watching-colour;
-                                clicked => { root.open-list(0); }
+                                clicked => { if (root.mine) { root.open-list(0); } }
                             }
 
                             Reading {
                                 label: Tr.list-planned;
                                 value: root.account.planned;
                                 tint: root.planned-colour;
-                                clicked => { root.open-list(1); }
+                                clicked => { if (root.mine) { root.open-list(1); } }
                             }
 
                             Reading {
                                 label: Tr.list-watched;
                                 value: root.account.watched;
                                 tint: root.watched-colour;
-                                clicked => { root.open-list(2); }
+                                clicked => { if (root.mine) { root.open-list(2); } }
                             }
 
                             Reading {
                                 label: Tr.list-hold;
                                 value: root.account.hold;
                                 tint: root.hold-colour;
-                                clicked => { root.open-list(3); }
+                                clicked => { if (root.mine) { root.open-list(3); } }
                             }
 
                             Reading {
                                 label: Tr.list-dropped;
                                 value: root.account.dropped;
                                 tint: root.dropped-colour;
-                                clicked => { root.open-list(4); }
+                                clicked => { if (root.mine) { root.open-list(4); } }
                             }
                         }
 
@@ -713,12 +816,78 @@ export component ProfilePage inherits Rectangle {
             }
         }
 
+        // ---- friends, and requests waiting --------------------------------
+        if root.signed-in && (root.friends.length > 0 || (root.mine && root.requests.length > 0)): VerticalLayout {
+            spacing: Spacing.small;
+
+            if root.mine && root.requests.length > 0: VerticalLayout {
+                spacing: Spacing.small;
+
+                Text {
+                    text: Tr.friend-requests;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-medium-size;
+                    font-weight: Typography.title-medium-weight-em;
+                }
+
+                for person[i] in root.requests: HorizontalLayout {
+                    spacing: Spacing.medium;
+                    max-width: 560px;
+
+                    PersonChip {
+                        horizontal-stretch: 1;
+                        person: person;
+                        clicked => { root.open-request(i); }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        FilledButton {
+                            text: Tr.accept-friend;
+                            clicked => { root.answer-request(i, true); }
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        TextButton {
+                            text: Tr.decline;
+                            clicked => { root.answer-request(i, false); }
+                        }
+                    }
+                }
+            }
+
+            if root.friends.length > 0: VerticalLayout {
+                spacing: Spacing.small;
+
+                Text {
+                    text: Tr.friends + " · " + root.account.friends;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-medium-size;
+                    font-weight: Typography.title-medium-weight-em;
+                }
+
+                FlexboxLayout {
+                    flex-wrap: wrap;
+                    alignment: start;
+                    spacing: Spacing.small;
+
+                    for person[i] in root.friends: PersonChip {
+                        width: 200px;
+                        person: person;
+                        clicked => { root.open-friend(i); }
+                    }
+                }
+            }
+        }
+
         // ---- what was watched lately -------------------------------------
         //
         // The same list the history tab holds, cut to what fits here. It is on
         // this screen because it is the answer to "where was I", and that is
         // the question an account is opened with.
-        if root.signed-in: VerticalLayout {
+        if root.signed-in && root.mine: VerticalLayout {
             spacing: Spacing.small;
 
             Text {
@@ -820,7 +989,7 @@ export component ProfilePage inherits Rectangle {
         }
 
         // ---- what brings a notification ------------------------------------
-        if root.signed-in && root.notify.length > 0: VerticalLayout {
+        if root.signed-in && root.mine && root.notify.length > 0: VerticalLayout {
             spacing: Spacing.tight;
             // A label and its switch read as a pair only when they are not a
             // window apart.
@@ -873,45 +1042,49 @@ export component ProfilePage inherits Rectangle {
             }
         }
 
-        HorizontalDivider {}
+        if root.mine: VerticalLayout {
+            spacing: Spacing.base;
 
-        // ---- how it looks ------------------------------------------------
-        VerticalLayout {
-            spacing: Spacing.small;
+            HorizontalDivider {}
 
-            Text {
-                text: Tr.appearance;
-                color: MaterialPalette.on-surface;
-                font-size: Typography.title-medium-size;
-                font-weight: Typography.title-medium-weight-em;
-            }
+            // ---- how it looks ------------------------------------------------
+            VerticalLayout {
+                spacing: Spacing.small;
 
-            Text {
-                text: Tr.appearance-why;
-                color: MaterialPalette.on-surface-variant;
-                font-size: Typography.body-medium-size;
-                wrap: word-wrap;
-            }
+                Text {
+                    text: Tr.appearance;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-medium-size;
+                    font-weight: Typography.title-medium-weight-em;
+                }
 
-            HorizontalLayout {
-                alignment: start;
+                Text {
+                    text: Tr.appearance-why;
+                    color: MaterialPalette.on-surface-variant;
+                    font-size: Typography.body-medium-size;
+                    wrap: word-wrap;
+                }
 
-                choice := SegmentedButton {
-                    items: [
-                        { text: Tr.appearance-system },
-                        { text: Tr.appearance-light },
-                        { text: Tr.appearance-dark },
-                        { text: Tr.appearance-amoled },
-                    ];
+                HorizontalLayout {
+                    alignment: start;
 
-                    // Pushed, not bound: the control writes its own index on a
-                    // click, and what is actually in force is whatever Rust
-                    // wrote to the settings file.
-                    property <int> wanted: root.appearance;
-                    init => { self.current-index = root.appearance; }
-                    changed wanted => { self.current-index = self.wanted; }
+                    choice := SegmentedButton {
+                        items: [
+                            { text: Tr.appearance-system },
+                            { text: Tr.appearance-light },
+                            { text: Tr.appearance-dark },
+                            { text: Tr.appearance-amoled },
+                        ];
 
-                    index-changed(i) => { root.select-appearance(i); }
+                        // Pushed, not bound: the control writes its own index on a
+                        // click, and what is actually in force is whatever Rust
+                        // wrote to the settings file.
+                        property <int> wanted: root.appearance;
+                        init => { self.current-index = root.appearance; }
+                        changed wanted => { self.current-index = self.wanted; }
+
+                        index-changed(i) => { root.select-appearance(i); }
+                    }
                 }
             }
         }

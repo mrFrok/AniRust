@@ -96,6 +96,21 @@ export struct Account {
     dynamics-days: [int],
     /// Whether the account keeps its statistics to itself.
     stats-hidden: bool,
+    /// Where it stands with the account looking: -1 nothing, 0 a request
+    /// sent, 1 a request received, 2 friends.
+    friend-status: int,
+    /// Blocked by the account looking.
+    blocked: bool,
+    friend-requests-closed: bool,
+    online: bool,
+}
+
+/// A person in a row of people: a friend, a request.
+export struct PersonItem {
+    login: string,
+    avatar: image,
+    avatar-loaded: bool,
+    online: bool,
 }
 
 /// One release on the profile screen's list of what was watched lately.

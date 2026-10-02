@@ -346,6 +346,17 @@ pub fn delete(
     );
 }
 
+/// The person a friend notification is about.
+#[must_use]
+pub fn person_at(state: &Rc<RefCell<NotificationsState>>, index: usize) -> Option<i64> {
+    state
+        .borrow()
+        .items
+        .get(index)
+        .and_then(|(n, _)| n.by_profile.as_ref().map(|p| p.id))
+        .filter(|id| *id > 0)
+}
+
 /// The release a row is about, if there is one to open.
 #[must_use]
 pub fn release_at(state: &Rc<RefCell<NotificationsState>>, index: usize) -> Option<i64> {
@@ -487,7 +498,7 @@ fn item_for(n: &Notification, kind: Kind, now: i64) -> NotificationItem {
         minutes_ago: crate::session::minutes_since(n.timestamp, now),
         unseen: n.is_new,
         can_delete: kind.delete().is_some(),
-        can_open: release_of(n).is_some(),
+        can_open: release_of(n).is_some() || n.by_profile.as_ref().is_some_and(|p| p.id > 0),
     }
 }
 

@@ -280,9 +280,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 12, 13, 14, 15, 16, 17, 18, 19,
             ])),
             stats_hidden: false,
+            friend_status: -1,
+            blocked: false,
+            friend_requests_closed: false,
+            online: true,
         });
         ui.set_avatar(stand_in_avatar());
         ui.set_avatar_loaded(true);
+        let person = |login: &str, online: bool| PersonItem {
+            login: login.into(),
+            avatar: stand_in_avatar(),
+            avatar_loaded: true,
+            online,
+        };
+        ui.set_profile_friends(slint::ModelRc::new(slint::VecModel::from(vec![
+            person("maryfoxloza", true),
+            person("A5tepXd", false),
+        ])));
+        ui.set_friend_requests(slint::ModelRc::new(slint::VecModel::from(vec![person(
+            "user7", false,
+        )])));
+        if state == "profile-other" {
+            ui.set_profile_is_mine(false);
+            ui.set_friend_requests(slint::ModelRc::new(slint::VecModel::<PersonItem>::default()));
+        }
         ui.set_notify_switches(slint::ModelRc::new(slint::VecModel::from(vec![
             true, false, true, true, false, true, true, false, false,
         ])));

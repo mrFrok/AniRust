@@ -15,6 +15,7 @@ mod downloads;
 mod feed;
 mod home;
 mod notifications;
+mod people;
 mod preferences;
 mod progress;
 mod release;
@@ -94,6 +95,7 @@ fn main() -> Result<()> {
         feed: Rc::new(RefCell::new(feed::FeedState::default())),
         comments: Rc::new(RefCell::new(comments::CommentsState::default())),
         notifications: Rc::new(RefCell::new(notifications::NotificationsState::default())),
+        people: Rc::new(RefCell::new(people::PeopleState::default())),
         queue: Rc::new(RefCell::new(downloads::Queue::default())),
         account: Rc::new(RefCell::new(Session::default())),
         playing: Rc::new(RefCell::new(None)),
@@ -104,6 +106,7 @@ fn main() -> Result<()> {
     wire_feed(&window, &app);
     wire_comments(&window, &app);
     wire_notifications(&window, &app);
+    wire_people(&window, &app);
     wire_account(&window, &app);
     wire_release(&window, &app);
     let advance = wire_player(&window, &app);
@@ -151,6 +154,7 @@ struct App {
     feed: Rc<RefCell<feed::FeedState>>,
     comments: Rc<RefCell<comments::CommentsState>>,
     notifications: Rc<RefCell<notifications::NotificationsState>>,
+    people: Rc<RefCell<people::PeopleState>>,
     queue: Rc<RefCell<downloads::Queue>>,
     account: Rc<RefCell<Session>>,
     /// The stream currently loaded, so the quality menu and the skip button
@@ -282,6 +286,91 @@ macro_rules! on_row {
     }};
 }
 
+/// Opens someone's profile on the profile page, from anywhere.
+fn open_person(window: &MainWindow, app: &App, id: i64) {
+    window.set_comments_open(false);
+    window.set_notifications_open(false);
+    window.set_screen("home".into());
+    if window.get_destination() != PROFILE_DESTINATION {
+        window.set_destination(PROFILE_DESTINATION);
+    }
+    let me = app.account.borrow().id;
+    people::open(window, &app.people, &app.client, app.http.clone(), me, id);
+}
+
+/// Back to the account's own profile, freshly read.
+fn open_my_profile(window: &MainWindow, app: &App) {
+    people::back_to_mine(window, &app.people);
+    session::refresh_profile(
+        window,
+        &app.account,
+        &app.people,
+        &app.client,
+        app.http.clone(),
+    );
+    people::load_requests(window, &app.people, &app.client, app.http.clone());
+}
+
+fn wire_people(window: &MainWindow, app: &Rc<App>) {
+    window.on_back_to_my_profile({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            open_my_profile(&window, &app);
+        }
+    });
+    window.on_friend_action({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            people::friend_action(&window, &app.people, &app.client, app.http.clone());
+        }
+    });
+    window.on_toggle_block({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            people::toggle_block(&window, &app.people, &app.client, app.http.clone());
+        }
+    });
+    on_row!(window, app, on_open_friend, |window, app, index| {
+        if let Some(id) = people::friend_at(&app.people, index) {
+            open_person(&window, app, id);
+        }
+    });
+    on_row!(window, app, on_open_request, |window, app, index| {
+        if let Some(id) = people::request_at(&app.people, index) {
+            open_person(&window, app, id);
+        }
+    });
+    window.on_answer_request({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move |index, accept| {
+            let Some(window) = weak.upgrade() else { return };
+            let Ok(index) = usize::try_from(index) else {
+                return;
+            };
+            people::answer_request(
+                &window,
+                &app.people,
+                &app.client,
+                app.http.clone(),
+                index,
+                accept,
+            );
+        }
+    });
+    on_row!(window, app, on_open_comment_author, |window, app, index| {
+        if let Some(id) = comments::author_at(&app.comments, index) {
+            open_person(&window, app, id);
+        }
+    });
+}
+
 fn wire_notifications(window: &MainWindow, app: &Rc<App>) {
     window.on_open_notifications({
         let app = Rc::clone(app);
@@ -335,7 +424,9 @@ fn wire_notifications(window: &MainWindow, app: &Rc<App>) {
         notifications::delete(&window, &app.notifications, &app.client, index)
     });
     on_row!(window, app, on_open_notification, |window, app, index| {
-        if let Some(release_id) = notifications::release_at(&app.notifications, index) {
+        if let Some(id) = notifications::person_at(&app.notifications, index) {
+            open_person(&window, app, id);
+        } else if let Some(release_id) = notifications::release_at(&app.notifications, index) {
             window.set_notifications_open(false);
             window.set_screen("release".into());
             release::load(
@@ -565,7 +656,17 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
             // The profile is not a grid, so nothing above fetches anything for
             // it. What it shows goes stale as soon as an episode is watched.
             if index == PROFILE_DESTINATION {
-                session::refresh_profile(&window, &app.account, &app.client, app.http.clone());
+                // The rail always means the account's own profile; someone
+                // else's is reached from their name, not from here.
+                people::back_to_mine(&window, &app.people);
+                people::load_requests(&window, &app.people, &app.client, app.http.clone());
+                session::refresh_profile(
+                    &window,
+                    &app.account,
+                    &app.people,
+                    &app.client,
+                    app.http.clone(),
+                );
                 notifications::load_switches(&window, &app.client);
                 session::load_recent(
                     &window,

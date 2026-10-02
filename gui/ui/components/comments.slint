@@ -54,6 +54,7 @@ component CommentRow inherits Rectangle {
     callback delete();
     callback toggle-replies();
     callback reveal();
+    callback open-author();
 
     background: transparent;
 
@@ -90,12 +91,17 @@ component CommentRow inherits Rectangle {
             HorizontalLayout {
                 spacing: Spacing.small;
 
-                Text {
+                author := Text {
                     text: root.item.author;
-                    color: MaterialPalette.on-surface;
+                    color: author-touch.has-hover ? MaterialPalette.primary : MaterialPalette.on-surface;
                     font-size: Typography.title-small-size;
                     font-weight: Typography.title-small-weight-em;
                     overflow: elide;
+
+                    author-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.open-author(); }
+                    }
                 }
 
                 Text {
@@ -235,6 +241,7 @@ export component CommentsSheet inherits Rectangle {
     callback delete(int);
     callback toggle-replies(int);
     callback reveal(int);
+    callback open-author(int);
     callback sign-in();
 
     // The page behind stays visible and dimmed; a click on it closes the
@@ -353,6 +360,7 @@ export component CommentsSheet inherits Rectangle {
                         delete => { root.delete(index); }
                         toggle-replies => { root.toggle-replies(index); }
                         reveal => { root.reveal(index); }
+                        open-author => { root.open-author(index); }
                     }
 
                     if root.has-more: HorizontalLayout {

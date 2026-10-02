@@ -287,6 +287,16 @@ pub fn toggle_replies(
     );
 }
 
+/// Who wrote a row, for opening their profile.
+#[must_use]
+pub fn author_at(state: &Rc<RefCell<CommentsState>>, index: usize) -> Option<i64> {
+    state
+        .borrow()
+        .rows
+        .get(index)
+        .map(|row| row.comment.profile.id)
+}
+
 /// Opens a spoiler. Kept on the row, so it stays open.
 pub fn reveal(
     window: &MainWindow,

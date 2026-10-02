@@ -12,7 +12,7 @@ import { ProfilePage } from "pages/profile.slint";
 import { FeedPage } from "pages/feed.slint";
 import { CommentsSheet } from "components/comments.slint";
 import { NotificationsSheet } from "components/notifications.slint";
-import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem } from "structs.slint";
+import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -220,6 +220,19 @@ export component MainWindow inherits Window {
     /// toolbar's badge counts.
     in property <int> downloads-working: 0;
 
+    // ---- people ----------------------------------------------------------
+    /// Whether the profile page shows the account's own profile.
+    in property <bool> profile-is-mine: true;
+    in property <[PersonItem]> profile-friends: [];
+    in property <[PersonItem]> friend-requests: [];
+    callback back-to-my-profile();
+    callback friend-action();
+    callback toggle-block();
+    callback open-friend(int);
+    callback open-request(int);
+    callback answer-request(int, bool);
+    callback open-comment-author(int);
+
     // ---- notifications ---------------------------------------------------
     in property <int> unseen: 0;
     in-out property <bool> notifications-open: false;
@@ -375,6 +388,15 @@ export component MainWindow inherits Window {
             open-list(i) => { root.open-list(i); }
             open-recent(i) => { root.open-recent(i); }
             notify: root.notify-switches;
+            mine: root.profile-is-mine;
+            friends: root.profile-friends;
+            requests: root.friend-requests;
+            back-to-mine => { root.back-to-my-profile(); }
+            friend-action => { root.friend-action(); }
+            toggle-block => { root.toggle-block(); }
+            open-friend(i) => { root.open-friend(i); }
+            open-request(i) => { root.open-request(i); }
+            answer-request(i, yes) => { root.answer-request(i, yes); }
             flip-notify(i) => { root.flip-notify(i); }
             remove-recent(i) => { root.remove-recent(i); }
         }
@@ -597,6 +619,7 @@ export component MainWindow inherits Window {
         delete(i) => { root.delete-comment(i); }
         toggle-replies(i) => { root.toggle-comment-replies(i); }
         reveal(i) => { root.reveal-comment(i); }
+        open-author(i) => { root.open-comment-author(i); }
         sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
     }
 
