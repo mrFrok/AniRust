@@ -252,3 +252,26 @@ export struct CollectionItem {
     /// The account's own, so it can be edited and deleted.
     mine: bool,
 }
+
+/// The account's own settings, as the settings sheet shows them.
+export struct AccountSettings {
+    status: string,
+    /// The account's email with most of it hidden, to say which it is.
+    email-hint: string,
+    vk: string,
+    telegram: string,
+    instagram: string,
+    tiktok: string,
+    discord: string,
+    /// Who may see what: 0 everyone, 1 friends, 2 only the account.
+    privacy-counts: int,
+    privacy-stats: int,
+    privacy-social: int,
+    /// 0 anyone may send a friend request, 1 nobody.
+    privacy-friend-requests: int,
+    incognito: bool,
+    /// The login may be changed now; otherwise from `login-next-change`.
+    login-change-available: bool,
+    login-next-change: string,
+    avatar-banned: bool,
+}

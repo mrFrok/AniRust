@@ -461,7 +461,7 @@ fn count(value: i64) -> i32 {
 /// Nothing is added to the dependency list for it: the arithmetic below is the
 /// standard civil-from-days conversion, and it is four lines longer than the
 /// import would have been.
-fn date(seconds: i64) -> Option<String> {
+pub(crate) fn date(seconds: i64) -> Option<String> {
     if seconds <= 0 {
         return None;
     }
@@ -530,7 +530,7 @@ fn stored_session() -> Option<(i64, String)> {
     Some((id.parse().ok()?, token.to_owned()))
 }
 
-fn remember(id: i64, token: &str) {
+pub(crate) fn remember(id: i64, token: &str) {
     let Some(entry) = entry() else { return };
     if let Err(error) = entry.set_password(&format!("{id}:{token}")) {
         tracing::warn!(%error, "could not save the session; it ends with this run");

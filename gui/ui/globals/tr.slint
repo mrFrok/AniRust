@@ -387,6 +387,70 @@ export global Tr {
     out property <string> confirm: lang == "ru" ? "Подтвердить" : "Confirm";
     out property <string> continue: lang == "ru" ? "Продолжить" : "Continue";
 
+    out property <string> account-settings: lang == "ru" ? "Настройки аккаунта" : "Account settings";
+    out property <string> profile-section: lang == "ru" ? "Профиль" : "Profile";
+    out property <string> change-avatar: lang == "ru" ? "Сменить аватар" : "Change picture";
+    out property <string> delete-avatar: lang == "ru" ? "Убрать аватар" : "Remove picture";
+    out property <string> avatar-banned: lang == "ru"
+        ? "Смена аватара для аккаунта сейчас запрещена."
+        : "This account may not change its picture for now.";
+    out property <string> status-field: lang == "ru" ? "Статус" : "Status";
+    out property <string> privacy: lang == "ru" ? "Приватность" : "Privacy";
+    out property <string> privacy-counts: lang == "ru" ? "Счётчики списков" : "List counts";
+    out property <string> privacy-stats: lang == "ru" ? "Статистика" : "Statistics";
+    out property <string> privacy-social: lang == "ru" ? "Соцсети" : "Social links";
+    out property <string> privacy-friend-requests: lang == "ru" ? "Заявки в друзья" : "Friend requests";
+    out property <string> privacy-everyone: lang == "ru" ? "Все" : "Everyone";
+    out property <string> privacy-friends: lang == "ru" ? "Друзья" : "Friends";
+    out property <string> privacy-me: lang == "ru" ? "Только я" : "Only me";
+    out property <string> privacy-nobody: lang == "ru" ? "Никто" : "Nobody";
+    out property <string> incognito: lang == "ru" ? "Инкогнито" : "Incognito";
+    out property <string> incognito-why: lang == "ru"
+        ? "Другие не видят, что вы в сети."
+        : "Others do not see when you are online.";
+    out property <string> socials: lang == "ru" ? "Соцсети" : "Social links";
+    out property <string> login-section: lang == "ru" ? "Вход" : "Signing in";
+    out property <string> login-change-why: lang == "ru"
+        ? "Логин можно менять не чаще, чем разрешает сервис."
+        : "The login can be changed only as often as the service allows.";
+    public pure function login-next-change(date: string) -> string {
+        lang == "ru" ? "Сменить логин снова можно " + date + "." : "The login can be changed again on " + date + "."
+    }
+    out property <string> change: lang == "ru" ? "Сменить" : "Change";
+    out property <string> current-password-field: lang == "ru" ? "Текущий пароль" : "Current password";
+    out property <string> current-email-field: lang == "ru" ? "Текущая почта" : "Current email";
+    out property <string> new-email-field: lang == "ru" ? "Новая почта" : "New email";
+    public pure function email-now(hint: string) -> string {
+        lang == "ru" ? "Сейчас: " + hint : "Now: " + hint
+    }
+
+    /// The words for the outcome of a settings change Rust has named.
+    public pure function settings-message(key: string) -> string {
+        key == "saved" ? (lang == "ru" ? "Сохранено" : "Saved")
+        : key == "avatar-saved" ? (lang == "ru" ? "Аватар обновлён" : "Picture updated")
+        : key == "avatar-unreadable" ? (lang == "ru" ? "Этот файл не прочитать" : "That file could not be read")
+        : key == "login-saved" ? (lang == "ru" ? "Логин изменён" : "Login changed")
+        : key == "login-bad" ? (lang == "ru" ? "Такой логин не подойдёт" : "That login will not do")
+        : key == "login-taken" ? (lang == "ru" ? "Логин занят" : "That login is taken")
+        : key == "login-too-soon" ? (lang == "ru" ? "Логин менялся слишком недавно" : "The login was changed too recently")
+        : key == "password-saved" ? (lang == "ru" ? "Пароль изменён" : "Password changed")
+        : key == "password-bad" ? (lang == "ru" ? "Новый пароль слишком простой или короткий" : "The new password is too short or too simple")
+        : key == "password-wrong" ? (lang == "ru" ? "Текущий пароль неверный" : "The current password is wrong")
+        : key == "email-code-sent" ? (lang == "ru" ? "Код отправлен на новую почту" : "A code went to the new email")
+        : key == "email-saved" ? (lang == "ru" ? "Почта изменена" : "Email changed")
+        : key == "email-wrong-password" ? (lang == "ru" ? "Неверный пароль" : "Wrong password")
+        : key == "email-wrong-current" ? (lang == "ru" ? "Текущая почта указана неверно" : "That is not the current email")
+        : key == "email-bad" ? (lang == "ru" ? "Это не похоже на почту" : "That does not look like an email")
+        : key == "email-taken" ? (lang == "ru" ? "На эту почту уже есть аккаунт" : "That email already has an account")
+        : key == "wrong-code" ? (lang == "ru" ? "Неверный или устаревший код" : "Wrong or expired code")
+        : key == "cannot-send" ? (lang == "ru" ? "Не получилось отправить письмо" : "The email could not be sent")
+        : (lang == "ru" ? "Не получилось. Попробуйте ещё раз." : "That did not work. Try again.")
+    }
+    public pure function settings-message-is-error(key: string) -> bool {
+        key != "saved" && key != "avatar-saved" && key != "login-saved"
+            && key != "password-saved" && key != "email-code-sent" && key != "email-saved"
+    }
+
     /// The words for a refusal Rust has named.
     public pure function auth-error(key: string) -> string {
         key == "unknown-login" ? root.unknown-login

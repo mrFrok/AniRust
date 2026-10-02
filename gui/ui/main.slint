@@ -13,7 +13,8 @@ import { FeedPage } from "pages/feed.slint";
 import { CommentsSheet } from "components/comments.slint";
 import { NotificationsSheet } from "components/notifications.slint";
 import { CollectionEditor, CollectionPicker } from "components/collections.slint";
-import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem, CollectionItem } from "structs.slint";
+import { AccountSettingsSheet } from "components/account-settings.slint";
+import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem, CollectionItem, AccountSettings } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -83,6 +84,27 @@ export component MainWindow inherits Window {
     in property <int> release-vote: 0;
     callback set-release-list(int);
     callback toggle-release-favourite();
+
+    // ---- account settings ------------------------------------------------
+    in-out property <bool> settings-open: false;
+    in property <AccountSettings> account-settings;
+    in property <bool> settings-loading: false;
+    in property <bool> settings-busy: false;
+    in property <string> settings-message;
+    in property <bool> email-code-pending: false;
+    in property <[string]> settings-login-suggestions: [];
+    callback open-settings();
+    callback change-avatar();
+    callback delete-avatar();
+    callback save-status(string);
+    callback set-privacy(int, int);
+    callback toggle-incognito();
+    callback save-socials(string, string, string, string, string);
+    callback change-login(string);
+    callback change-password(string, string);
+    callback change-email(string, string, string);
+    callback verify-email(string);
+    callback resend-email();
 
     // ---- search beyond releases -------------------------------------------
     in property <[PersonItem]> found-people: [];
@@ -444,6 +466,7 @@ export component MainWindow inherits Window {
 
             sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
             sign-out => { root.sign-out(); }
+            open-settings => { root.open-settings(); }
             select-appearance(i) => { root.select-appearance(i); }
             open-list(i) => { root.open-list(i); }
             open-recent(i) => { root.open-recent(i); }
@@ -700,6 +723,29 @@ export component MainWindow inherits Window {
         sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
     }
 
+    if root.settings-open: AccountSettingsSheet {
+        width: 100%;
+        height: 100%;
+        settings: root.account-settings;
+        loading: root.settings-loading;
+        busy: root.settings-busy;
+        message: root.settings-message;
+        email-code-pending: root.email-code-pending;
+        login-suggestions: root.settings-login-suggestions;
+        change-avatar => { root.change-avatar(); }
+        delete-avatar => { root.delete-avatar(); }
+        save-status(s) => { root.save-status(s); }
+        set-privacy(what, value) => { root.set-privacy(what, value); }
+        toggle-incognito => { root.toggle-incognito(); }
+        save-socials(a, b, c, d, e) => { root.save-socials(a, b, c, d, e); }
+        change-login(l) => { root.change-login(l); }
+        change-password(a, b) => { root.change-password(a, b); }
+        change-email(a, b, c) => { root.change-email(a, b, c); }
+        verify-email(c) => { root.verify-email(c); }
+        resend-email => { root.resend-email(); }
+        dismiss => { root.settings-open = false; }
+    }
+
     if root.collection-editor-open: CollectionEditor {
         width: 100%;
         height: 100%;
@@ -764,7 +810,7 @@ export component MainWindow inherits Window {
                 root.close-comments();
                 return accept;
             }
-            if (root.show-sign-in || root.comments-open || root.notifications-open || root.collection-editor-open || root.collection-picker-open || !root.playing) { return reject; }
+            if (root.show-sign-in || root.comments-open || root.notifications-open || root.collection-editor-open || root.collection-picker-open || root.settings-open || !root.playing) { return reject; }
 
             // ---- transport ----
             if (event.text == " " || event.text == "k") { root.toggle-pause(); return accept; }

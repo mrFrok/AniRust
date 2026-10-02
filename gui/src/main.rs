@@ -22,6 +22,7 @@ mod progress;
 mod register;
 mod release;
 mod session;
+mod settings;
 mod tasks;
 mod video;
 
@@ -97,6 +98,7 @@ fn main() -> Result<()> {
         home: Rc::new(RefCell::new(HomeState::new(Rc::clone(&account)))),
         collections: Rc::new(RefCell::new(collections::CollectionsState::default())),
         pending: Rc::new(RefCell::new(register::Pending::default())),
+        email_change: Rc::new(RefCell::new(settings::EmailChange::default())),
         feed: Rc::new(RefCell::new(feed::FeedState::default())),
         comments: Rc::new(RefCell::new(comments::CommentsState::default())),
         notifications: Rc::new(RefCell::new(notifications::NotificationsState::default())),
@@ -109,6 +111,7 @@ fn main() -> Result<()> {
 
     wire_home(&window, &app);
     wire_collections(&window, &app);
+    wire_settings(&window, &app);
     wire_feed(&window, &app);
     wire_comments(&window, &app);
     wire_notifications(&window, &app);
@@ -160,6 +163,7 @@ struct App {
     feed: Rc<RefCell<feed::FeedState>>,
     collections: Rc<RefCell<collections::CollectionsState>>,
     pending: Rc<RefCell<register::Pending>>,
+    email_change: Rc<RefCell<settings::EmailChange>>,
     comments: Rc<RefCell<comments::CommentsState>>,
     notifications: Rc<RefCell<notifications::NotificationsState>>,
     people: Rc<RefCell<people::PeopleState>>,
@@ -685,6 +689,80 @@ fn wire_feed(window: &MainWindow, app: &Rc<App>) {
             feed::toggle_channel_mute(&window, &app.feed, &app.client, app.http.clone(), index);
         }
     });
+}
+
+fn settings_context<'a>(window: &'a MainWindow, app: &'a App) -> settings::Context<'a> {
+    settings::Context {
+        window,
+        email: &app.email_change,
+        session: &app.account,
+        people: &app.people,
+        client: &app.client,
+        http: app.http.clone(),
+    }
+}
+
+/// A window callback that acts on the account's settings.
+macro_rules! on_settings {
+    ($window:expr, $app:expr, $setter:ident, |$cx:ident $(, $arg:ident)*| $body:expr) => {{
+        let app = Rc::clone($app);
+        let weak = $window.as_weak();
+        $window.$setter(move |$($arg),*| {
+            let Some(window) = weak.upgrade() else { return };
+            let $cx = settings_context(&window, &app);
+            $body;
+        });
+    }};
+}
+
+fn wire_settings(window: &MainWindow, app: &Rc<App>) {
+    on_settings!(window, app, on_open_settings, |cx| settings::open(&cx));
+    on_settings!(window, app, on_change_avatar, |cx| settings::change_avatar(
+        &cx
+    ));
+    on_settings!(window, app, on_delete_avatar, |cx| settings::delete_avatar(
+        &cx
+    ));
+    on_settings!(window, app, on_save_status, |cx, status| {
+        settings::save_status(&cx, status.into())
+    });
+    on_settings!(window, app, on_set_privacy, |cx, what, value| {
+        settings::set_privacy(&cx, what, value)
+    });
+    on_settings!(window, app, on_toggle_incognito, |cx| {
+        settings::toggle_incognito(&cx)
+    });
+    on_settings!(
+        window,
+        app,
+        on_save_socials,
+        |cx, vk, tg, inst, tt, discord| {
+            settings::save_socials(
+                &cx,
+                [vk, tg, inst, tt, discord].map(|page| page.to_string()),
+            )
+        }
+    );
+    on_settings!(window, app, on_change_login, |cx, login| {
+        settings::change_login(&cx, login.into())
+    });
+    on_settings!(window, app, on_change_password, |cx, current, new| {
+        settings::change_password(&cx, current.into(), new.into())
+    });
+    on_settings!(
+        window,
+        app,
+        on_change_email,
+        |cx, current, password, new| {
+            settings::change_email(&cx, current.into(), password.into(), new.into())
+        }
+    );
+    on_settings!(window, app, on_verify_email, |cx, code| {
+        settings::verify_email(&cx, code.into())
+    });
+    on_settings!(window, app, on_resend_email, |cx| settings::resend_email(
+        &cx
+    ));
 }
 
 fn register_context<'a>(window: &'a MainWindow, app: &'a App) -> register::Context<'a> {

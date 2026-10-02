@@ -27,7 +27,7 @@
 //! `profile-light`, `home-downloading`, `feed`, `feed-latest`,
 //! `feed-signed-out`, `feed-empty`, `feed-channels`, `feed-channel`, `collections`, `collection`,
 //! `collection-editor`, `collection-picker`, `search`, `sign-up`,
-//! `sign-up-code`, `restore-code`, `comments`, `comments-replying`,
+//! `sign-up-code`, `restore-code`, `settings`, `settings-email`, `comments`, `comments-replying`,
 //! `comments-signed-out`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
@@ -89,6 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || state.starts_with("notifications")
             || state.starts_with("collection")
             || state == "search"
+            || state.starts_with("settings")
         {
             "home".into()
         } else {
@@ -239,6 +240,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|t| slint::SharedString::from(*t))
                 .collect::<Vec<_>>(),
         )));
+    }
+    // The account's settings over its profile, with a change refused.
+    if state.starts_with("settings") {
+        ui.set_destination(4);
+        ui.set_signed_in(true);
+        ui.set_settings_open(true);
+        ui.set_account_settings(AccountSettings {
+            status: "Смотрю всё подряд".into(),
+            email_hint: "m***k@g***.com".into(),
+            telegram: "mrfrok".into(),
+            privacy_stats: 1,
+            privacy_social: 2,
+            privacy_friend_requests: 0,
+            incognito: true,
+            login_change_available: state == "settings",
+            login_next_change: "12 ноября 2026".into(),
+            ..AccountSettings::default()
+        });
+        ui.set_settings_message(
+            if state == "settings" {
+                "login-taken"
+            } else {
+                "saved"
+            }
+            .into(),
+        );
+        ui.set_email_code_pending(state == "settings-email");
     }
     // A search of everything: people and channels over the releases.
     if state == "search" {

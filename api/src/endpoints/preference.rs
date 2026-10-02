@@ -235,7 +235,8 @@ impl Client {
     }
 
     /// Who may see one part of the account. `permission` is the service's
-    /// number for everyone, friends or nobody.
+    /// number: 0 everyone, 1 friends only, 2 only the account itself. For
+    /// friend requests there are two: 0 anyone may send one, 1 nobody.
     ///
     /// `POST profile/preference/privacy/{counts,stats,social,friendRequests}/edit`
     pub async fn privacy_edit(&self, what: Privacy, permission: i32) -> Result<()> {

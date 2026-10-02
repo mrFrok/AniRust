@@ -11,7 +11,7 @@
 // can act on is decoration, and this client has no room for decoration it
 // cannot click.
 
-import { MaterialPalette, ListTile, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton, FilledCard, IconButton, Switch, TextButton } from "@material";
+import { MaterialPalette, ListTile, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton, FilledCard, IconButton, Switch, TextButton, TonalButton } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -280,6 +280,7 @@ export component ProfilePage inherits Rectangle {
 
     callback sign-in();
     callback sign-out();
+    callback open-settings();
     callback select-appearance(int);
     /// One of the account's own lists, by its place in the bookmarks tabs.
     callback open-list(int);
@@ -431,9 +432,18 @@ export component ProfilePage inherits Rectangle {
                     clicked => { root.sign-in(); }
                 }
 
-                if root.signed-in && root.mine: OutlineButton {
-                    text: Tr.sign-out;
-                    clicked => { root.sign-out(); }
+                if root.signed-in && root.mine: HorizontalLayout {
+                    spacing: Spacing.small;
+
+                    TonalButton {
+                        text: Tr.account-settings;
+                        clicked => { root.open-settings(); }
+                    }
+
+                    OutlineButton {
+                        text: Tr.sign-out;
+                        clicked => { root.sign-out(); }
+                    }
                 }
 
                 // Someone else's: the one friend button, saying what it will

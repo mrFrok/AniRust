@@ -1,0 +1,461 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The account's own settings: its picture and status, who sees what, its
+// links elsewhere, and how it is signed in to.
+//
+// A tall sheet over the profile rather than a page: these are visited, not
+// lived on, and the profile they change stays in sight behind them.
+
+import { ScrollView } from "std-widgets.slint";
+import { MaterialPalette, TextField, FilledButton, TonalButton, TextButton, OutlineButton, Switch, SegmentedButton, HorizontalDivider, IconButton } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+import { AccountSettings } from "../structs.slint";
+
+component Heading inherits Text {
+    color: MaterialPalette.on-surface;
+    font-size: Typography.title-medium-size;
+    font-weight: Typography.title-medium-weight-em;
+}
+
+component Hint inherits Text {
+    color: MaterialPalette.on-surface-variant;
+    font-size: Typography.body-medium-size;
+    wrap: word-wrap;
+}
+
+/// One privacy setting: a label and the choice of who.
+component PrivacyRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <int> value;
+    /// Two choices rather than three: anyone or nobody.
+    in property <bool> two: false;
+    callback picked(int);
+
+    spacing: Spacing.base;
+
+    Text {
+        text: root.label;
+        color: MaterialPalette.on-surface;
+        font-size: Typography.body-large-size;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+        wrap: word-wrap;
+    }
+
+    SegmentedButton {
+        items: root.two
+            ? [{ text: Tr.privacy-everyone }, { text: Tr.privacy-nobody }]
+            : [{ text: Tr.privacy-everyone }, { text: Tr.privacy-friends }, { text: Tr.privacy-me }];
+
+        // Pushed, not bound: the control writes its own index on a click,
+        // and what is in force is the server's.
+        property <int> wanted: root.value;
+        init => { self.current-index = root.value; }
+        changed wanted => { self.current-index = self.wanted; }
+        index-changed(i) => {
+            if (i != root.value) { root.picked(i); }
+        }
+    }
+}
+
+export component AccountSettingsSheet inherits Rectangle {
+    in property <AccountSettings> settings;
+    in property <bool> loading: false;
+    in property <bool> busy: false;
+    /// The outcome of the last change, named by Rust; see `Tr.settings-message`.
+    in property <string> message;
+    /// A code has been sent to the new email, and is wanted here.
+    in property <bool> email-code-pending: false;
+    in property <[string]> login-suggestions: [];
+
+    callback change-avatar();
+    callback delete-avatar();
+    callback save-status(string);
+    callback set-privacy(int, int);
+    callback toggle-incognito();
+    callback save-socials(string, string, string, string, string);
+    callback change-login(string);
+    callback change-password(string, string);
+    callback change-email(string, string, string);
+    callback verify-email(string);
+    callback resend-email();
+    callback dismiss();
+
+    // Drafts, filled from the settings whenever they arrive.
+    property <string> status;
+    property <string> vk;
+    property <string> telegram;
+    property <string> instagram;
+    property <string> tiktok;
+    property <string> discord;
+    property <string> new-login;
+    property <string> current-password;
+    property <string> new-password;
+    property <string> current-email;
+    property <string> email-password;
+    property <string> new-email;
+    property <string> email-code;
+
+    function fill() {
+        self.status = self.settings.status;
+        self.vk = self.settings.vk;
+        self.telegram = self.settings.telegram;
+        self.instagram = self.settings.instagram;
+        self.tiktok = self.settings.tiktok;
+        self.discord = self.settings.discord;
+    }
+
+    init => { self.fill(); }
+    changed settings => { self.fill(); }
+
+    background: #000000A6;
+
+    TouchArea {
+        clicked => { root.dismiss(); }
+    }
+
+    card := Rectangle {
+        width: min(620px, parent.width - 2 * Spacing.comfortable);
+        height: parent.height - 2 * Spacing.comfortable;
+        x: (parent.width - self.width) / 2;
+        y: Spacing.comfortable;
+        border-radius: Shape.extra-large;
+        background: MaterialPalette.surface-container-high;
+        drop-shadow-blur: 32px;
+        drop-shadow-color: #00000080;
+
+        // Swallows clicks so they do not reach the scrim behind.
+        TouchArea {}
+
+        VerticalLayout {
+            padding-top: Spacing.base;
+            padding-bottom: Spacing.base;
+
+            HorizontalLayout {
+                padding-left: Spacing.comfortable;
+                padding-right: Spacing.base;
+
+                Text {
+                    text: Tr.account-settings;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-large-size;
+                    font-weight: Typography.title-large-weight-em;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                IconButton {
+                    icon: @image-url("../icons/close.svg");
+                    clicked => { root.dismiss(); }
+                }
+            }
+
+            ScrollView {
+                vertical-stretch: 1;
+
+                VerticalLayout {
+                    padding-left: Spacing.comfortable;
+                    padding-right: Spacing.comfortable;
+                    padding-bottom: Spacing.base;
+                    spacing: Spacing.base;
+                    alignment: start;
+
+                    if root.loading: Hint { text: Tr.loading; }
+
+                    // ---- picture and status -------------------------------
+                    Heading { text: Tr.profile-section; }
+
+                    HorizontalLayout {
+                        spacing: Spacing.small;
+                        alignment: start;
+
+                        TonalButton {
+                            text: Tr.change-avatar;
+                            enabled: !root.busy && !root.settings.avatar-banned;
+                            clicked => { root.change-avatar(); }
+                        }
+
+                        TextButton {
+                            text: Tr.delete-avatar;
+                            enabled: !root.busy;
+                            clicked => { root.delete-avatar(); }
+                        }
+                    }
+
+                    if root.settings.avatar-banned: Hint { text: Tr.avatar-banned; }
+
+                    HorizontalLayout {
+                        spacing: Spacing.small;
+
+                        TextField {
+                            horizontal-stretch: 1;
+                            label: Tr.status-field;
+                            text <=> root.status;
+                            accepted(text) => { root.save-status(root.status); }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+
+                            TonalButton {
+                                text: Tr.save;
+                                enabled: !root.busy && root.status != root.settings.status;
+                                clicked => { root.save-status(root.status); }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider {}
+
+                    // ---- who sees what -----------------------------------
+                    Heading { text: Tr.privacy; }
+
+                    PrivacyRow {
+                        label: Tr.privacy-counts;
+                        value: root.settings.privacy-counts;
+                        picked(v) => { root.set-privacy(0, v); }
+                    }
+
+                    PrivacyRow {
+                        label: Tr.privacy-stats;
+                        value: root.settings.privacy-stats;
+                        picked(v) => { root.set-privacy(1, v); }
+                    }
+
+                    PrivacyRow {
+                        label: Tr.privacy-social;
+                        value: root.settings.privacy-social;
+                        picked(v) => { root.set-privacy(2, v); }
+                    }
+
+                    PrivacyRow {
+                        label: Tr.privacy-friend-requests;
+                        value: root.settings.privacy-friend-requests;
+                        two: true;
+                        picked(v) => { root.set-privacy(3, v); }
+                    }
+
+                    HorizontalLayout {
+                        spacing: Spacing.base;
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+
+                            Text {
+                                text: Tr.incognito;
+                                color: MaterialPalette.on-surface;
+                                font-size: Typography.body-large-size;
+                            }
+
+                            Hint { text: Tr.incognito-why; }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+
+                            Switch {
+                                width: 52px;
+                                height: 32px;
+                                checked: root.settings.incognito;
+                                // Put back to what Rust says at once: the
+                                // switch pictures the server's setting.
+                                changed checked => {
+                                    if (self.checked != root.settings.incognito) {
+                                        self.checked = root.settings.incognito;
+                                        root.toggle-incognito();
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider {}
+
+                    // ---- links elsewhere ---------------------------------
+                    Heading { text: Tr.socials; }
+
+                    TextField { label: "VK"; text <=> root.vk; }
+                    TextField { label: "Telegram"; text <=> root.telegram; }
+                    TextField { label: "Instagram"; text <=> root.instagram; }
+                    TextField { label: "TikTok"; text <=> root.tiktok; }
+                    TextField { label: "Discord"; text <=> root.discord; }
+
+                    HorizontalLayout {
+                        alignment: end;
+
+                        TonalButton {
+                            text: Tr.save;
+                            enabled: !root.busy;
+                            clicked => {
+                                root.save-socials(root.vk, root.telegram, root.instagram, root.tiktok, root.discord);
+                            }
+                        }
+                    }
+
+                    HorizontalDivider {}
+
+                    // ---- signing in --------------------------------------
+                    Heading { text: Tr.login-section; }
+
+                    Hint {
+                        text: root.settings.login-change-available
+                            ? Tr.login-change-why
+                            : Tr.login-next-change(root.settings.login-next-change);
+                    }
+
+                    HorizontalLayout {
+                        spacing: Spacing.small;
+
+                        TextField {
+                            horizontal-stretch: 1;
+                            label: Tr.new-login-field;
+                            text <=> root.new-login;
+                            enabled: root.settings.login-change-available;
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+
+                            TonalButton {
+                                text: Tr.change;
+                                enabled: !root.busy && root.settings.login-change-available && root.new-login != "";
+                                clicked => { root.change-login(root.new-login); }
+                            }
+                        }
+                    }
+
+                    if root.login-suggestions.length > 0: HorizontalLayout {
+                        spacing: Spacing.small;
+                        alignment: start;
+
+                        for suggestion in root.login-suggestions: TextButton {
+                            text: suggestion;
+                            clicked => { root.new-login = suggestion; }
+                        }
+                    }
+
+                    Text {
+                        text: Tr.password-field;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.title-small-size;
+                        font-weight: Typography.title-small-weight-em;
+                    }
+
+                    TextField {
+                        label: Tr.current-password-field;
+                        input-type: InputType.password;
+                        text <=> root.current-password;
+                    }
+
+                    TextField {
+                        label: Tr.new-password-field;
+                        input-type: InputType.password;
+                        text <=> root.new-password;
+                    }
+
+                    HorizontalLayout {
+                        alignment: end;
+
+                        TonalButton {
+                            text: Tr.change;
+                            enabled: !root.busy && root.current-password != "" && root.new-password != "";
+                            clicked => {
+                                root.change-password(root.current-password, root.new-password);
+                                root.current-password = "";
+                                root.new-password = "";
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: Tr.email-field;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.title-small-size;
+                        font-weight: Typography.title-small-weight-em;
+                    }
+
+                    if root.settings.email-hint != "": Hint {
+                        text: Tr.email-now(root.settings.email-hint);
+                    }
+
+                    if !root.email-code-pending: VerticalLayout {
+                        spacing: Spacing.base;
+
+                        TextField { label: Tr.current-email-field; text <=> root.current-email; }
+
+                        TextField {
+                            label: Tr.password-field;
+                            input-type: InputType.password;
+                            text <=> root.email-password;
+                        }
+
+                        TextField { label: Tr.new-email-field; text <=> root.new-email; }
+
+                        HorizontalLayout {
+                            alignment: end;
+
+                            TonalButton {
+                                text: Tr.change;
+                                enabled: !root.busy && root.current-email != "" && root.email-password != "" && root.new-email != "";
+                                clicked => { root.change-email(root.current-email, root.email-password, root.new-email); }
+                            }
+                        }
+                    }
+
+                    if root.email-code-pending: VerticalLayout {
+                        spacing: Spacing.base;
+
+                        Hint { text: Tr.code-sent; }
+
+                        TextField {
+                            label: Tr.code-field;
+                            text <=> root.email-code;
+                            accepted(text) => { root.verify-email(root.email-code); }
+                        }
+
+                        HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: end;
+
+                            TextButton {
+                                text: Tr.resend-code;
+                                enabled: !root.busy;
+                                clicked => { root.resend-email(); }
+                            }
+
+                            FilledButton {
+                                text: Tr.confirm;
+                                enabled: !root.busy && root.email-code != "";
+                                clicked => { root.verify-email(root.email-code); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // What the last change came to, where it is seen whichever
+            // section it was made in.
+            if root.message != "" || root.busy: Rectangle {
+                height: 44px;
+                background: root.message != "" && Tr.settings-message-is-error(root.message)
+                    ? MaterialPalette.error-container
+                    : MaterialPalette.secondary-container;
+
+                Text {
+                    x: Spacing.comfortable;
+                    width: parent.width - 2 * Spacing.comfortable;
+                    height: 100%;
+                    text: root.busy ? Tr.loading : Tr.settings-message(root.message);
+                    color: root.message != "" && Tr.settings-message-is-error(root.message)
+                        ? MaterialPalette.on-error-container
+                        : MaterialPalette.on-secondary-container;
+                    font-size: Typography.body-medium-size;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+        }
+    }
+}
