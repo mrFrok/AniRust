@@ -142,3 +142,15 @@ fn a_public_profile_carries_its_statistics() {
     );
     assert!(p.friend_status.is_none(), "nobody signed in");
 }
+
+/// `GET collection/510`, with the creator and description replaced. It comes
+/// with how much of it is in each of the account's lists, all zero here
+/// because nobody was signed in.
+#[test]
+fn a_collection_comes_with_the_account_s_share_of_it() {
+    let view: anirust_api::CollectionView = load("collection.json");
+    assert_eq!(view.collection.id, 510);
+    assert!(!view.collection.title.is_empty());
+    assert!(view.collection.favorites_count > 0);
+    assert_eq!(view.plan_count, 0);
+}

@@ -1711,3 +1711,132 @@ async fn channel_pictures_go_up_as_the_image_part() {
         .await
         .expect("a cover");
 }
+
+// ---- A7: collections ------------------------------------------------------
+
+endpoint! {
+    collection: "GET" "/collection/510",
+    token: true,
+    reply: json!({ "code": 0, "collection": { "id": 510 }, "plan_count": 2 }),
+    call: |c| c.collection(510),
+}
+
+endpoint! {
+    collections: "GET" "/collection/all/0",
+    token: true,
+    ["previous_page" = "0"] ["where" = "0"] ["sort" = "1"]
+    reply: page(),
+    call: |c| c.collections(0, anirust_api::CollectionSort::MostFavourited),
+}
+
+endpoint! {
+    profile_collections: "GET" "/collection/all/profile/5/0",
+    token: true,
+    reply: page(),
+    call: |c| c.profile_collections(5, 0),
+}
+
+endpoint! {
+    release_collections: "GET" "/collection/all/release/7/0",
+    token: true,
+    ["sort" = "2"]
+    reply: page(),
+    call: |c| c.release_collections(7, 0, anirust_api::CollectionSort::Trending),
+}
+
+endpoint! {
+    collection_releases: "GET" "/collection/510/releases/0",
+    token: true,
+    reply: page(),
+    call: |c| c.collection_releases(510, 0),
+}
+
+endpoint! {
+    favorite_collections: "GET" "/collectionFavorite/all/0",
+    token: true,
+    reply: page(),
+    call: |c| c.favorite_collections(0),
+}
+
+endpoint! {
+    collection_favorite_add: "GET" "/collectionFavorite/add/510",
+    token: true,
+    reply: ack(),
+    call: |c| c.collection_favorite_add(510),
+}
+
+endpoint! {
+    collection_favorite_delete: "GET" "/collectionFavorite/delete/510",
+    token: true,
+    reply: ack(),
+    call: |c| c.collection_favorite_delete(510),
+}
+
+endpoint! {
+    collection_delete: "GET" "/collectionMy/delete/3",
+    token: true,
+    reply: ack(),
+    call: |c| c.collection_delete(3),
+}
+
+endpoint! {
+    collection_add_release: "GET" "/collectionMy/release/add/3",
+    token: true,
+    ["release_id" = "7"]
+    reply: ack(),
+    call: |c| c.collection_add_release(3, 7),
+}
+
+endpoint! {
+    my_collection_releases: "GET" "/collectionMy/3/releases",
+    token: true,
+    reply: page(),
+    call: |c| c.my_collection_releases(3),
+}
+
+#[tokio::test]
+async fn collection_create_and_edit_bodies() {
+    let server = MockServer::start().await;
+    let body =
+        json!({ "title": "Исекаи", "description": "", "is_private": true, "releases": [7, 9] });
+    for route in ["/collectionMy/create", "/collectionMy/edit/3"] {
+        Mock::given(method("POST"))
+            .and(path(route))
+            .and(body_json(body.clone()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({ "code": 0, "collection": { "id": 3 } })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+    let c = client(&server);
+    assert_eq!(
+        c.collection_create("Исекаи", "", true, &[7, 9])
+            .await
+            .expect("created")
+            .id,
+        3
+    );
+    c.collection_edit(3, "Исекаи", "", true, &[7, 9])
+        .await
+        .expect("edited");
+}
+
+#[tokio::test]
+async fn collection_cover_goes_up_with_its_name_part() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/collectionMy/editImage/3"))
+        .and(body_string_contains("name=\"image\"; filename=\"c.jpg\""))
+        .and(body_string_contains("name=\"name\""))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "code": 0, "url": "u" })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    client(&server)
+        .collection_image(3, "c.jpg", "image/jpeg", b"J".to_vec())
+        .await
+        .expect("a cover");
+}

@@ -1,0 +1,28 @@
+{
+ "code": 0,
+ "collection": {
+  "@id": 1,
+  "id": 510,
+  "creator": {
+   "id": 1001,
+   "login": "user1",
+   "avatar": ""
+  },
+  "title": "18+ Запрещено Для Детей! ? ",
+  "description": "Описание коллекции, заменено.",
+  "image": "https://s.anixmirai.com/collections/2d3fbcffe8a44d7f02a2b8c374085b84f0284201_qKKJkSvxXZ.jpg",
+  "releases": [],
+  "is_private": false,
+  "is_deleted": false,
+  "creation_date": 1603875363,
+  "last_update_date": 1756066791,
+  "comment_count": 351,
+  "favorites_count": 19889,
+  "is_favorite": false
+ },
+ "watching_count": 0,
+ "plan_count": 0,
+ "completed_count": 0,
+ "hold_on_count": 0,
+ "dropped_count": 0
+}
