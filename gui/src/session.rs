@@ -349,6 +349,14 @@ fn show_profile(window: &MainWindow, profile: &Profile, http: reqwest::Client) {
         comments: count(profile.comment_count),
         collections: count(profile.collection_count),
         friends: count(profile.friend_count),
+        episodes_watched: count(profile.watched_episode_count),
+        minutes_watched: count(profile.watched_time),
+        genres: shares(&profile.preferred_genres).into(),
+        audiences: shares(&profile.preferred_audiences).into(),
+        themes: shares(&profile.preferred_themes).into(),
+        dynamics: ints(last_days(&profile.watch_dynamics).map(|day| count(day.count))),
+        dynamics_days: ints(last_days(&profile.watch_dynamics).map(|day| day.day)),
+        stats_hidden: profile.is_stats_hidden,
     });
 
     // The account's own picture. The field is a URL where it has been seen at
@@ -365,6 +373,33 @@ fn show_profile(window: &MainWindow, profile: &Profile, http: reqwest::Client) {
         window.set_avatar(image);
         window.set_avatar_loaded(true);
     });
+}
+
+/// How many days of viewing the chart shows: the official client shows a
+/// week and a day, and so does this.
+const CHART_DAYS: usize = 8;
+
+/// The last [`CHART_DAYS`] days of an account's viewing, oldest first.
+fn last_days(days: &[anirust_api::WatchDay]) -> impl Iterator<Item = &anirust_api::WatchDay> {
+    let mut sorted: Vec<&anirust_api::WatchDay> = days.iter().collect();
+    sorted.sort_by_key(|day| day.timestamp);
+    let skip = sorted.len().saturating_sub(CHART_DAYS);
+    sorted.into_iter().skip(skip)
+}
+
+fn ints(values: impl Iterator<Item = i32>) -> slint::ModelRc<i32> {
+    slint::ModelRc::new(VecModel::from(values.collect::<Vec<_>>()))
+}
+
+/// Shares as one line: "комедия 12%, фэнтези 10%, экшен 9%". The first
+/// three, which is what fits beside a label and what the official client
+/// shows.
+fn shares(list: &[anirust_api::Share]) -> String {
+    list.iter()
+        .take(3)
+        .map(|share| format!("{} {}%", share.name, share.percentage))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// A count as the interface carries it.
@@ -501,6 +536,36 @@ mod tests {
         assert_eq!(minutes_since(1_000, 940), 0);
         assert_eq!(minutes_since(1_000, 1_600), 10);
         assert_eq!(minutes_since(0, 1_600), 0);
+    }
+
+    #[test]
+    fn the_chart_is_the_last_days_in_order() {
+        let day = |ts: i64, d: i32| anirust_api::WatchDay {
+            day: d,
+            count: 1,
+            timestamp: ts,
+        };
+        let days: Vec<_> = (0..12)
+            .rev()
+            .map(|n| day(n * 86_400, i32::try_from(n).unwrap_or(0) + 1))
+            .collect();
+        let shown: Vec<i32> = last_days(&days).map(|d| d.day).collect();
+        assert_eq!(shown, [5, 6, 7, 8, 9, 10, 11, 12]);
+    }
+
+    #[test]
+    fn shares_read_as_one_line_of_three() {
+        let share = |n: &str, p: i32| anirust_api::Share {
+            name: n.into(),
+            percentage: p,
+        };
+        let list = [
+            share("комедия", 12),
+            share("фэнтези", 10),
+            share("экшен", 9),
+            share("драма", 2),
+        ];
+        assert_eq!(shares(&list), "комедия 12%, фэнтези 10%, экшен 9%");
     }
 
     #[test]

@@ -132,6 +132,83 @@ component Reading inherits Rectangle {
     }
 }
 
+/// A label and a number on one line.
+component Stat2 inherits HorizontalLayout {
+    in property <string> label;
+    in property <int> value;
+
+    spacing: Spacing.small;
+
+    Text {
+        text: root.label + ":";
+        color: MaterialPalette.on-surface-variant;
+        font-size: Typography.body-medium-size;
+    }
+
+    Text {
+        text: root.value;
+        color: MaterialPalette.on-surface;
+        font-size: Typography.body-medium-size;
+        font-weight: Typography.body-medium-weight-em;
+        horizontal-stretch: 1;
+    }
+}
+
+/// Episodes per day as bars, the count over each bar and the day under it.
+///
+/// Scaled to the busiest day shown, so the shape of the week reads whatever
+/// its size; a day with none keeps a stub, so it reads as a day with none
+/// rather than as a gap.
+component Bars inherits HorizontalLayout {
+    in property <[int]> values;
+    in property <[int]> days;
+
+    property <int> most: root.biggest();
+    property <length> tallest: 96px;
+
+    spacing: Spacing.small;
+    height: root.tallest + 44px;
+
+    for value[i] in root.values: VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: end;
+        spacing: Spacing.tight;
+
+        Text {
+            text: value;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.label-medium-size;
+            horizontal-alignment: center;
+        }
+
+        Rectangle {
+            height: max(6px, root.tallest * value / max(1, root.most));
+            border-radius: Shape.small;
+            background: value > 0 ? MaterialPalette.primary : MaterialPalette.surface-container-highest;
+        }
+
+        Text {
+            text: i < root.days.length ? root.days[i] : "";
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.label-small-size;
+            horizontal-alignment: center;
+        }
+    }
+
+    /// The largest value, by hand: Slint has no max over a model. Eight days
+    /// at most, which this unrolls.
+    pure function biggest() -> int {
+        max(
+            max(root.at(0), root.at(1), root.at(2), root.at(3)),
+            max(root.at(4), root.at(5), root.at(6), root.at(7)),
+        )
+    }
+
+    pure function at(i: int) -> int {
+        i < root.values.length ? root.values[i] : 0
+    }
+}
+
 /// One number, with what it counts under it.
 ///
 /// A card rather than a plain box when it leads somewhere: the state layer a
@@ -484,6 +561,113 @@ export component ProfilePage inherits Rectangle {
                         }
                     }
                 }
+                }
+            }
+
+            // ---- statistics ------------------------------------------------
+            //
+            // What the account watches and how much, as the official profile
+            // shows it: shares by genre, audience and theme, two totals, and
+            // the last days as bars. Hidden accounts say so instead.
+            VerticalLayout {
+                spacing: Spacing.small;
+
+                Text {
+                    text: Tr.statistics;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-medium-size;
+                    font-weight: Typography.title-medium-weight-em;
+                }
+
+                if root.account.stats-hidden: Text {
+                    text: Tr.stats-hidden;
+                    color: MaterialPalette.on-surface-variant;
+                    font-size: Typography.body-medium-size;
+                }
+
+                if !root.account.stats-hidden: HorizontalLayout {
+                    alignment: start;
+
+                    Rectangle {
+                        width: 520px;
+                        height: stats.preferred-height;
+                        border-radius: Shape.large;
+                        background: MaterialPalette.surface-container;
+
+                        stats := VerticalLayout {
+                            padding: Spacing.base;
+                            spacing: Spacing.tight;
+
+                            for row in [
+                                { label: Tr.stat-genres, value: root.account.genres },
+                                { label: Tr.stat-audiences, value: root.account.audiences },
+                                { label: Tr.stat-themes, value: root.account.themes },
+                            ]: HorizontalLayout {
+                                spacing: Spacing.small;
+                                // A share the account has none of takes no
+                                // line, rather than a label with nothing by it.
+                                visible: row.value != "";
+                                height: row.value != "" ? self.preferred-height : 0px;
+
+                                Text {
+                                    text: row.label + ":";
+                                    color: MaterialPalette.on-surface;
+                                    font-size: Typography.body-medium-size;
+                                    font-weight: Typography.body-medium-weight-em;
+                                }
+
+                                Text {
+                                    text: row.value;
+                                    color: MaterialPalette.on-surface;
+                                    font-size: Typography.body-medium-size;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+                            }
+
+                            Rectangle { height: Spacing.small; }
+
+                            Stat2 {
+                                label: Tr.stat-episodes;
+                                value: root.account.episodes-watched;
+                            }
+
+                            HorizontalLayout {
+                                spacing: Spacing.small;
+
+                                Text {
+                                    text: Tr.stat-time + ":";
+                                    color: MaterialPalette.on-surface-variant;
+                                    font-size: Typography.body-medium-size;
+                                }
+
+                                Text {
+                                    text: Tr.duration(root.account.minutes-watched);
+                                    color: MaterialPalette.on-surface;
+                                    font-size: Typography.body-medium-size;
+                                    font-weight: Typography.body-medium-weight-em;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+
+                            if root.account.dynamics.length > 0: VerticalLayout {
+                                padding-top: Spacing.base;
+                                spacing: Spacing.small;
+
+                                Text {
+                                    text: Tr.stat-dynamics;
+                                    color: MaterialPalette.on-surface;
+                                    font-size: Typography.title-small-size;
+                                    font-weight: Typography.title-small-weight-em;
+                                }
+
+                                Bars {
+                                    values: root.account.dynamics;
+                                    days: root.account.dynamics-days;
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

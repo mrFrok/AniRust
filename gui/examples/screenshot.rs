@@ -270,6 +270,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             comments: 18,
             collections: 3,
             friends: 26,
+            episodes_watched: 2824,
+            minutes_watched: 67_140,
+            genres: "экшен 11%, фэнтези 9%, комедия 8%".into(),
+            audiences: "сёнен 8%".into(),
+            themes: "школа 5%".into(),
+            dynamics: slint::ModelRc::new(slint::VecModel::from(vec![0, 0, 0, 0, 2, 0, 0, 0])),
+            dynamics_days: slint::ModelRc::new(slint::VecModel::from(vec![
+                12, 13, 14, 15, 16, 17, 18, 19,
+            ])),
+            stats_hidden: false,
         });
         ui.set_avatar(stand_in_avatar());
         ui.set_avatar_loaded(true);

@@ -194,6 +194,23 @@ export global Tr {
     out property <string> ns-my-collection-comments: lang == "ru" ? "Комментарии к моим коллекциям" : "Comments on my collections";
     out property <string> ns-selected-releases: lang == "ru" ? "Серии только выбранных релизов" : "Episodes of chosen releases only";
     out property <string> ns-reports: lang == "ru" ? "Итоги моих жалоб" : "Outcomes of my reports";
+    out property <string> statistics: lang == "ru" ? "Статистика" : "Statistics";
+    out property <string> stat-genres: lang == "ru" ? "Жанры" : "Genres";
+    out property <string> stat-audiences: lang == "ru" ? "Аудитория" : "Audience";
+    out property <string> stat-themes: lang == "ru" ? "Тематика" : "Themes";
+    out property <string> stat-episodes: lang == "ru" ? "Просмотрено серий" : "Episodes watched";
+    out property <string> stat-time: lang == "ru" ? "Время просмотра" : "Time watching";
+    out property <string> stat-dynamics: lang == "ru" ? "Динамика просмотра серий" : "Episodes per day";
+    out property <string> stats-hidden: lang == "ru" ? "Статистика скрыта настройками приватности." : "Statistics are hidden by privacy settings.";
+    /// Minutes as days and hours, the way the official client words it:
+    /// "~ 35 дней 3 часа".
+    public pure function duration(minutes: int) -> string {
+        root.lang == "ru"
+            ? "~ " + floor(minutes / 1440) + " " + root.plural(floor(minutes / 1440), "день", "дня", "дней")
+                + " " + floor(Math.mod(minutes, 1440) / 60) + " " + root.plural(floor(Math.mod(minutes, 1440) / 60), "час", "часа", "часов")
+            : "~ " + floor(minutes / 1440) + (floor(minutes / 1440) == 1 ? " day " : " days ")
+                + floor(Math.mod(minutes, 1440) / 60) + (floor(Math.mod(minutes, 1440) / 60) == 1 ? " hour" : " hours")
+    }
     out property <string> not-in-list: lang == "ru" ? "Не в списке" : "Not in a list";
     out property <string> add-to-favourites: lang == "ru" ? "В избранное" : "Add to favourites";
     out property <string> remove-from-favourites: lang == "ru" ? "Убрать из избранного" : "Remove from favourites";

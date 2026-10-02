@@ -83,6 +83,19 @@ export struct Account {
     comments: int,
     collections: int,
     friends: int,
+    /// Episodes watched and minutes spent, all time.
+    episodes-watched: int,
+    minutes-watched: int,
+    /// "комедия 12%, фэнтези 10%" — the shares already worded, since the
+    /// names are the service's and not translations.
+    genres: string,
+    audiences: string,
+    themes: string,
+    /// Episodes per day, oldest first, and the day of the month under each.
+    dynamics: [int],
+    dynamics-days: [int],
+    /// Whether the account keeps its statistics to itself.
+    stats-hidden: bool,
 }
 
 /// One release on the profile screen's list of what was watched lately.
