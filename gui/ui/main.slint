@@ -18,6 +18,7 @@ import { ReportSheet } from "components/report.slint";
 import { DeletionSheet } from "components/deletion.slint";
 import { PostEditor } from "components/post-editor.slint";
 import { ChannelAdmin } from "components/channel-admin.slint";
+import { ConfirmSheet } from "components/confirm.slint";
 import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem, CollectionItem, AccountSettings, VideoItem, EnforcementItem, DraftBlock, SuggestionItem } from "structs.slint";
 
 export component MainWindow inherits Window {
@@ -495,6 +496,8 @@ export component MainWindow inherits Window {
     callback submit-sign-in();
     callback resend-sign-in-code();
     callback sign-out();
+    /// Signing out is asked about first.
+    in-out property <bool> confirm-sign-out: false;
 
     /// Which appearance is chosen, as a position in the row the profile
     /// screen offers. Rust owns that order, and writes it to the settings.
@@ -573,7 +576,7 @@ export component MainWindow inherits Window {
             recent: root.recent;
 
             sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
-            sign-out => { root.sign-out(); }
+            sign-out => { root.confirm-sign-out = true; }
             open-settings => { root.open-settings(); }
             select-appearance(i) => { root.select-appearance(i); }
             open-list(i) => { root.open-list(i); }
@@ -671,7 +674,8 @@ export component MainWindow inherits Window {
             select-tab(i) => { root.select-tab(i); }
             select-genre(i) => { root.select-genre(i); }
             sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
-            sign-out => { root.sign-out(); }
+            sign-out => { root.confirm-sign-out = true; }
+            open-profile => { root.select-destination(4); }
         }
     }
 
@@ -975,6 +979,19 @@ export component MainWindow inherits Window {
         dismiss => { root.collection-picker-open = false; }
     }
 
+    if root.confirm-sign-out: ConfirmSheet {
+        width: 100%;
+        height: 100%;
+        title: Tr.sign-out-question(root.account-name);
+        text: Tr.sign-out-why;
+        action: Tr.sign-out;
+        confirm => {
+            root.confirm-sign-out = false;
+            root.sign-out();
+        }
+        dismiss => { root.confirm-sign-out = false; }
+    }
+
     if root.show-sign-in: SignInSheet {
         width: 100%;
         height: 100%;
@@ -1014,7 +1031,7 @@ export component MainWindow inherits Window {
                 root.close-comments();
                 return accept;
             }
-            if (root.show-sign-in || root.comments-open || root.notifications-open || root.collection-editor-open || root.collection-picker-open || root.settings-open || root.report-open || root.deletion-open || root.editor-open || root.admin-open || !root.playing) { return reject; }
+            if (root.show-sign-in || root.comments-open || root.notifications-open || root.collection-editor-open || root.collection-picker-open || root.settings-open || root.report-open || root.deletion-open || root.editor-open || root.admin-open || root.confirm-sign-out || !root.playing) { return reject; }
 
             // ---- transport ----
             if (event.text == " " || event.text == "k") { root.toggle-pause(); return accept; }

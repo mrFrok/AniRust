@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// A question asked before something that is a nuisance to undo.
+
+import { MaterialPalette, FilledButton, TextButton } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+
+export component ConfirmSheet inherits Rectangle {
+    in property <string> title;
+    in property <string> text;
+    in property <string> action;
+
+    callback confirm();
+    callback dismiss();
+
+    background: #000000A6;
+
+    TouchArea {
+        clicked => { root.dismiss(); }
+    }
+
+    Rectangle {
+        width: min(400px, parent.width - 2 * Spacing.comfortable);
+        height: form.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: Shape.extra-large;
+        background: MaterialPalette.surface-container-high;
+        drop-shadow-blur: 32px;
+        drop-shadow-color: #00000080;
+
+        TouchArea {}
+
+        form := VerticalLayout {
+            padding: Spacing.comfortable;
+            spacing: Spacing.base;
+            alignment: start;
+
+            Text {
+                text: root.title;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.title-large-size;
+                font-weight: Typography.title-large-weight-em;
+                wrap: word-wrap;
+            }
+
+            if root.text != "": Text {
+                text: root.text;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: Spacing.small;
+                alignment: end;
+
+                TextButton {
+                    text: Tr.cancel;
+                    clicked => { root.dismiss(); }
+                }
+
+                FilledButton {
+                    text: root.action;
+                    clicked => { root.confirm(); }
+                }
+            }
+        }
+    }
+}

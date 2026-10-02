@@ -259,6 +259,7 @@ export component HomePage inherits Rectangle {
     callback open-release(int);
     callback sign-in();
     callback sign-out();
+    callback open-profile();
     callback select-tab(int);
     /// 0 means every genre.
     callback select-genre(int);
@@ -426,18 +427,17 @@ export component HomePage inherits Rectangle {
                     }
                 }
 
-                // Signed in, the name is the control, and what clicking it
-                // does is in its tooltip. A menu for a single item is a menu
-                // nobody wants.
+                // Signed in, the name leads to the profile, where signing
+                // out is — asked about there, never a click away from here.
                 VerticalLayout {
                     alignment: center;
 
                     OutlineButton {
                         text: root.signed-in ? root.account-name : Tr.sign-in;
-                        tooltip: root.signed-in ? Tr.sign-out : "";
+                        tooltip: root.signed-in ? Tr.my-profile : "";
 
                         clicked => {
-                            if (root.signed-in) { root.sign-out(); } else { root.sign-in(); }
+                            if (root.signed-in) { root.open-profile(); } else { root.sign-in(); }
                         }
                     }
                 }

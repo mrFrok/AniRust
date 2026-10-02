@@ -29,7 +29,7 @@
 //! `collection-editor`, `collection-picker`, `search`, `sign-up`,
 //! `sign-up-code`, `restore-code`, `settings`, `settings-email`,
 //! `settings-standing`, `report`, `editor`, `feed-own`, `admin`, `admin-suggested`,
-//! `admin-new`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
+//! `admin-new`, `sign-out`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
 //! `comments-signed-out`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
@@ -95,6 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || state.starts_with("report")
             || state == "editor"
             || state.starts_with("admin")
+            || state == "sign-out"
             || state.starts_with("deletion")
         {
             "home".into()
@@ -280,6 +281,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .into(),
         );
         ui.set_email_code_pending(state == "settings-email");
+    }
+    // The question before signing out.
+    if state == "sign-out" {
+        ui.set_destination(4);
+        ui.set_signed_in(true);
+        ui.set_account_name("mrFrok".into());
+        ui.set_confirm_sign_out(true);
     }
     // Running a channel: its settings, and the queue of suggested posts.
     if state.starts_with("admin") {

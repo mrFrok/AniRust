@@ -298,6 +298,12 @@ export global Tr {
     out property <string> no-blocked: lang == "ru" ? "Никто не заблокирован." : "Nobody is blocked.";
     out property <string> find-subscriber: lang == "ru" ? "Найти подписчика" : "Find a subscriber";
     out property <string> create-channel: lang == "ru" ? "Создать канал" : "Create a channel";
+    public pure function sign-out-question(login: string) -> string {
+        lang == "ru" ? "Выйти из аккаунта " + login + "?" : "Sign out of " + login + "?"
+    }
+    out property <string> sign-out-why: lang == "ru"
+        ? "Чтобы вернуться, понадобятся логин и пароль. Прогресс просмотра на этом компьютере останется."
+        : "Coming back will take the login and password. Watch progress on this computer stays.";
     out property <string> tab-collections: lang == "ru" ? "Коллекции" : "Collections";
     out property <string> my-collections: lang == "ru" ? "Мои коллекции" : "My collections";
     out property <string> new-collection: lang == "ru" ? "Новая коллекция" : "New collection";
