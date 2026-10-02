@@ -60,9 +60,12 @@ pub(crate) mod serde_ext;
 
 pub use client::{Ack, Client, ClientBuilder, DEFAULT_BASE_URL};
 pub use endpoints::{
-    ArticleEntryPoint, ArticleEventKind, Badge, ChannelBlock, ChannelBlockRequest, ChannelFilter,
-    ChannelSearch, ChannelSettings, CollectionSort, CollectionView, DubberChannel, EpisodeSort,
-    FriendOutcome, LoginChange, ProfileInfo, SignInError, Socials,
+    ArticleEntryPoint, ArticleEventKind, AuthStep, Badge, Binding, Bookmarks, ChannelBlock,
+    ChannelBlockRequest, ChannelFilter, ChannelSearch, ChannelSettings, CollectionSort,
+    CollectionView, Deletion, DubberChannel, Enforcement, EpisodeSort, FriendOutcome, Health,
+    LoginChange, LoginChangeInfo, Preferences, Privacy, ProfileInfo, Provider, ReleaseVideo,
+    ReleaseVideos, ReportReason, ReportTarget, SettingStep, SignInError, Socials, VideoBlock,
+    VideoCategory,
 };
 pub use error::{ApiCode, Error, Result};
 pub use models::{

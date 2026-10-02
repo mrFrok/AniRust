@@ -228,6 +228,16 @@ impl Client {
         Ok(answer.code)
     }
 
+    /// Sends a request and decodes the whole body, its `code` included,
+    /// whatever the code is — for the steps that word their own codes.
+    pub(crate) async fn send_any_code<T: DeserializeOwned>(
+        &self,
+        mut spec: RequestSpec,
+    ) -> Result<T> {
+        spec.any_code = true;
+        self.send(spec).await
+    }
+
     /// Sends a request by path and answers with the body exactly as it came.
     ///
     /// For capturing responses as test fixtures and for looking at an endpoint

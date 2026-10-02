@@ -19,6 +19,7 @@ use crate::models::Page;
 
 mod account;
 mod article;
+mod auth;
 mod channel;
 mod collection;
 mod comment;
@@ -29,14 +30,21 @@ mod notification;
 mod people;
 mod preference;
 mod release;
+mod service;
 
 pub use account::SignInError;
 pub use article::{ArticleEntryPoint, ArticleEventKind};
+pub use auth::{AuthStep, Provider};
 pub use channel::{ChannelBlock, ChannelBlockRequest, ChannelFilter, ChannelSettings};
 pub use collection::{CollectionSort, CollectionView};
 pub use discover::ChannelSearch;
 pub use episode::{DubberChannel, EpisodeSort};
 pub use people::{Badge, FriendOutcome, LoginChange, ProfileInfo, Socials};
+pub use preference::{Binding, LoginChangeInfo, Preferences, Privacy, SettingStep};
+pub use service::{
+    Bookmarks, Deletion, Enforcement, Health, ReleaseVideo, ReleaseVideos, ReportReason,
+    ReportTarget, VideoBlock, VideoCategory,
+};
 
 /// Mirrors `PageableResponse<T>`. Pages are 0-based.
 #[derive(Deserialize)]

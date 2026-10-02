@@ -1840,3 +1840,706 @@ async fn collection_cover_goes_up_with_its_name_part() {
         .await
         .expect("a cover");
 }
+
+// ---- A8/A9: the account, its settings and standing, reports, videos -------
+
+endpoint! {
+    report_reasons_release: "GET" "/report/release/reasons",
+    token: true,
+    reply: json!([{ "id": 1, "name": "спам" }]),
+    call: |c| c.report_reasons(anirust_api::ReportTarget::Release),
+}
+
+endpoint! {
+    report_release: "POST" "/report/release",
+    token: true,
+    reply: ack(),
+    call: |c| c.report(anirust_api::ReportTarget::Release, 7, 1, "текст"),
+}
+
+endpoint! {
+    report_reasons_episode: "GET" "/report/episode/reasons",
+    token: true,
+    reply: json!([{ "id": 1, "name": "спам" }]),
+    call: |c| c.report_reasons(anirust_api::ReportTarget::Episode),
+}
+
+endpoint! {
+    report_episode: "POST" "/report/episode",
+    token: true,
+    reply: ack(),
+    call: |c| c.report(anirust_api::ReportTarget::Episode, 7, 1, "текст"),
+}
+
+endpoint! {
+    report_reasons_profile: "GET" "/report/profile/reasons",
+    token: true,
+    reply: json!([{ "id": 1, "name": "спам" }]),
+    call: |c| c.report_reasons(anirust_api::ReportTarget::Profile),
+}
+
+endpoint! {
+    report_profile: "POST" "/report/profile",
+    token: true,
+    reply: ack(),
+    call: |c| c.report(anirust_api::ReportTarget::Profile, 7, 1, "текст"),
+}
+
+endpoint! {
+    report_reasons_channel: "GET" "/report/channel/reasons",
+    token: true,
+    reply: json!([{ "id": 1, "name": "спам" }]),
+    call: |c| c.report_reasons(anirust_api::ReportTarget::Channel),
+}
+
+endpoint! {
+    report_channel: "POST" "/report/channel",
+    token: true,
+    reply: ack(),
+    call: |c| c.report(anirust_api::ReportTarget::Channel, 7, 1, "текст"),
+}
+
+endpoint! {
+    report_reasons_article: "GET" "/report/article/reasons",
+    token: true,
+    reply: json!([{ "id": 1, "name": "спам" }]),
+    call: |c| c.report_reasons(anirust_api::ReportTarget::Article),
+}
+
+endpoint! {
+    report_article: "POST" "/report/article",
+    token: true,
+    reply: ack(),
+    call: |c| c.report(anirust_api::ReportTarget::Article, 7, 1, "текст"),
+}
+
+endpoint! {
+    report_reasons_collection: "GET" "/report/collection/reasons",
+    token: true,
+    reply: json!([{ "id": 1, "name": "спам" }]),
+    call: |c| c.report_reasons(anirust_api::ReportTarget::Collection),
+}
+
+endpoint! {
+    report_collection: "POST" "/report/collection",
+    token: true,
+    reply: ack(),
+    call: |c| c.report(anirust_api::ReportTarget::Collection, 7, 1, "текст"),
+}
+
+endpoint! {
+    report_reasons_release_comment: "GET" "/report/comment/release/reasons",
+    token: true,
+    reply: json!([{ "id": 1, "name": "спам" }]),
+    call: |c| c.report_reasons(anirust_api::ReportTarget::ReleaseComment),
+}
+
+endpoint! {
+    report_release_comment: "POST" "/report/comment/release",
+    token: true,
+    reply: ack(),
+    call: |c| c.report(anirust_api::ReportTarget::ReleaseComment, 7, 1, "текст"),
+}
+
+endpoint! {
+    report_reasons_article_comment: "GET" "/report/comment/article/reasons",
+    token: true,
+    reply: json!([{ "id": 1, "name": "спам" }]),
+    call: |c| c.report_reasons(anirust_api::ReportTarget::ArticleComment),
+}
+
+endpoint! {
+    report_article_comment: "POST" "/report/comment/article",
+    token: true,
+    reply: ack(),
+    call: |c| c.report(anirust_api::ReportTarget::ArticleComment, 7, 1, "текст"),
+}
+
+endpoint! {
+    report_reasons_collection_comment: "GET" "/report/comment/collection/reasons",
+    token: true,
+    reply: json!([{ "id": 1, "name": "спам" }]),
+    call: |c| c.report_reasons(anirust_api::ReportTarget::CollectionComment),
+}
+
+endpoint! {
+    report_collection_comment: "POST" "/report/comment/collection",
+    token: true,
+    reply: ack(),
+    call: |c| c.report(anirust_api::ReportTarget::CollectionComment, 7, 1, "текст"),
+}
+
+endpoint! {
+    sign_in_with_google: "POST" "/auth/google",
+    token: false,
+    reply: ack(),
+    call: |c| c.sign_in_with(anirust_api::Provider::Google, "t"),
+}
+
+endpoint! {
+    bind_google: "POST" "/profile/preference/google/bind",
+    token: true,
+    reply: ack(),
+    call: |c| c.bind(anirust_api::Binding::Google, "t"),
+}
+
+endpoint! {
+    unbind_google: "POST" "/profile/preference/google/unbind",
+    token: true,
+    reply: ack(),
+    call: |c| c.unbind(anirust_api::Binding::Google),
+}
+
+endpoint! {
+    sign_in_with_vk: "POST" "/auth/vk",
+    token: false,
+    reply: ack(),
+    call: |c| c.sign_in_with(anirust_api::Provider::Vk, "t"),
+}
+
+endpoint! {
+    bind_vk: "POST" "/profile/preference/vk/bind",
+    token: true,
+    reply: ack(),
+    call: |c| c.bind(anirust_api::Binding::Vk, "t"),
+}
+
+endpoint! {
+    unbind_vk: "POST" "/profile/preference/vk/unbind",
+    token: true,
+    reply: ack(),
+    call: |c| c.unbind(anirust_api::Binding::Vk),
+}
+
+endpoint! {
+    sign_in_with_telegram: "POST" "/auth/telegram",
+    token: false,
+    reply: ack(),
+    call: |c| c.sign_in_with(anirust_api::Provider::Telegram, "t"),
+}
+
+endpoint! {
+    bind_telegram: "POST" "/profile/preference/telegram/bind",
+    token: true,
+    reply: ack(),
+    call: |c| c.bind(anirust_api::Binding::Telegram, "t"),
+}
+
+endpoint! {
+    unbind_telegram: "POST" "/profile/preference/telegram/unbind",
+    token: true,
+    reply: ack(),
+    call: |c| c.unbind(anirust_api::Binding::Telegram),
+}
+
+endpoint! {
+    sign_in_with_yandex: "POST" "/auth/yandex",
+    token: false,
+    reply: ack(),
+    call: |c| c.sign_in_with(anirust_api::Provider::Yandex, "t"),
+}
+
+endpoint! {
+    bind_yandex: "POST" "/profile/preference/yandex/bind",
+    token: true,
+    reply: ack(),
+    call: |c| c.bind(anirust_api::Binding::Yandex, "t"),
+}
+
+endpoint! {
+    unbind_yandex: "POST" "/profile/preference/yandex/unbind",
+    token: true,
+    reply: ack(),
+    call: |c| c.unbind(anirust_api::Binding::Yandex),
+}
+
+endpoint! {
+    privacy_counts: "POST" "/profile/preference/privacy/counts/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.privacy_edit(anirust_api::Privacy::Counts, 1),
+}
+
+endpoint! {
+    privacy_stats: "POST" "/profile/preference/privacy/stats/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.privacy_edit(anirust_api::Privacy::Stats, 1),
+}
+
+endpoint! {
+    privacy_social: "POST" "/profile/preference/privacy/social/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.privacy_edit(anirust_api::Privacy::Social, 1),
+}
+
+endpoint! {
+    privacy_friend_requests: "POST" "/profile/preference/privacy/friendRequests/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.privacy_edit(anirust_api::Privacy::FriendRequests, 1),
+}
+
+endpoint! {
+    check_login: "POST" "/auth/checkLogin",
+    token: false,
+    reply: json!({ "code": 0, "available": true }),
+    call: |c| c.check_login("mrfrok"),
+}
+
+endpoint! {
+    sign_up: "POST" "/auth/signUp",
+    token: false,
+    reply: json!({ "code": 0, "hash": "h" }),
+    call: |c| c.sign_up("l", "e@x", "p"),
+}
+
+endpoint! {
+    sign_up_verify: "POST" "/auth/verify",
+    token: false,
+    reply: ack(),
+    call: |c| c.sign_up_verify("l", "e@x", "p", "h", "1234"),
+}
+
+endpoint! {
+    sign_up_resend: "POST" "/auth/resend",
+    token: false,
+    reply: ack(),
+    call: |c| c.sign_up_resend("l", "e@x", "p", "h"),
+}
+
+endpoint! {
+    restore: "POST" "/auth/restore",
+    token: false,
+    reply: json!({ "code": 0, "hash": "h" }),
+    call: |c| c.restore("mrfrok"),
+}
+
+endpoint! {
+    restore_resend: "POST" "/auth/restore/resend",
+    token: false,
+    reply: ack(),
+    call: |c| c.restore_resend("mrfrok", "p", "h"),
+}
+
+endpoint! {
+    restore_verify: "POST" "/auth/restore/verify",
+    token: false,
+    reply: ack(),
+    call: |c| c.restore_verify("mrfrok", "p", "h", "1234"),
+}
+
+endpoint! {
+    firebase: "POST" "/auth/firebase",
+    token: true,
+    reply: ack(),
+    call: |c| c.firebase(),
+}
+
+endpoint! {
+    preferences: "GET" "/profile/preference/my",
+    token: true,
+    reply: json!({ "code": 0, "privacy_stats": 1 }),
+    call: |c| c.preferences(),
+}
+
+endpoint! {
+    status_edit: "POST" "/profile/preference/status/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.status_edit("привет"),
+}
+
+endpoint! {
+    my_socials: "GET" "/profile/preference/social",
+    token: true,
+    reply: ack(),
+    call: |c| c.my_socials(),
+}
+
+endpoint! {
+    socials_edit: "POST" "/profile/preference/social/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.socials_edit(&anirust_api::Socials::default()),
+}
+
+endpoint! {
+    incognito_switch: "GET" "/profile/preference/privacy/incognito/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.incognito_switch(),
+}
+
+endpoint! {
+    pinned_section_edit: "POST" "/profile/preference/section/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.pinned_section_edit(2),
+}
+
+endpoint! {
+    theme_edit: "POST" "/profile/preference/themes/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.theme_edit(3),
+}
+
+endpoint! {
+    login_change_info: "POST" "/profile/preference/login/info",
+    token: true,
+    reply: json!({ "code": 0, "is_change_available": true }),
+    call: |c| c.login_change_info(),
+}
+
+endpoint! {
+    password_change: "POST" "/profile/preference/password/change",
+    token: true,
+    reply: json!({ "code": 0, "token": "new" }),
+    call: |c| c.password_change("a", "b"),
+}
+
+endpoint! {
+    email_change: "POST" "/profile/preference/email/change",
+    token: true,
+    reply: json!({ "code": 0, "hash": "h" }),
+    call: |c| c.email_change("a@x", "p", "b@x"),
+}
+
+endpoint! {
+    email_change_resend: "POST" "/profile/preference/email/resend",
+    token: true,
+    reply: ack(),
+    call: |c| c.email_change_resend("a@x", "p", "b@x", "h"),
+}
+
+endpoint! {
+    deletion_status: "GET" "/profile/deletion/status",
+    token: true,
+    reply: json!({ "code": 0 }),
+    call: |c| c.deletion_status(),
+}
+
+endpoint! {
+    deletion_request: "POST" "/profile/deletion/request",
+    token: true,
+    reply: json!({ "code": 0, "delete_at": 9 }),
+    call: |c| c.deletion_request("p"),
+}
+
+endpoint! {
+    deletion_cancel: "POST" "/profile/deletion/cancel",
+    token: true,
+    reply: json!({ "code": 0 }),
+    call: |c| c.deletion_cancel(),
+}
+
+endpoint! {
+    health: "GET" "/profile/health/status",
+    token: true,
+    reply: json!({ "code": 0, "ban_count": 0 }),
+    call: |c| c.health(),
+}
+
+endpoint! {
+    enforcements_account: "GET" "/profile/health/enforcement/account/all/0",
+    token: true,
+    reply: json!([]),
+    call: |c| c.enforcements_account(0),
+}
+
+endpoint! {
+    enforcements_content: "GET" "/profile/health/enforcement/content/all/0",
+    token: true,
+    reply: json!([]),
+    call: |c| c.enforcements_content(0),
+}
+
+endpoint! {
+    enforcement: "GET" "/profile/health/enforcement/4",
+    token: true,
+    reply: json!({ "code": 0, "enforcement": { "id": 4 } }),
+    call: |c| c.enforcement(4),
+}
+
+endpoint! {
+    enforcement_appeal: "POST" "/profile/health/enforcement/4/appeal",
+    token: true,
+    reply: ack(),
+    call: |c| c.enforcement_appeal(4, "не согласен"),
+}
+
+endpoint! {
+    video_categories: "GET" "/video/release/categories",
+    token: false,
+    reply: json!({ "code": 0, "categories": [] }),
+    call: |c| c.video_categories(),
+}
+
+endpoint! {
+    release_videos: "GET" "/video/release/7",
+    token: false,
+    reply: json!({ "code": 0, "blocks": [] }),
+    call: |c| c.release_videos(7),
+}
+
+endpoint! {
+    release_videos_page: "GET" "/video/release/7/0",
+    token: false,
+    reply: page(),
+    call: |c| c.release_videos_page(7, 0),
+}
+
+endpoint! {
+    release_videos_of: "GET" "/video/release/7/category/2/0",
+    token: false,
+    reply: page(),
+    call: |c| c.release_videos_of(7, 2, 0),
+}
+
+endpoint! {
+    profile_videos: "GET" "/video/profile/5/0",
+    token: true,
+    reply: page(),
+    call: |c| c.profile_videos(5, 0),
+}
+
+endpoint! {
+    favorite_videos: "GET" "/releaseVideoFavorite/all/5/0",
+    token: true,
+    reply: page(),
+    call: |c| c.favorite_videos(5, 0),
+}
+
+endpoint! {
+    video_favorite_add: "GET" "/releaseVideoFavorite/add/9",
+    token: true,
+    reply: ack(),
+    call: |c| c.video_favorite_add(9),
+}
+
+endpoint! {
+    video_favorite_delete: "GET" "/releaseVideoFavorite/delete/9",
+    token: true,
+    reply: ack(),
+    call: |c| c.video_favorite_delete(9),
+}
+
+endpoint! {
+    video_suggest: "POST" "/video/appeal/add",
+    token: true,
+    reply: ack(),
+    call: |c| c.video_suggest(7, 2, "OP", "https://y/x"),
+}
+
+endpoint! {
+    video_suggestions: "GET" "/video/appeal/profile/0",
+    token: true,
+    reply: page(),
+    call: |c| c.video_suggestions(0),
+}
+
+endpoint! {
+    video_suggestions_last: "GET" "/video/appeal/profile/last",
+    token: true,
+    reply: page(),
+    call: |c| c.video_suggestions_last(),
+}
+
+endpoint! {
+    video_suggestion_delete: "POST" "/video/appeal/delete/3",
+    token: true,
+    reply: ack(),
+    call: |c| c.video_suggestion_delete(3),
+}
+
+endpoint! {
+    import_bookmarks: "POST" "/import/bookmarks",
+    token: true,
+    reply: ack(),
+    call: |c| c.import_bookmarks("shikimori", &anirust_api::Bookmarks::default()),
+}
+
+endpoint! {
+    import_status: "POST" "/import/status",
+    token: true,
+    reply: ack(),
+    call: |c| c.import_status(),
+}
+
+endpoint! {
+    feed_latest_id: "GET" "/feed/latest",
+    token: true,
+    reply: json!({ "code": 0, "article_id": 12 }),
+    call: |c| c.feed_latest_id(),
+}
+
+endpoint! {
+    sign_up_with_vk: "POST" "/auth/vk",
+    token: false,
+    reply: ack(),
+    call: |c| c.sign_up_with(anirust_api::Provider::Vk, "t", "login", "e@x"),
+}
+
+endpoint! {
+    login_change: "POST" "/profile/preference/login/change",
+    token: true,
+    ["login"="newname"]
+    reply: json!({ "code": 3, "suggested_logins": ["newname1"] }),
+    call: |c| c.login_change("newname"),
+}
+
+endpoint! {
+    email_change_verify: "GET" "/profile/preference/email/verify",
+    token: true,
+    ["new_email"="b@x"] ["code"="1234"] ["hash"="h"]
+    reply: ack(),
+    call: |c| c.email_change_verify("b@x", "1234", "h"),
+}
+
+endpoint! {
+    episode_widgets_hidden: "POST" "/profile/preference/episode-widget/edit",
+    token: true,
+    ["hidden"="true"]
+    reply: ack(),
+    call: |c| c.episode_widgets_hidden(true),
+}
+
+endpoint! {
+    export_bookmarks: "POST" "/export/bookmarks",
+    token: true,
+    ["sort"="0"]
+    reply: json!({ "code": 0, "releases": [] }),
+    call: |c| c.export_bookmarks(&[1, 3], 0),
+}
+
+/// Registration's refusals come back as values the caller words, not errors:
+/// a taken login is something to show, with the service's suggestions.
+#[tokio::test]
+async fn a_refused_step_is_an_answer_not_an_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/auth/signUp"))
+        .and(body_string_contains("login=mrfrok"))
+        .and(body_string_contains("email=e%40x"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "code": 5, "suggested_logins": ["mrfrok1", "mrfrok_"] })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let step = client(&server)
+        .sign_up("mrfrok", "e@x", "p")
+        .await
+        .expect("an answer");
+    assert_eq!(step.code, 5, "a taken login");
+    assert_eq!(step.suggested_logins, ["mrfrok1", "mrfrok_"]);
+}
+
+/// A report names the thing, the reason and the message, and nothing else.
+#[tokio::test]
+async fn a_report_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/report/comment/release"))
+        .and(body_json(
+            json!({ "entity_id": 55, "reason": 2, "message": "оскорбление" }),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(ack()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    client(&server)
+        .report(
+            anirust_api::ReportTarget::ReleaseComment,
+            55,
+            2,
+            "оскорбление",
+        )
+        .await
+        .expect("a report");
+}
+
+// ---- the rows a strict pass found missing ---------------------------------
+//
+// Checked against the app's own list of paths rather than against the code:
+// these eleven were either covered only indirectly or not at all.
+
+endpoint! {
+    block: "GET" "/profile/blocklist/add/5",
+    token: true,
+    reply: ack(),
+    call: |c| c.block(5),
+}
+
+endpoint! {
+    friend_request_send: "GET" "/profile/friend/request/send/5",
+    token: true,
+    reply: json!({ "code": 3 }),
+    call: |c| c.friend_request_send(5),
+}
+
+endpoint! {
+    friend_request_remove: "GET" "/profile/friend/request/remove/5",
+    token: true,
+    reply: json!({ "code": 2 }),
+    call: |c| c.friend_request_remove(5),
+}
+
+endpoint! {
+    article_comment_add: "POST" "/article/comment/add/9",
+    token: true,
+    reply: json!({ "code": 0, "comment": {} }),
+    call: |c| c.comment_add(CommentTarget::Article, 9, "текст", false, None),
+}
+
+endpoint! {
+    release_comment_edit: "POST" "/release/comment/edit/55",
+    token: true,
+    reply: ack(),
+    call: |c| c.comment_edit(CommentTarget::Release, 55, "текст", false),
+}
+
+endpoint! {
+    collection_comment_edit: "POST" "/collection/comment/edit/55",
+    token: true,
+    reply: ack(),
+    call: |c| c.comment_edit(CommentTarget::Collection, 55, "текст", true),
+}
+
+endpoint! {
+    article_edit: "POST" "/article/edit/9",
+    token: true,
+    reply: json!({ "code": 0, "article": { "id": 9 } }),
+    call: |c| c.article_edit(9, &anirust_api::ArticlePayload::default(), false),
+}
+
+endpoint! {
+    suggestion_create: "POST" "/article/suggestion/create/4",
+    token: true,
+    reply: json!({ "code": 0, "article": {} }),
+    call: |c| c.suggestion_create(4, &anirust_api::ArticlePayload::default()),
+}
+
+endpoint! {
+    suggestion_edit: "POST" "/article/suggestion/edit/9",
+    token: true,
+    reply: json!({ "code": 0, "article": {} }),
+    call: |c| c.suggestion_edit(9, &anirust_api::ArticlePayload::default()),
+}
+
+endpoint! {
+    notification_statuses_edit: "POST" "/profile/preference/notification/status/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_statuses_edit(&[1]),
+}
+
+endpoint! {
+    notification_dubbers_edit: "POST" "/profile/preference/notification/type/edit",
+    token: true,
+    reply: ack(),
+    call: |c| c.notification_dubbers_edit(&[3]),
+}
