@@ -12,7 +12,8 @@ import { ProfilePage } from "pages/profile.slint";
 import { FeedPage } from "pages/feed.slint";
 import { CommentsSheet } from "components/comments.slint";
 import { NotificationsSheet } from "components/notifications.slint";
-import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem } from "structs.slint";
+import { CollectionEditor, CollectionPicker } from "components/collections.slint";
+import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem, CollectionItem } from "structs.slint";
 
 export component MainWindow inherits Window {
     title: "AniRust";
@@ -82,6 +83,34 @@ export component MainWindow inherits Window {
     in property <int> release-vote: 0;
     callback set-release-list(int);
     callback toggle-release-favourite();
+
+    // ---- collections -----------------------------------------------------
+    in property <bool> collection-open: false;
+    in property <CollectionItem> open-collection-item;
+    callback close-collection();
+    callback toggle-collection-favourite();
+    callback open-collection-comments();
+    callback open-collection-creator();
+    /// Opens the editor on the open collection.
+    callback edit-collection();
+    /// Opens the editor on a new collection, holding the release on screen
+    /// when one is (-1 otherwise).
+    callback new-collection(int);
+    in-out property <bool> collection-editor-open: false;
+    in property <bool> collection-editing: false;
+    in-out property <string> collection-draft-title;
+    in-out property <string> collection-draft-description;
+    in-out property <bool> collection-draft-private: false;
+    in property <bool> collection-busy: false;
+    in property <bool> collection-failed: false;
+    callback save-collection();
+    callback delete-collection();
+    /// The sheet listing the account's collections, from a release.
+    in-out property <bool> collection-picker-open: false;
+    in property <[string]> my-collection-titles: [];
+    in property <bool> my-collections-loading: false;
+    callback add-to-collection();
+    callback pick-collection(int);
     callback set-release-vote(int);
     in property <[LinkItem]> release-related: [];
     in property <[LinkItem]> release-platforms: [];
@@ -450,6 +479,7 @@ export component MainWindow inherits Window {
                         { text: Tr.section-top },
                         { text: Tr.section-films },
                         { text: Tr.section-announced },
+                        { text: Tr.tab-collections },
                     ]
                     : root.destination == 2
                         ? [
@@ -460,6 +490,7 @@ export component MainWindow inherits Window {
                             { text: Tr.list-dropped },
                             { text: Tr.list-history },
                             { text: Tr.list-favourites },
+                            { text: Tr.my-collections },
                         ]
                         : [];
             tab: root.tab;
@@ -471,6 +502,15 @@ export component MainWindow inherits Window {
             downloads-working: root.downloads-working;
             unseen: root.unseen;
             open-notifications => { root.open-notifications(); }
+            collection-open: root.collection-open;
+            collection: root.open-collection-item;
+            can-create-collection: root.destination == 2 && root.tab == 7 && root.signed-in;
+            close-collection => { root.close-collection(); }
+            toggle-collection-favourite => { root.toggle-collection-favourite(); }
+            open-collection-comments => { root.open-collection-comments(); }
+            open-collection-creator => { root.open-collection-creator(); }
+            edit-collection => { root.edit-collection(); }
+            new-collection => { root.new-collection(-1); }
 
             search(q) => { root.search(q); }
             open-downloads => { root.select-destination(5); }
@@ -521,6 +561,7 @@ export component MainWindow inherits Window {
 
         set-list(i) => { root.set-release-list(i); }
         toggle-favourite => { root.toggle-release-favourite(); }
+        add-to-collection => { root.add-to-collection(); }
         set-vote(n) => { root.set-release-vote(n); }
         related: root.release-related;
         platforms: root.release-platforms;
@@ -641,6 +682,31 @@ export component MainWindow inherits Window {
         sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
     }
 
+    if root.collection-editor-open: CollectionEditor {
+        width: 100%;
+        height: 100%;
+        title <=> root.collection-draft-title;
+        description <=> root.collection-draft-description;
+        private <=> root.collection-draft-private;
+        editing: root.collection-editing;
+        busy: root.collection-busy;
+        failed: root.collection-failed;
+        save => { root.save-collection(); }
+        delete => { root.delete-collection(); }
+        dismiss => { root.collection-editor-open = false; }
+    }
+
+    if root.collection-picker-open: CollectionPicker {
+        width: 100%;
+        height: 100%;
+        collections: root.my-collection-titles;
+        loading: root.my-collections-loading;
+        failed: root.collection-failed;
+        pick(i) => { root.pick-collection(i); }
+        create => { root.collection-picker-open = false; root.new-collection(0); }
+        dismiss => { root.collection-picker-open = false; }
+    }
+
     if root.show-sign-in: SignInSheet {
         width: 100%;
         height: 100%;
@@ -669,7 +735,7 @@ export component MainWindow inherits Window {
                 root.close-comments();
                 return accept;
             }
-            if (root.show-sign-in || root.comments-open || root.notifications-open || !root.playing) { return reject; }
+            if (root.show-sign-in || root.comments-open || root.notifications-open || root.collection-editor-open || root.collection-picker-open || !root.playing) { return reject; }
 
             // ---- transport ----
             if (event.text == " " || event.text == "k") { root.toggle-pause(); return accept; }

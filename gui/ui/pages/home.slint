@@ -12,11 +12,11 @@
 // width it is being given to work it out.
 
 import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, SecondaryTabBar, FilterChip, NavigationItem, OutlineButton, CircularProgressIndicator, IconButton, Badge } from "@material";
+import { MaterialPalette, SecondaryTabBar, FilterChip, NavigationItem, OutlineButton, CircularProgressIndicator, IconButton, Badge, TextButton, TonalButton } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
-import { ReleaseCard } from "../structs.slint";
+import { ReleaseCard, CollectionItem } from "../structs.slint";
 import { PosterCard } from "../components/release-cards.slint";
 
 /// A genre, as one of a row where exactly one of them is chosen.
@@ -35,6 +35,123 @@ component GenreChip inherits FilterChip {
         if (self.checked == root.selected) { return; }
         if (self.checked) { root.picked(); }
         self.checked = root.selected;
+    }
+}
+
+/// A collection's own page, over the releases in it.
+component CollectionHeader inherits Rectangle {
+    in property <CollectionItem> collection;
+    in property <bool> signed-in: false;
+    callback toggle-favourite();
+    callback open-comments();
+    callback open-creator();
+    callback edit();
+    callback sign-in();
+
+    height: layout.preferred-height;
+    border-radius: Shape.large;
+    background: MaterialPalette.surface-container;
+
+    layout := HorizontalLayout {
+        padding: Spacing.base;
+        spacing: Spacing.base;
+
+        // Wide rather than tall: the service draws collection covers as
+        // banners.
+        Rectangle {
+            width: 192px;
+            height: 108px;
+            border-radius: Shape.medium;
+            background: MaterialPalette.surface-container-high;
+            clip: true;
+
+            Image {
+                source: root.collection.image;
+                image-fit: cover;
+                width: 100%;
+                height: 100%;
+                visible: root.collection.image-loaded;
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: Spacing.hair;
+            alignment: start;
+
+            HorizontalLayout {
+                spacing: Spacing.small;
+
+                if root.collection.private: Image {
+                    source: @image-url("../icons/lock.svg");
+                    colorize: MaterialPalette.on-surface-variant;
+                    width: 18px;
+                    height: 18px;
+                    y: (parent.height - self.height) / 2;
+                }
+
+                Text {
+                    text: root.collection.title;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-large-size;
+                    font-weight: Typography.title-large-weight-em;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+            }
+
+            creator := Text {
+                text: Tr.by-author(root.collection.creator);
+                color: MaterialPalette.primary;
+                font-size: Typography.label-large-size;
+
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.open-creator(); }
+                }
+            }
+
+            Text {
+                text: Tr.favourited-label(root.collection.favourites);
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.label-medium-size;
+            }
+
+            if root.collection.description != "": Text {
+                text: root.collection.description;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                alignment: start;
+                spacing: Spacing.tight;
+                padding-top: Spacing.small;
+
+                IconButton {
+                    icon: @image-url("../icons/heart.svg");
+                    checked-icon: @image-url("../icons/heart-filled.svg");
+                    checkable: true;
+                    checked: root.collection.favourite;
+                    tooltip: root.collection.favourite ? Tr.remove-from-favourites : Tr.add-to-favourites;
+                    clicked => {
+                        if (root.signed-in) { root.toggle-favourite(); } else { root.sign-in(); }
+                    }
+                }
+
+                TextButton {
+                    icon: @image-url("../icons/comment.svg");
+                    text: root.collection.comments;
+                    clicked => { root.open-comments(); }
+                }
+
+                if root.collection.mine: TextButton {
+                    text: Tr.edit;
+                    clicked => { root.edit(); }
+                }
+            }
+        }
     }
 }
 
@@ -65,6 +182,18 @@ export component HomePage inherits Rectangle {
     /// Unseen notifications, for the bell's badge. Only with an account.
     in property <int> unseen: 0;
     callback open-notifications();
+
+    /// A collection open over the grid, which then holds its releases.
+    in property <bool> collection-open: false;
+    in property <CollectionItem> collection;
+    /// The account's collections are on screen, so a new one can be made.
+    in property <bool> can-create-collection: false;
+    callback close-collection();
+    callback toggle-collection-favourite();
+    callback open-collection-comments();
+    callback open-collection-creator();
+    callback edit-collection();
+    callback new-collection();
 
     callback open-downloads();
     callback search(string);
@@ -267,7 +396,33 @@ export component HomePage inherits Rectangle {
         // window; there the bar keeps its comfortable width and scrolls
         // sideways under a fixed viewport rather than letting labels run into
         // each other.
-        if !root.searching && root.tabs.length > 0: tab-strip := Flickable {
+        if root.collection-open: VerticalLayout {
+            padding-left: Spacing.base;
+            padding-right: Spacing.base;
+            spacing: Spacing.small;
+
+            HorizontalLayout {
+                alignment: start;
+
+                TextButton {
+                    icon: @image-url("../icons/back.svg");
+                    text: Tr.back-to-collections;
+                    clicked => { root.close-collection(); }
+                }
+            }
+
+            CollectionHeader {
+                collection: root.collection;
+                signed-in: root.signed-in;
+                toggle-favourite => { root.toggle-collection-favourite(); }
+                open-comments => { root.open-collection-comments(); }
+                open-creator => { root.open-collection-creator(); }
+                edit => { root.edit-collection(); }
+                sign-in => { root.sign-in(); }
+            }
+        }
+
+        if !root.searching && !root.collection-open && root.tabs.length > 0: tab-strip := Flickable {
             height: 48px;
             interactive: self.content-width > self.width;
             content-width: max(self.width, root.tab-width * root.tabs.length + 2 * Spacing.base);
@@ -306,7 +461,19 @@ export component HomePage inherits Rectangle {
         // Wrapped rather than scrolled sideways: nineteen chips do not fit on
         // one line of any window, and a row that runs off the edge hides half
         // the filter.
-        if !root.searching && root.genres.length > 0: FlexboxLayout {
+        if !root.searching && !root.collection-open && root.can-create-collection: HorizontalLayout {
+            padding-left: Spacing.base;
+            padding-right: Spacing.base;
+            padding-bottom: Spacing.small;
+            alignment: start;
+
+            TonalButton {
+                text: Tr.new-collection;
+                clicked => { root.new-collection(); }
+            }
+        }
+
+        if !root.searching && !root.collection-open && root.genres.length > 0: FlexboxLayout {
             padding-left: Spacing.base;
             padding-right: Spacing.base;
             flex-wrap: wrap;

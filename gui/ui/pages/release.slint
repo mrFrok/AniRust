@@ -145,6 +145,7 @@ export component ReleasePage inherits Rectangle {
     // ---- to Rust ---------------------------------------------------------
     callback set-list(int);
     callback toggle-favourite();
+    callback add-to-collection();
     /// A star was clicked. Clicking the rating already given takes it back.
     callback set-vote(int);
     /// Asked for any of the three above without an account.
@@ -253,6 +254,18 @@ export component ReleasePage inherits Rectangle {
                         tooltip: root.favourite ? Tr.remove-from-favourites : Tr.add-to-favourites;
                         clicked => {
                             if (root.signed-in) { root.toggle-favourite(); } else { root.sign-in(); }
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+
+                    IconButton {
+                        icon: @image-url("../icons/collection-add.svg");
+                        tooltip: Tr.add-to-collection;
+                        clicked => {
+                            if (root.signed-in) { root.add-to-collection(); } else { root.sign-in(); }
                         }
                     }
                 }

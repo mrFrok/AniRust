@@ -1,0 +1,227 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The sheets for the account's own collections: writing one, and putting a
+// release into one.
+
+import { MaterialPalette, TextField, FilledButton, TextButton, Switch, ListTile } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+
+/// A card in the middle of a scrim, as the sign-in form is.
+component Sheet inherits Rectangle {
+    in property <length> card-height;
+    callback dismiss();
+
+    background: #000000A6;
+
+    TouchArea {
+        clicked => { root.dismiss(); }
+    }
+
+    card := Rectangle {
+        width: min(460px, parent.width - 2 * Spacing.comfortable);
+        height: min(root.card-height + 2 * Spacing.comfortable, parent.height - 2 * Spacing.comfortable);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: Shape.extra-large;
+        background: MaterialPalette.surface-container-high;
+        drop-shadow-blur: 32px;
+        drop-shadow-color: #00000080;
+
+        // Swallows clicks so they do not reach the scrim behind.
+        TouchArea {}
+
+        Rectangle {
+            x: Spacing.comfortable;
+            y: Spacing.comfortable;
+            width: parent.width - 2 * Spacing.comfortable;
+            height: parent.height - 2 * Spacing.comfortable;
+
+            @children
+        }
+    }
+}
+
+/// Creating a collection, or changing one of the account's.
+export component CollectionEditor inherits Rectangle {
+    in-out property <string> title;
+    in-out property <string> description;
+    in-out property <bool> private;
+    /// Changing one that exists, which is the only time it can be deleted.
+    in property <bool> editing: false;
+    in property <bool> busy: false;
+    in property <bool> failed: false;
+
+    callback save();
+    callback delete();
+    callback dismiss();
+
+    // Deleting asks twice: the second press is on a button that says what
+    // the first one would have done.
+    property <bool> confirming: false;
+    changed editing => { self.confirming = false; }
+
+    Sheet {
+        width: 100%;
+        height: 100%;
+        card-height: form.preferred-height;
+        dismiss => { root.dismiss(); }
+
+        form := VerticalLayout {
+            spacing: Spacing.base;
+            alignment: start;
+
+            Text {
+                text: root.editing ? Tr.edit-collection : Tr.new-collection;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.title-large-size;
+                font-weight: Typography.title-large-weight-em;
+            }
+
+            TextField {
+                label: Tr.collection-title-field;
+                text <=> root.title;
+            }
+
+            TextField {
+                label: Tr.collection-description-field;
+                text <=> root.description;
+            }
+
+            HorizontalLayout {
+                spacing: Spacing.base;
+
+                Text {
+                    text: Tr.private-collection;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.body-large-size;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                // Its own width and no more: a switch stretched across the
+                // row is a slider that does not slide.
+                Switch {
+                    width: 52px;
+                    height: 32px;
+                    property <bool> wanted: root.private;
+                    init => { self.checked = root.private; }
+                    changed wanted => { self.checked = self.wanted; }
+                    changed checked => { root.private = self.checked; }
+                }
+            }
+
+            if root.failed: Text {
+                text: Tr.action-failed;
+                color: MaterialPalette.error;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: Spacing.small;
+
+                if root.editing: TextButton {
+                    text: root.confirming ? Tr.delete-collection-confirm : Tr.delete;
+                    enabled: !root.busy;
+                    clicked => {
+                        if (root.confirming) { root.delete(); } else { root.confirming = true; }
+                    }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                TextButton {
+                    text: Tr.cancel;
+                    clicked => { root.dismiss(); }
+                }
+
+                FilledButton {
+                    text: root.busy ? Tr.loading : Tr.save;
+                    enabled: !root.busy && root.title != "";
+                    clicked => { root.save(); }
+                }
+            }
+        }
+    }
+}
+
+/// Which of the account's collections a release goes into.
+export component CollectionPicker inherits Rectangle {
+    /// The account's own collections, by title.
+    in property <[string]> collections: [];
+    in property <bool> loading: false;
+    in property <bool> failed: false;
+
+    callback pick(int);
+    callback create();
+    callback dismiss();
+
+    Sheet {
+        width: 100%;
+        height: 100%;
+        card-height: 56px * min(root.collections.length, 6) + 180px;
+        dismiss => { root.dismiss(); }
+
+        VerticalLayout {
+            spacing: Spacing.small;
+
+            Text {
+                text: Tr.add-to-collection;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.title-large-size;
+                font-weight: Typography.title-large-weight-em;
+            }
+
+            if root.loading: Text {
+                text: Tr.loading;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.body-medium-size;
+            }
+
+            if !root.loading && root.collections.length == 0: Text {
+                text: Tr.no-collections;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.body-medium-size;
+            }
+
+            Flickable {
+                vertical-stretch: 1;
+                content-height: rows.preferred-height;
+
+                rows := VerticalLayout {
+                    alignment: start;
+
+                    for title[index] in root.collections: ListTile {
+                        text: title;
+                        clicked => { root.pick(index); }
+                    }
+                }
+            }
+
+            if root.failed: Text {
+                text: Tr.action-failed;
+                color: MaterialPalette.error;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: Spacing.small;
+
+                TextButton {
+                    text: Tr.new-collection;
+                    clicked => { root.create(); }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                TextButton {
+                    text: Tr.cancel;
+                    clicked => { root.dismiss(); }
+                }
+            }
+        }
+    }
+}

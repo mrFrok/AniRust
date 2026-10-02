@@ -232,6 +232,26 @@ export global Tr {
             ? n + " " + root.plural(n, "подписчик", "подписчика", "подписчиков")
             : n + (n == 1 ? " subscriber" : " subscribers")
     }
+    out property <string> tab-collections: lang == "ru" ? "Коллекции" : "Collections";
+    out property <string> my-collections: lang == "ru" ? "Мои коллекции" : "My collections";
+    out property <string> new-collection: lang == "ru" ? "Новая коллекция" : "New collection";
+    out property <string> edit-collection: lang == "ru" ? "Изменить коллекцию" : "Edit collection";
+    out property <string> delete-collection-confirm: lang == "ru" ? "Удалить насовсем?" : "Delete for good?";
+    out property <string> collection-title-field: lang == "ru" ? "Название" : "Title";
+    out property <string> collection-description-field: lang == "ru" ? "Описание" : "Description";
+    out property <string> private-collection: lang == "ru" ? "Только для меня" : "Only for me";
+    out property <string> add-to-collection: lang == "ru" ? "В коллекцию" : "Add to collection";
+    out property <string> no-collections: lang == "ru" ? "Коллекций пока нет." : "No collections yet.";
+    out property <string> back-to-collections: lang == "ru" ? "К коллекциям" : "Back to collections";
+    out property <string> action-failed: lang == "ru" ? "Не получилось. Попробуйте ещё раз." : "That did not work. Try again.";
+    public pure function by-author(login: string) -> string {
+        root.lang == "ru" ? "Автор: " + login : "By " + login
+    }
+    public pure function favourited-label(n: int) -> string {
+        root.lang == "ru"
+            ? "В избранном у " + n
+            : "Favourited by " + n
+    }
     out property <string> not-in-list: lang == "ru" ? "Не в списке" : "Not in a list";
     out property <string> add-to-favourites: lang == "ru" ? "В избранное" : "Add to favourites";
     out property <string> remove-from-favourites: lang == "ru" ? "Убрать из избранного" : "Remove from favourites";

@@ -12,8 +12,11 @@ use std::rc::Rc;
 
 use slint::{ComponentHandle, Model, VecModel};
 
-use anirust_api::{Client, Filter, FilterSort, ProfileList, Release, SearchBy};
+use anirust_api::{
+    Client, Collection, CollectionSort, Filter, FilterSort, ProfileList, Release, SearchBy,
+};
 
+use crate::session::Session;
 use crate::{MainWindow, ReleaseCard, tasks};
 
 /// How many results one page of browsing shows.
@@ -102,8 +105,8 @@ impl Destination {
     fn tabs(self) -> usize {
         match self {
             Self::Home => HOME_TABS,
-            Self::Browse => 4,
-            Self::Saved => 7,
+            Self::Browse => 5,
+            Self::Saved => 8,
             Self::Feed | Self::Profile | Self::Downloads => 0,
         }
     }
@@ -147,6 +150,10 @@ enum Query {
     Discussing,
     /// The week's schedule, or one day of it: 0 the whole week, 1 Monday.
     Schedule(usize),
+    /// Everybody's collections, the popular among recent ones first.
+    Collections,
+    /// The account's own collections, then those it favourited.
+    MyCollections,
     /// Nothing to fetch — the destination is not a grid of releases.
     None,
 }
@@ -178,12 +185,14 @@ fn query_for(destination: Destination, tab: usize) -> Query {
         (Destination::Browse, 2) => Query::Catalogue(Box::new(
             Filter::sorted_by(FilterSort::Popularity).category(FILM),
         )),
-        (Destination::Browse, _) => Query::Catalogue(Box::new(
+        (Destination::Browse, 3) => Query::Catalogue(Box::new(
             Filter::sorted_by(FilterSort::Year).status(ANNOUNCED),
         )),
+        (Destination::Browse, _) => Query::Collections,
 
         (Destination::Saved, 5) => Query::History,
         (Destination::Saved, 6) => Query::Favourites,
+        (Destination::Saved, 7) => Query::MyCollections,
         (Destination::Saved, tab) => Query::List(
             ProfileList::ALL
                 .get(tab)
@@ -209,12 +218,31 @@ pub struct HomeState {
     /// Bumped on every new list, so a poster for a list the viewer has already
     /// moved past is dropped rather than drawn over the new one.
     generation: u64,
+    /// The collections behind the cards, when the grid is of collections
+    /// rather than releases.
+    collections: Vec<Collection>,
+    /// Who is signed in, for the tab of the account's own collections.
+    account: Rc<RefCell<Session>>,
 }
 
 impl HomeState {
-    fn next_generation(&mut self) -> u64 {
+    #[must_use]
+    pub fn new(account: Rc<RefCell<Session>>) -> Self {
+        Self {
+            account,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn next_generation(&mut self) -> u64 {
         self.generation += 1;
         self.generation
+    }
+
+    /// The collection a card stands for, when the grid is of collections.
+    #[must_use]
+    pub fn collection_at(&self, index: usize) -> Option<&Collection> {
+        self.collections.get(index)
     }
 
     /// The release a card stands for.
@@ -235,6 +263,7 @@ pub fn open(
     // languages live.
     window.set_searching(false);
     window.set_notice("".into());
+    window.set_collection_open(false);
 
     let (destination, tab, genre, generation) = {
         let mut state = state.borrow_mut();
@@ -277,7 +306,11 @@ pub fn open(
     // Saying so beats an empty grid that looks like an empty account.
     let needs_account = matches!(
         query,
-        Query::List(_) | Query::History | Query::Favourites | Query::Recommended
+        Query::List(_)
+            | Query::History
+            | Query::Favourites
+            | Query::Recommended
+            | Query::MyCollections
     );
     if needs_account && !client.is_authenticated() {
         show(window, state, Vec::new(), generation, http);
@@ -286,6 +319,12 @@ pub fn open(
     }
 
     window.set_results_loading(true);
+
+    if matches!(query, Query::Collections | Query::MyCollections) {
+        let me = state.borrow().account.borrow().id;
+        load_collections(window, state, &client, http, generation, me);
+        return;
+    }
 
     let weak = window.as_weak();
     let state = Rc::clone(state);
@@ -312,7 +351,7 @@ pub fn open(
                         None => days.iter().flat_map(|d| d.iter().cloned()).collect(),
                     }
                 }),
-                Query::None => Ok(Vec::new()),
+                Query::None | Query::Collections | Query::MyCollections => Ok(Vec::new()),
             }
         },
         move |found| {
@@ -503,7 +542,7 @@ pub fn search(
 }
 
 /// Puts a list of releases on the screen and starts fetching their posters.
-fn show(
+pub(crate) fn show(
     window: &MainWindow,
     state: &Rc<RefCell<HomeState>>,
     releases: Vec<Release>,
@@ -527,6 +566,7 @@ fn show(
     {
         let mut state = state.borrow_mut();
         state.releases = releases;
+        state.collections.clear();
         state.cards = Some(Rc::clone(&model));
     }
 
@@ -569,6 +609,96 @@ fn load_poster(
         card.poster_loaded = true;
         model.set_row_data(index, card);
     });
+}
+
+/// Collections as a grid: everybody's, or the account's own followed by
+/// those it favourited.
+fn load_collections(
+    window: &MainWindow,
+    state: &Rc<RefCell<HomeState>>,
+    client: &Client,
+    http: reqwest::Client,
+    generation: u64,
+    me: i64,
+) {
+    let weak = window.as_weak();
+    let state = Rc::clone(state);
+    let api = client.clone();
+    tasks::spawn(
+        async move {
+            if me <= 0 {
+                return api
+                    .collections(0, CollectionSort::Trending)
+                    .await
+                    .map(|page| page.content);
+            }
+            let mut mine = api.profile_collections(me, 0).await?.content;
+            let favourites = api.favorite_collections(0).await.map(|p| p.content);
+            for collection in favourites.unwrap_or_default() {
+                if mine.iter().all(|c| c.id != collection.id) {
+                    mine.push(collection);
+                }
+            }
+            Ok(mine)
+        },
+        move |found| {
+            let Some(window) = weak.upgrade() else { return };
+            if state.borrow().generation != generation {
+                return;
+            }
+            match found {
+                Ok(collections) => show_collections(&window, &state, collections, generation, http),
+                Err(error) => {
+                    tracing::error!(%error, "could not load the collections");
+                    window.set_results_loading(false);
+                }
+            }
+        },
+    );
+}
+
+fn show_collections(
+    window: &MainWindow,
+    state: &Rc<RefCell<HomeState>>,
+    collections: Vec<Collection>,
+    generation: u64,
+    http: reqwest::Client,
+) {
+    let cards: Vec<ReleaseCard> = collections
+        .iter()
+        .map(|c| ReleaseCard {
+            title: c.title.as_str().into(),
+            subtitle: collection_subtitle(c).into(),
+            score: slint::SharedString::default(),
+            poster: slint::Image::default(),
+            poster_loaded: false,
+        })
+        .collect();
+    let model = Rc::new(VecModel::from(cards));
+    window.set_results(slint::ModelRc::from(Rc::clone(&model)));
+    window.set_results_loading(false);
+
+    let images: Vec<String> = collections.iter().map(|c| c.image.clone()).collect();
+    {
+        let mut state = state.borrow_mut();
+        state.releases.clear();
+        state.collections = collections;
+        state.cards = Some(Rc::clone(&model));
+    }
+    for (index, url) in images.into_iter().enumerate() {
+        load_poster(state, &model, index, generation, http.clone(), url);
+    }
+}
+
+/// Who made it and how many keep it, in marks rather than words, so the line
+/// reads the same in either language.
+fn collection_subtitle(collection: &Collection) -> String {
+    match &collection.creator {
+        Some(creator) if !creator.login.is_empty() => {
+            format!("{} · ♥ {}", creator.login, collection.favorites_count)
+        }
+        _ => format!("♥ {}", collection.favorites_count),
+    }
 }
 
 fn card_for(release: &Release) -> ReleaseCard {

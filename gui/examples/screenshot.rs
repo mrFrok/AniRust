@@ -25,7 +25,8 @@
 //! `theatre`, `downloads`, `sign-in`, `failed`, `saved`, `loading`,
 //! `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`,
 //! `profile-light`, `home-downloading`, `feed`, `feed-latest`,
-//! `feed-signed-out`, `feed-empty`, `feed-channels`, `feed-channel`, `comments`, `comments-replying`,
+//! `feed-signed-out`, `feed-empty`, `feed-channels`, `feed-channel`, `collections`, `collection`,
+//! `collection-editor`, `collection-picker`, `comments`, `comments-replying`,
 //! `comments-signed-out`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
@@ -84,6 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || state.starts_with("feed")
             || state == "schedule"
             || state.starts_with("notifications")
+            || state.starts_with("collection")
         {
             "home".into()
         } else {
@@ -191,6 +193,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ui.set_open_channel_item(channel);
             ui.set_channel_open(true);
         }
+    }
+    // Collections: the grid of them, one open over its releases, and the
+    // two sheets for the account's own.
+    if state == "collections" {
+        ui.set_destination(1);
+        ui.set_tab(4);
+        ui.set_genres(slint::ModelRc::new(
+            slint::VecModel::<slint::SharedString>::default(),
+        ));
+    }
+    if state == "collection" || state.starts_with("collection-") {
+        ui.set_destination(2);
+        ui.set_tab(7);
+        ui.set_signed_in(true);
+        ui.set_collection_open(state == "collection");
+        ui.set_open_collection_item(CollectionItem {
+            title: "Лучшее за десятилетие".into(),
+            description: "То, что стоит посмотреть каждому: без филлеров, без затянутых арок."
+                .into(),
+            creator: "user7".into(),
+            image: slint::Image::default(),
+            image_loaded: false,
+            favourite: true,
+            favourites: 214,
+            comments: 18,
+            private: true,
+            mine: true,
+        });
+    }
+    if state == "collection-editor" {
+        ui.set_collection_editor_open(true);
+        ui.set_collection_editing(true);
+        ui.set_collection_draft_title("Лучшее за десятилетие".into());
+        ui.set_collection_draft_private(true);
+    }
+    if state == "collection-picker" {
+        ui.set_collection_picker_open(true);
+        ui.set_my_collection_titles(slint::ModelRc::new(slint::VecModel::from(
+            ["Лучшее за десятилетие", "На вечер", "Пересмотреть"]
+                .iter()
+                .map(|t| slint::SharedString::from(*t))
+                .collect::<Vec<_>>(),
+        )));
     }
     // The bell with a count, and its sheet open over the grid.
     if state.starts_with("notifications") {

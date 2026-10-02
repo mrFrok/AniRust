@@ -236,3 +236,19 @@ export struct ChannelItem {
     blog: bool,
     verified: bool,
 }
+
+/// A collection heading its own page.
+export struct CollectionItem {
+    title: string,
+    description: string,
+    /// Who made it, by login.
+    creator: string,
+    image: image,
+    image-loaded: bool,
+    favourite: bool,
+    favourites: int,
+    comments: int,
+    private: bool,
+    /// The account's own, so it can be edited and deleted.
+    mine: bool,
+}

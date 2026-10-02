@@ -10,6 +10,7 @@
 //! Nothing here blocks the event loop. Every lookup and every extractor run
 //! goes through [`tasks`] and comes back on the UI thread.
 
+mod collections;
 mod comments;
 mod downloads;
 mod feed;
@@ -83,6 +84,7 @@ fn main() -> Result<()> {
         .context("attaching video to the window")?;
 
     let http = reqwest_client();
+    let account = Rc::new(RefCell::new(Session::default()));
     let app = Rc::new(App {
         client: Rc::new(Client::new().context("creating the API client")?),
         registry: Rc::new(Registry::new(http.clone())),
@@ -91,18 +93,20 @@ fn main() -> Result<()> {
         release: Rc::new(RefCell::new(ReleaseState::new(Rc::new(RefCell::new(
             progress::Store::load(),
         ))))),
-        home: Rc::new(RefCell::new(HomeState::default())),
+        home: Rc::new(RefCell::new(HomeState::new(Rc::clone(&account)))),
+        collections: Rc::new(RefCell::new(collections::CollectionsState::default())),
         feed: Rc::new(RefCell::new(feed::FeedState::default())),
         comments: Rc::new(RefCell::new(comments::CommentsState::default())),
         notifications: Rc::new(RefCell::new(notifications::NotificationsState::default())),
         people: Rc::new(RefCell::new(people::PeopleState::default())),
         queue: Rc::new(RefCell::new(downloads::Queue::default())),
-        account: Rc::new(RefCell::new(Session::default())),
+        account,
         playing: Rc::new(RefCell::new(None)),
         settings: Rc::new(Settings::default()),
     });
 
     wire_home(&window, &app);
+    wire_collections(&window, &app);
     wire_feed(&window, &app);
     wire_comments(&window, &app);
     wire_notifications(&window, &app);
@@ -152,6 +156,7 @@ struct App {
     release: Rc<RefCell<ReleaseState>>,
     home: Rc<RefCell<HomeState>>,
     feed: Rc<RefCell<feed::FeedState>>,
+    collections: Rc<RefCell<collections::CollectionsState>>,
     comments: Rc<RefCell<comments::CommentsState>>,
     notifications: Rc<RefCell<notifications::NotificationsState>>,
     people: Rc<RefCell<people::PeopleState>>,
@@ -666,6 +671,118 @@ fn wire_feed(window: &MainWindow, app: &Rc<App>) {
     });
 }
 
+fn collections_context<'a>(window: &'a MainWindow, app: &'a App) -> collections::Context<'a> {
+    collections::Context {
+        window,
+        state: &app.collections,
+        home: &app.home,
+        client: &app.client,
+        http: app.http.clone(),
+        me: if app.client.is_authenticated() {
+            app.account.borrow().id
+        } else {
+            0
+        },
+    }
+}
+
+/// A window callback with no arguments that acts on collections.
+macro_rules! on_collections {
+    ($window:expr, $app:expr, $setter:ident, |$cx:ident| $body:expr) => {{
+        let app = Rc::clone($app);
+        let weak = $window.as_weak();
+        $window.$setter(move || {
+            let Some(window) = weak.upgrade() else { return };
+            let $cx = collections_context(&window, &app);
+            $body;
+        });
+    }};
+}
+
+fn wire_collections(window: &MainWindow, app: &Rc<App>) {
+    on_collections!(window, app, on_close_collection, |cx| collections::close(
+        &cx
+    ));
+    on_collections!(window, app, on_toggle_collection_favourite, |cx| {
+        collections::toggle_favourite(&cx)
+    });
+    on_collections!(window, app, on_edit_collection, |cx| collections::edit(&cx));
+    on_collections!(window, app, on_save_collection, |cx| collections::save(&cx));
+    on_collections!(window, app, on_delete_collection, |cx| collections::delete(
+        &cx
+    ));
+
+    window.on_open_collection_comments({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            let Some((id, title, _)) = collections::open_one(&app.collections) else {
+                return;
+            };
+            comments::open(
+                &window,
+                &app.comments,
+                &app.client,
+                viewer(&app),
+                anirust_api::CommentTarget::Collection,
+                id,
+                &title,
+            );
+        }
+    });
+
+    window.on_open_collection_creator({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            if let Some((_, _, creator)) = collections::open_one(&app.collections) {
+                open_person(&window, &app, creator);
+            }
+        }
+    });
+
+    // From a release's page the new collection starts with that release.
+    window.on_new_collection({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move |with_release| {
+            let Some(window) = weak.upgrade() else { return };
+            let first = if with_release >= 0 {
+                app.release.borrow().release.as_ref().map(|r| r.id)
+            } else {
+                None
+            };
+            collections::create(&collections_context(&window, &app), first);
+        }
+    });
+
+    window.on_add_to_collection({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            let Some(id) = app.release.borrow().release.as_ref().map(|r| r.id) else {
+                return;
+            };
+            collections::pick_for(&collections_context(&window, &app), id);
+        }
+    });
+
+    window.on_pick_collection({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            let Ok(index) = usize::try_from(index) else {
+                return;
+            };
+            collections::pick(&collections_context(&window, &app), index);
+        }
+    });
+}
+
 fn wire_home(window: &MainWindow, app: &Rc<App>) {
     let weak = window.as_weak();
     window.on_search({
@@ -860,6 +977,16 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
     let app = Rc::clone(app);
     window.on_open_release(move |index| {
         let Some(window) = weak.upgrade() else { return };
+        // A grid of collections opens the collection instead.
+        let collection = app
+            .home
+            .borrow()
+            .collection_at(index.max(0) as usize)
+            .cloned();
+        if let Some(collection) = collection {
+            collections::open(&collections_context(&window, &app), collection);
+            return;
+        }
         let Some(release_id) = app
             .home
             .borrow()
