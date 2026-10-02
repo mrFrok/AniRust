@@ -67,6 +67,54 @@ impl Appearance {
 #[serde(default)]
 pub struct Preferences {
     pub appearance: Appearance,
+    pub player: PlayerPreferences,
+}
+
+/// The player as it was last set, to open the next run the same way.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PlayerPreferences {
+    /// Whether to keep the rest at all. Off, every run starts from the
+    /// player's own defaults.
+    pub remember: bool,
+    pub speed: f64,
+    pub volume: i64,
+    /// Positions in the player's menus.
+    pub upscale: usize,
+    pub interpolation: bool,
+    pub decoder: usize,
+}
+
+impl Default for PlayerPreferences {
+    fn default() -> Self {
+        Self {
+            remember: true,
+            speed: 1.0,
+            volume: 100,
+            upscale: 0,
+            interpolation: false,
+            decoder: 0,
+        }
+    }
+}
+
+impl PlayerPreferences {
+    /// What a run starts with: these, or the defaults when not remembered.
+    #[must_use]
+    pub fn in_force(self) -> Self {
+        if self.remember {
+            Self {
+                speed: self.speed.clamp(0.25, 4.0),
+                volume: self.volume.clamp(0, 150),
+                ..self
+            }
+        } else {
+            Self {
+                remember: false,
+                ..Self::default()
+            }
+        }
+    }
 }
 
 impl Preferences {
@@ -146,6 +194,7 @@ mod tests {
     fn preferences_survive_a_round_trip_through_the_file() {
         let written = serde_json::to_string(&Preferences {
             appearance: Appearance::Amoled,
+            ..Preferences::default()
         })
         .expect("preferences serialise");
         assert!(written.contains("amoled"), "{written}");
@@ -158,5 +207,26 @@ mod tests {
     fn a_file_missing_the_field_is_read_at_its_default() {
         let read: Preferences = serde_json::from_str("{}").expect("an empty object parses");
         assert_eq!(read.appearance, Appearance::default());
+    }
+
+    #[test]
+    fn a_file_without_player_settings_remembers_by_default() {
+        let read: Preferences = serde_json::from_str(r#"{"appearance":"light"}"#).unwrap();
+        assert!(read.player.remember);
+        assert!((read.player.speed - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn forgetting_starts_from_the_defaults() {
+        let kept = PlayerPreferences {
+            remember: false,
+            speed: 2.0,
+            volume: 40,
+            ..PlayerPreferences::default()
+        };
+        let in_force = kept.in_force();
+        assert!((in_force.speed - 1.0).abs() < f64::EPSILON);
+        assert_eq!(in_force.volume, 100);
+        assert!(!in_force.remember);
     }
 }

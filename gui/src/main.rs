@@ -76,7 +76,8 @@ fn main() -> Result<()> {
     } else {
         "en".into()
     });
-    wire_preferences(&window, preferences::Preferences::load());
+    let prefs = Rc::new(Cell::new(preferences::Preferences::load()));
+    wire_preferences(&window, &prefs);
 
     let config = player_config();
     tracing::info!(hwdec = %config.hwdec, "player config");
@@ -108,6 +109,7 @@ fn main() -> Result<()> {
         standing: Rc::new(RefCell::new(standing::Standing::default())),
         editor: Rc::new(RefCell::new(editor::EditorState::default())),
         admin: Rc::new(RefCell::new(channel_admin::AdminState::default())),
+        came_from: RefCell::new(None),
         feed: Rc::new(RefCell::new(feed::FeedState::new(Rc::clone(&account)))),
         comments: Rc::new(RefCell::new(comments::CommentsState::default())),
         notifications: Rc::new(RefCell::new(notifications::NotificationsState::default())),
@@ -115,7 +117,8 @@ fn main() -> Result<()> {
         queue: Rc::new(RefCell::new(downloads::Queue::default())),
         account,
         playing: Rc::new(RefCell::new(None)),
-        settings: Rc::new(Settings::default()),
+        settings: Rc::new(Settings::from_preferences(prefs.get().player.in_force())),
+        prefs: Rc::clone(&prefs),
     });
 
     wire_home(&window, &app);
@@ -180,6 +183,7 @@ struct App {
     standing: Rc<RefCell<standing::Standing>>,
     editor: Rc<RefCell<editor::EditorState>>,
     admin: Rc<RefCell<channel_admin::AdminState>>,
+    came_from: RefCell<Option<CameFrom>>,
     comments: Rc<RefCell<comments::CommentsState>>,
     notifications: Rc<RefCell<notifications::NotificationsState>>,
     people: Rc<RefCell<people::PeopleState>>,
@@ -189,6 +193,8 @@ struct App {
     /// act on what is playing rather than on what was resolved first.
     playing: Playing,
     settings: Rc<Settings>,
+    /// What is kept between runs, written whenever it changes.
+    prefs: Rc<Cell<preferences::Preferences>>,
 }
 
 /// Bring-up knobs, so a picture problem can be bisected without a rebuild.
@@ -268,9 +274,24 @@ fn wire_account(window: &MainWindow, app: &Rc<App>) {
 /// the colours are drawn from, and once as its position in the row the profile
 /// screen offers, which is what that row lights up. Rust owns the order of
 /// that row, so the two cannot drift apart.
-fn wire_preferences(window: &MainWindow, preferences: preferences::Preferences) {
-    let held = Rc::new(Cell::new(preferences));
+fn wire_preferences(window: &MainWindow, held: &Rc<Cell<preferences::Preferences>>) {
+    let preferences = held.get();
     show_appearance(window, preferences.appearance);
+    window.set_remember_player(preferences.player.remember);
+    let held = Rc::clone(held);
+
+    window.on_set_remember_player({
+        let held = Rc::clone(&held);
+        let weak = window.as_weak();
+        move |on| {
+            let Some(window) = weak.upgrade() else { return };
+            let mut preferences = held.get();
+            preferences.player.remember = on;
+            held.set(preferences);
+            window.set_remember_player(on);
+            preferences.save();
+        }
+    });
 
     let weak = window.as_weak();
     window.on_select_appearance(move |index| {
@@ -329,6 +350,18 @@ macro_rules! on_row {
 
 /// Opens someone's profile on the profile page, from anywhere.
 fn open_person(window: &MainWindow, app: &App, id: i64) {
+    // Where the profile was opened from, to go back to. Only the first
+    // step away is kept: a friend of a friend's "back" goes to the screen
+    // the first profile was opened from.
+    if window.get_profile_is_mine() || !window.get_profile_can_go_back() {
+        *app.came_from.borrow_mut() = Some(CameFrom {
+            screen: window.get_screen(),
+            destination: window.get_destination(),
+            comments: window.get_comments_open(),
+            notifications: window.get_notifications_open(),
+        });
+    }
+    window.set_profile_can_go_back(true);
     window.set_comments_open(false);
     window.set_notifications_open(false);
     window.set_screen("home".into());
@@ -339,8 +372,34 @@ fn open_person(window: &MainWindow, app: &App, id: i64) {
     people::open(window, &app.people, &app.client, app.http.clone(), me, id);
 }
 
+/// Where someone's profile was opened from.
+struct CameFrom {
+    screen: slint::SharedString,
+    destination: i32,
+    comments: bool,
+    notifications: bool,
+}
+
+/// Back from someone's profile to where it was opened.
+fn go_back_from_profile(window: &MainWindow, app: &App) {
+    let Some(from) = app.came_from.borrow_mut().take() else {
+        open_my_profile(window, app);
+        return;
+    };
+    window.set_profile_can_go_back(false);
+    people::back_to_mine(window, &app.people);
+    // The rail is set directly: going through it would reload the tab and
+    // lose what was on screen.
+    window.set_destination(from.destination);
+    window.set_screen(from.screen);
+    window.set_comments_open(from.comments);
+    window.set_notifications_open(from.notifications);
+}
+
 /// Back to the account's own profile, freshly read.
 fn open_my_profile(window: &MainWindow, app: &App) {
+    window.set_profile_can_go_back(false);
+    app.came_from.borrow_mut().take();
     people::back_to_mine(window, &app.people);
     session::refresh_profile(
         window,
@@ -353,6 +412,14 @@ fn open_my_profile(window: &MainWindow, app: &App) {
 }
 
 fn wire_people(window: &MainWindow, app: &Rc<App>) {
+    window.on_profile_go_back({
+        let app = Rc::clone(app);
+        let weak = window.as_weak();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            go_back_from_profile(&window, &app);
+        }
+    });
     window.on_back_to_my_profile({
         let app = Rc::clone(app);
         let weak = window.as_weak();
@@ -1280,6 +1347,8 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
                 // The rail always means the account's own profile; someone
                 // else's is reached from their name, not from here.
                 people::back_to_mine(&window, &app.people);
+                window.set_profile_can_go_back(false);
+                app.came_from.borrow_mut().take();
                 people::load_requests(&window, &app.people, &app.client, app.http.clone());
                 session::refresh_profile(
                     &window,
@@ -1977,14 +2046,15 @@ struct Settings {
     tracks_stale: Cell<bool>,
 }
 
-impl Default for Settings {
-    fn default() -> Self {
+impl Settings {
+    /// The player as the preferences open it.
+    fn from_preferences(kept: preferences::PlayerPreferences) -> Self {
         Self {
-            speed: Cell::new(1.0),
-            upscale: Cell::new(0),
-            interpolation: Cell::new(false),
+            speed: Cell::new(kept.speed),
+            upscale: Cell::new(kept.upscale.min(PRESETS.len() - 1)),
+            interpolation: Cell::new(kept.interpolation),
             quality: Cell::new(0),
-            decoder: Cell::new(0),
+            decoder: Cell::new(kept.decoder.min(DECODERS.len() - 1)),
             subtitles: RefCell::new(Vec::new()),
             audio: RefCell::new(Vec::new()),
             last_subtitle: Cell::new(None),
@@ -2029,6 +2099,37 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     let playing = &app.playing;
     let bridge = &app.bridge;
 
+    // The player opens as it was left, when that is kept.
+    let kept = app.prefs.get().player.in_force();
+    let applied = player
+        .set_speed(kept.speed)
+        .and_then(|()| player.set_volume(kept.volume))
+        .and_then(|()| player.set_upscale(PRESETS[settings.upscale.get()]))
+        .and_then(|()| player.set_interpolation(kept.interpolation))
+        .and_then(|()| player.set_hwdec(DECODERS[settings.decoder.get()]));
+    if let Err(error) = applied {
+        tracing::warn!(%error, "the kept player settings were not applied");
+    }
+
+    // Writes the player's settings out, when they are kept.
+    let keep: Rc<dyn Fn()> = {
+        let prefs = Rc::clone(&app.prefs);
+        let settings = Rc::clone(&app.settings);
+        Rc::new(move || {
+            let mut all = prefs.get();
+            if !all.player.remember {
+                return;
+            }
+            all.player.speed = settings.speed.get();
+            all.player.upscale = settings.upscale.get();
+            all.player.interpolation = settings.interpolation.get();
+            all.player.decoder = settings.decoder.get();
+            all.player.volume = player.volume();
+            prefs.set(all);
+            all.save();
+        })
+    };
+
     window.on_toggle_pause(move || {
         if let Err(error) = player.toggle_pause() {
             tracing::warn!(%error, "pause failed");
@@ -2066,27 +2167,33 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     let advance = wire_stepping(window, app);
 
     let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
     window.on_set_speed(move |speed| {
         let speed = f64::from(speed);
         chosen.speed.set(speed);
         if let Err(error) = player.set_speed(speed) {
             tracing::warn!(%error, "speed change failed");
         }
+        keep_now();
     });
 
     let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
     window.on_set_upscale(move |index| {
         let index = (index.max(0) as usize).min(PRESETS.len() - 1);
         chosen.upscale.set(index);
+        keep_now();
         if let Err(error) = player.set_upscale(PRESETS[index]) {
             tracing::warn!(%error, preset = PRESETS[index].name(), "upscale change failed");
         }
     });
 
     let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
     window.on_toggle_interpolation(move || {
         let next = !chosen.interpolation.get();
         chosen.interpolation.set(next);
+        keep_now();
         if let Err(error) = player.set_interpolation(next) {
             tracing::warn!(%error, "interpolation change failed");
         }
@@ -2147,9 +2254,11 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     });
 
     let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
     window.on_set_decoder(move |index| {
         let index = (index.max(0) as usize).min(DECODERS.len() - 1);
         chosen.decoder.set(index);
+        keep_now();
         if let Err(error) = player.set_hwdec(DECODERS[index]) {
             tracing::warn!(%error, value = DECODERS[index], "decoder change failed");
         }
@@ -2174,6 +2283,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     });
 
     let weak = window.as_weak();
+    let keep_now = Rc::clone(&keep);
     window.on_adjust_volume(move |step| {
         let Some(window) = weak.upgrade() else { return };
         let volume = (player.volume() + i64::from(step)).clamp(0, 150);
@@ -2181,6 +2291,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
             tracing::warn!(%error, volume, "volume change failed");
             return;
         }
+        keep_now();
         // Reaching for the volume means wanting to hear it.
         let _ = player.set_muted(false);
         show_hint(&window, format!("🔊 {volume}%"));
@@ -2188,6 +2299,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 
     let chosen = Rc::clone(settings);
     let weak = window.as_weak();
+    let keep_now = Rc::clone(&keep);
     window.on_adjust_speed(move |step| {
         let Some(window) = weak.upgrade() else { return };
         let next = SPEEDS
@@ -2200,6 +2312,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         let speed = SPEEDS[next];
 
         chosen.speed.set(speed);
+        keep_now();
         if let Err(error) = player.set_speed(speed) {
             tracing::warn!(%error, speed, "speed change failed");
             return;

@@ -203,6 +203,20 @@ impl Release {
         self.grade
     }
 
+    /// Not out yet: announced, the service's status 3. Such a release has
+    /// nothing to rate.
+    #[must_use]
+    pub fn is_unreleased(&self) -> bool {
+        self.status.id == 3
+    }
+
+    /// The score worth showing: none for a release that is not out, or that
+    /// nobody has rated.
+    #[must_use]
+    pub fn shown_score(&self) -> Option<f32> {
+        (!self.is_unreleased() && self.grade > 0.0).then_some(self.grade)
+    }
+
     /// Poster URL.
     ///
     /// `image` carries it outright where the server sends it; elsewhere only

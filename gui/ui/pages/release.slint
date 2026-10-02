@@ -227,6 +227,8 @@ export component ReleasePage inherits Rectangle {
     // ---- to Rust ---------------------------------------------------------
     callback set-list(int);
     callback toggle-favourite();
+    /// Out, so it can be rated. A release that is only announced cannot.
+    in property <bool> rateable: true;
     callback add-to-collection();
     callback report();
     /// A star was clicked. Clicking the rating already given takes it back.
@@ -315,7 +317,8 @@ export component ReleasePage inherits Rectangle {
                 // Shown at every width. The title gives way instead — it elides,
                 // and a rating that disappears below some width is a feature
                 // that disappears with it.
-                VerticalLayout {
+                // Not out yet: nothing to rate.
+                if root.rateable: VerticalLayout {
                     alignment: center;
 
                     Rating {
@@ -512,7 +515,7 @@ export component ReleasePage inherits Rectangle {
                                 spacing: Spacing.small;
                                 alignment: start;
 
-                                Text {
+                                if root.score != "": Text {
                                     text: "★ " + root.score;
                                     color: MaterialPalette.primary;
                                     font-size: Typography.title-medium-size;

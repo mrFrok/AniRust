@@ -955,7 +955,11 @@ fn card_for(release: &Release) -> ReleaseCard {
     ReleaseCard {
         title: release.title().into(),
         subtitle: subtitle(release).into(),
-        score: format!("{:.1}", release.score()).into(),
+        score: release
+            .shown_score()
+            .map(|score| format!("{score:.1}"))
+            .unwrap_or_default()
+            .into(),
         poster: slint::Image::default(),
         poster_loaded: false,
     }

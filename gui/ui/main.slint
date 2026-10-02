@@ -68,6 +68,7 @@ export component MainWindow inherits Window {
     in property <string> release-status;
     in property <string> release-description;
     in property <string> release-score;
+    in property <bool> release-rateable: true;
     in property <string> release-episodes-label;
     in property <image> release-poster;
     in property <bool> poster-loaded: false;
@@ -498,6 +499,11 @@ export component MainWindow inherits Window {
     callback sign-out();
     /// Signing out is asked about first.
     in-out property <bool> confirm-sign-out: false;
+    in property <bool> remember-player: true;
+    callback set-remember-player(bool);
+    /// Someone's profile was opened from another screen.
+    in property <bool> profile-can-go-back: false;
+    callback profile-go-back();
 
     /// Which appearance is chosen, as a position in the row the profile
     /// screen offers. Rust owns that order, and writes it to the settings.
@@ -579,6 +585,8 @@ export component MainWindow inherits Window {
             sign-out => { root.confirm-sign-out = true; }
             open-settings => { root.open-settings(); }
             select-appearance(i) => { root.select-appearance(i); }
+            remember-player: root.remember-player;
+            set-remember-player(on) => { root.set-remember-player(on); }
             open-list(i) => { root.open-list(i); }
             open-recent(i) => { root.open-recent(i); }
             notify: root.notify-switches;
@@ -586,6 +594,8 @@ export component MainWindow inherits Window {
             friends: root.profile-friends;
             requests: root.friend-requests;
             back-to-mine => { root.back-to-my-profile(); }
+            can-go-back: root.profile-can-go-back;
+            go-back => { root.profile-go-back(); }
             friend-action => { root.friend-action(); }
             toggle-block => { root.toggle-block(); }
             report => { root.report("profile", -1); }
@@ -693,6 +703,7 @@ export component MainWindow inherits Window {
         status: root.release-status;
         description: root.release-description;
         score: root.release-score;
+        rateable: root.release-rateable;
         episodes-label: root.release-episodes-label;
         poster: root.release-poster;
         poster-loaded: root.poster-loaded;

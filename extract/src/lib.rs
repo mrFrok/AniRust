@@ -286,6 +286,8 @@ impl Registry {
 
     /// Resolves an embed URL to a playable stream.
     pub async fn resolve(&self, embed_url: &str) -> Result<ResolvedStream> {
+        let embed_url = clean_embed_url(embed_url);
+        let embed_url = embed_url.as_str();
         let host = host_of(embed_url).ok_or_else(|| ExtractError::NoHost {
             url: embed_url.to_owned(),
         })?;
@@ -317,6 +319,17 @@ impl Registry {
         hosts.sort_unstable();
         hosts
     }
+}
+
+/// An embed URL as the catalogue sometimes gives it: cut out of an
+/// `<iframe>` with the rest of the tag still on, as in
+/// `…?videoid=1" frameborder="0" scrolling="no`. Everything from the first
+/// quote or space is not part of the address.
+#[must_use]
+pub fn clean_embed_url(url: &str) -> String {
+    let url = url.trim();
+    let end = url.find(['"', '\'', ' ', '<', '>']).unwrap_or(url.len());
+    url[..end].to_owned()
 }
 
 /// Host of a URL, lowercased and stripped of `www.`.
@@ -353,6 +366,21 @@ pub(crate) fn origin_of(url: &url::Url) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn an_embed_url_loses_the_rest_of_its_iframe_tag() {
+        assert_eq!(
+            clean_embed_url(
+                r#"https://video.sibnet.ru/shell.php?videoid=2987558" frameborder="0" scrolling="no"#
+            ),
+            "https://video.sibnet.ru/shell.php?videoid=2987558"
+        );
+        assert_eq!(
+            clean_embed_url("  //kodik.info/seria/1/abc "),
+            "//kodik.info/seria/1/abc"
+        );
+    }
+
     use super::*;
 
     #[test]

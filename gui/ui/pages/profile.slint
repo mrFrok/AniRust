@@ -267,6 +267,9 @@ export component ProfilePage inherits Rectangle {
     in property <[PersonItem]> friends: [];
     in property <[PersonItem]> requests: [];
     callback back-to-mine();
+    /// The profile was opened from another screen, and can go back to it.
+    in property <bool> can-go-back: false;
+    callback go-back();
     callback friend-action();
     callback toggle-block();
     callback report();
@@ -284,6 +287,9 @@ export component ProfilePage inherits Rectangle {
     callback sign-out();
     callback open-settings();
     callback select-appearance(int);
+    /// The player opens as it was left.
+    in property <bool> remember-player: true;
+    callback set-remember-player(bool);
     /// One of the account's own lists, by its place in the bookmarks tabs.
     callback open-list(int);
     /// What was watched lately, newest first, and opening one of them.
@@ -332,9 +338,18 @@ export component ProfilePage inherits Rectangle {
 
         if !root.mine: HorizontalLayout {
             alignment: start;
+            spacing: Spacing.small;
+
+            // Back where the profile was opened from, when it was opened
+            // from somewhere — a comment, a release.
+            if root.can-go-back: TextButton {
+                icon: @image-url("../icons/back.svg");
+                text: Tr.back;
+                clicked => { root.go-back(); }
+            }
 
             TextButton {
-                icon: @image-url("../icons/back.svg");
+                icon: root.can-go-back ? @image-url("../icons/person.svg") : @image-url("../icons/back.svg");
                 text: Tr.my-profile;
                 clicked => { root.back-to-mine(); }
             }
@@ -1010,6 +1025,46 @@ export component ProfilePage inherits Rectangle {
             spacing: Spacing.base;
 
             HorizontalDivider {}
+
+            // ---- the player ------------------------------------------------
+            HorizontalLayout {
+                spacing: Spacing.base;
+                max-width: 560px;
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: Spacing.hair;
+
+                    Text {
+                        text: Tr.remember-player;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.title-medium-size;
+                        font-weight: Typography.title-medium-weight-em;
+                    }
+
+                    Text {
+                        text: Tr.remember-player-why;
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.body-medium-size;
+                        wrap: word-wrap;
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+
+                    Switch {
+                        width: 52px;
+                        height: 32px;
+                        property <bool> wanted: root.remember-player;
+                        init => { self.checked = root.remember-player; }
+                        changed wanted => { self.checked = self.wanted; }
+                        changed checked => {
+                            if (self.checked != root.remember-player) { root.set-remember-player(self.checked); }
+                        }
+                    }
+                }
+            }
 
             // ---- how it looks ------------------------------------------------
             VerticalLayout {

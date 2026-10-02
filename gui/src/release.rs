@@ -386,7 +386,14 @@ fn show_release(window: &MainWindow, release: &Release) {
     window.set_release_studio(release.studio.as_str().into());
     window.set_release_status(release.status_name().into());
     window.set_release_description(release.description.as_str().into());
-    window.set_release_score(format!("{:.1}", release.score()).into());
+    window.set_release_score(
+        release
+            .shown_score()
+            .map(|score| format!("{score:.1}"))
+            .unwrap_or_default()
+            .into(),
+    );
+    window.set_release_rateable(!release.is_unreleased());
     window.set_release_episodes_label(
         format!("{}/{}", release.episodes_released, release.episodes_total).into(),
     );

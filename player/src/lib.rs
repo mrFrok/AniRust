@@ -321,6 +321,14 @@ impl Player {
         };
 
         player.set_network_timeout(config.network_timeout_secs)?;
+        // A connection that stalls is tried again rather than ending the
+        // episode. Some CDN nodes leave the first connection hanging and
+        // answer the next one in milliseconds — measured on a segment that
+        // timed out after 30s and then came in 0.2s on a second try.
+        player.mpv.set_property(
+            "stream-lavf-o",
+            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=5",
+        )?;
         player.mpv.set_property("cache", "yes")?;
         player
             .mpv
