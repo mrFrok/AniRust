@@ -179,7 +179,13 @@ export component SecondaryTabBar inherits BaseNavigation {
         background: MaterialPalette.surface;
 
         layout := HorizontalLayout {
+            // AniRust: every tab is given the same width. Left to the
+            // layout, a tab took the width of its label, and the indicator —
+            // drawn at equal divisions — slid off the tab it was under
+            // whenever the labels differed in length.
             for item[index] in root.items : SecondaryTabItemTemplate {
+                horizontal-stretch: 1;
+                preferred-width: 0px;
                 icon: item.icon;
                 selected_icon: item.selected_icon;
                 text: item.text;

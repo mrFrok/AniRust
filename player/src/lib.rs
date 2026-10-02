@@ -36,13 +36,21 @@ pub use render::Renderer;
 pub use shaders::UpscalePreset;
 pub use tracks::{Track, TrackKind};
 
-/// How long to wait on a CDN node before giving up.
+/// How long to wait on a connection or a read before trying again.
 ///
-/// Generous on purpose. The nodes these streams redirect to are erratic: one
-/// answered a request in 14ms and then took 19.3s to accept the next
-/// connection. ffmpeg's default is shorter, so a working stream fails outright
-/// and reads like a broken extractor.
-pub const DEFAULT_NETWORK_TIMEOUT_SECS: u32 = 60;
+/// Short on purpose, and paired with retries below. Some CDN nodes drop a
+/// share of new connections outright — measured from a Russian network
+/// without a VPN, one node in three left the connection hanging while the
+/// next attempt to the same address took 13ms. Waiting a minute on the dead
+/// attempt is what made an episode sit on "loading"; giving up after ten
+/// seconds and connecting again is what gets it playing. The official
+/// player does the same: ten-second timeouts, five retries.
+pub const DEFAULT_NETWORK_TIMEOUT_SECS: u32 = 10;
+
+/// Retry options for ffmpeg's HTTP: reconnect on a dropped or failed
+/// connection, backing off up to a few seconds between attempts.
+const RECONNECT: &str =
+    "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=4";
 
 /// Hardware decoders to try, in order.
 ///
@@ -322,12 +330,14 @@ impl Player {
 
         player.set_network_timeout(config.network_timeout_secs)?;
         // A connection that stalls is tried again rather than ending the
-        // episode. Some CDN nodes leave the first connection hanging and
-        // answer the next one in milliseconds — measured on a segment that
-        // timed out after 30s and then came in 0.2s on a second try.
+        // episode: the playlist through mpv's own stream, and each HLS
+        // segment through the demuxer, which otherwise gives a segment one
+        // attempt. Measured on a node that drops connections: without these,
+        // four starts in five failed; with them, five in five played.
+        player.mpv.set_property("stream-lavf-o", RECONNECT)?;
         player.mpv.set_property(
-            "stream-lavf-o",
-            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=5",
+            "demuxer-lavf-o",
+            format!("seg_max_retry=5,{RECONNECT}").as_str(),
         )?;
         player.mpv.set_property("cache", "yes")?;
         player

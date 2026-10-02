@@ -52,14 +52,18 @@ pub const UNKNOWN_HEIGHT: u32 = 0;
 pub const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
      (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
-/// How long a player should wait for one of these CDN nodes.
+/// How long a player should wait on one of these CDN nodes before trying
+/// again.
 ///
-/// Deliberately generous. A manifest URL redirects to a randomly chosen edge
-/// node, and those nodes vary wildly: the same host answered a request in 14ms
-/// and then took 19.3s to accept the next connection. ffmpeg's default timeout
-/// is shorter than that, so an episode that is merely slow fails outright with
-/// `avformat_open_input() failed`, which reads like a broken extractor.
-pub const NETWORK_TIMEOUT_SECS: u32 = 60;
+/// Short, and only useful with the retries [`StreamVariant::mpv_args`] adds:
+/// a manifest redirects to a randomly chosen edge node, and some nodes drop
+/// a share of new connections. A dropped attempt is better abandoned after
+/// ten seconds and made again than waited on for a minute.
+pub const NETWORK_TIMEOUT_SECS: u32 = 10;
+
+/// ffmpeg's options for trying a dropped connection again.
+pub const RECONNECT_OPTIONS: &str =
+    "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=4";
 
 /// One playable rendition of an episode.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,7 +161,11 @@ impl ResolvedStream {
     ///   [`NETWORK_TIMEOUT_SECS`].
     #[must_use]
     pub fn mpv_args(&self) -> Vec<String> {
-        let mut args = vec![format!("--network-timeout={NETWORK_TIMEOUT_SECS}")];
+        let mut args = vec![
+            format!("--network-timeout={NETWORK_TIMEOUT_SECS}"),
+            format!("--stream-lavf-o={RECONNECT_OPTIONS}"),
+            format!("--demuxer-lavf-o=seg_max_retry=5,{RECONNECT_OPTIONS}"),
+        ];
         args.extend(self.headers.iter().map(|(name, value)| {
             if name.eq_ignore_ascii_case("user-agent") {
                 format!("--user-agent={value}")

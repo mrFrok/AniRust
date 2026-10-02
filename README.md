@@ -217,4 +217,6 @@ dynamically. The Anime4K shaders are MIT, taken from upstream. So is the
 Material 3 component set in `gui/material-1.18.0/`, vendored from
 `ui-libraries/material` of slint-ui/slint at the tag matching the `slint`
 dependency — it has no crates.io package, and a UI that changes shape when
-someone else tags a release is not a UI anyone can review.
+someone else tags a release is not a UI anyone can review. One change is
+ours, marked in place: the secondary tab bar gives every tab the same width,
+so its indicator stays under the tab it marks.
