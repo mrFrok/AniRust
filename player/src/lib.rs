@@ -651,6 +651,75 @@ impl Player {
         Ok(())
     }
 
+    /// Adds a subtitle file someone picked, and shows it.
+    pub fn load_subtitle_file(&self, path: &std::path::Path) -> Result<()> {
+        self.mpv
+            .command("sub-add", &[&path.to_string_lossy(), "select"])?;
+        Ok(())
+    }
+
+    /// Adds an audio file someone picked — another dub for the same
+    /// episode — and plays it instead of the stream's own.
+    pub fn load_audio_file(&self, path: &std::path::Path) -> Result<()> {
+        self.mpv
+            .command("audio-add", &[&path.to_string_lossy(), "select"])?;
+        Ok(())
+    }
+
+    // ---- sound and subtitles ---------------------------------------------
+
+    /// Shifts the sound against the picture, in seconds; positive is later.
+    pub fn set_audio_delay(&self, seconds: f64) -> Result<()> {
+        self.mpv.set_property("audio-delay", seconds)?;
+        Ok(())
+    }
+
+    /// Shifts the subtitles against the picture, in seconds; positive is
+    /// later.
+    pub fn set_subtitle_delay(&self, seconds: f64) -> Result<()> {
+        self.mpv.set_property("sub-delay", seconds)?;
+        Ok(())
+    }
+
+    /// Evens out loudness, so whispered lines and a loud opening sit at
+    /// about the same level. ffmpeg's `dynaudnorm`, tuned to react within a
+    /// few seconds rather than over the whole episode.
+    pub fn set_loudness_normalization(&self, on: bool) -> Result<()> {
+        let filter = if on {
+            "lavfi=[dynaudnorm=f=250:g=15:p=0.9]"
+        } else {
+            ""
+        };
+        self.mpv.set_property("af", filter)?;
+        Ok(())
+    }
+
+    /// Scales subtitle text; 1.0 is the file's own size.
+    pub fn set_subtitle_scale(&self, scale: f64) -> Result<()> {
+        self.mpv.set_property("sub-scale", scale)?;
+        Ok(())
+    }
+
+    /// Whether the player's own subtitle style replaces the styles an ASS
+    /// file brings. Off, ASS subtitles keep their look and only scale.
+    pub fn set_ass_override(&self, on: bool) -> Result<()> {
+        self.mpv
+            .set_property("sub-ass-override", if on { "force" } else { "scale" })?;
+        Ok(())
+    }
+
+    /// Where subtitles look for fonts they name, on top of the system's:
+    /// fan subtitles often name fonts nobody has installed. `None` goes back
+    /// to mpv's own folder.
+    pub fn set_subtitle_fonts_dir(&self, dir: Option<&std::path::Path>) -> Result<()> {
+        let dir = dir.map_or_else(String::new, |dir| dir.to_string_lossy().into_owned());
+        self.mpv.set_property("sub-fonts-dir", dir.as_str())?;
+        // Fonts are looked up when a track is loaded, so the one showing is
+        // loaded again to pick the new folder up. Without one, nothing to do.
+        let _ = self.mpv.command("sub-reload", &[]);
+        Ok(())
+    }
+
     // ---- video processing -------------------------------------------------
 
     /// Turns temporal resampling on or off.

@@ -659,8 +659,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // list learns its own height. Only then does starting an episode mean
     // anything — scrolling to it needs a list that has been laid out.
     draw(&window);
-    if state == "playing" || state == "theatre" || state == "upscale" || state == "paused" {
+    if state == "playing"
+        || state == "theatre"
+        || state == "upscale"
+        || state == "paused"
+        || state == "player-settings"
+    {
         start_playing(&ui, state == "theatre");
+    }
+    // The settings sheet, with some sound and subtitle choices made.
+    if state == "player-settings" {
+        ui.set_audio_delay_label("+0,3".into());
+        ui.set_subtitle_scale(2);
+        ui.set_normalize(true);
+        ui.set_player_sheet("settings".into());
     }
     // Paused, which is when the frame steps appear beside play.
     if state == "paused" {

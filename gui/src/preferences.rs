@@ -132,6 +132,12 @@ pub struct PlayerPreferences {
     pub decoder: usize,
     /// Upscale to 4K whatever the window's size.
     pub force_4k: bool,
+    /// Loudness evened out.
+    pub normalize: bool,
+    /// Position in the subtitle size menu.
+    pub subtitle_scale: usize,
+    /// The player's subtitle style over the styles ASS files bring.
+    pub ass_override: bool,
 }
 
 impl Default for PlayerPreferences {
@@ -145,6 +151,9 @@ impl Default for PlayerPreferences {
             interpolation: false,
             decoder: 0,
             force_4k: false,
+            normalize: false,
+            subtitle_scale: 1,
+            ass_override: false,
         }
     }
 }

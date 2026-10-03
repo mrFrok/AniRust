@@ -15,6 +15,49 @@ import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { IconButton, TextIndicator, SeekBar, SettingChip, SettingOption } from "../components/player-controls.slint";
 
+/// A shift in time, in tenths of a second either way, with a way back to
+/// none.
+component DelayRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    callback step(int);
+
+    spacing: Spacing.small;
+    alignment: start;
+
+    Text {
+        text: root.label;
+        color: #FFFFFFB3;
+        font-size: Typography.body-medium-size;
+        vertical-alignment: center;
+        min-width: 190px;
+    }
+
+    SettingChip {
+        label: "−0.1";
+        clicked => { root.step(-1); }
+    }
+
+    Text {
+        text: root.value;
+        color: #FFFFFF;
+        font-size: Typography.body-large-size;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        min-width: 64px;
+    }
+
+    SettingChip {
+        label: "+0.1";
+        clicked => { root.step(1); }
+    }
+
+    SettingChip {
+        label: Tr.reset;
+        clicked => { root.step(0); }
+    }
+}
+
 export component PlayerPage inherits Rectangle {
     // ---- from Rust -------------------------------------------------------
     in property <image> video-frame;
@@ -92,6 +135,23 @@ export component PlayerPage inherits Rectangle {
     callback toggle-repeat();
     /// Saves the frame on screen, with the subtitles on it or without.
     callback screenshot(bool);
+    callback open-screenshots-folder();
+    // Sound and subtitles. The delays arrive as words, already formatted.
+    in property <string> audio-delay-label: "0";
+    in property <string> subtitle-delay-label: "0";
+    in property <bool> normalize: false;
+    /// Index into the subtitle sizes: 75%, 100%, 125%, 150%, 200%.
+    in property <int> subtitle-scale: 1;
+    in property <bool> ass-override: false;
+    /// −1 earlier, +1 later, 0 back to none.
+    callback step-audio-delay(int);
+    callback step-subtitle-delay(int);
+    callback toggle-normalize();
+    callback set-subtitle-scale(int);
+    callback toggle-ass-override();
+    callback load-audio-file();
+    callback load-subtitle-file();
+    callback open-fonts-folder();
     callback toggle-fullscreen();
     /// Fill the window, or give the release screen its place back.
     callback toggle-theatre();
@@ -709,6 +769,146 @@ export component PlayerPage inherits Rectangle {
                     if root.sheet == "settings": VerticalLayout {
                         spacing: Spacing.base;
 
+                        Text {
+                            text: Tr.quality;
+                            color: #FFFFFF;
+                            font-size: Typography.title-medium-size;
+                            font-weight: Typography.title-medium-weight-em;
+                        }
+
+                        HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            for name[index] in root.qualities: SettingChip {
+                                label: name;
+                                selected: index == root.quality;
+                                clicked => { root.set-quality(index); }
+                            }
+                        }
+
+                        // ---- sound ----
+                        Text {
+                            text: Tr.audio-track;
+                            color: #FFFFFF;
+                            font-size: Typography.title-medium-size;
+                            font-weight: Typography.title-medium-weight-em;
+                        }
+
+                        // A single track is no choice, so its chip would only
+                        // be noise; the file button is always there.
+                        HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            if root.audio-tracks.length > 1: HorizontalLayout {
+                                spacing: Spacing.small;
+
+                                for name[index] in root.audio-tracks: SettingChip {
+                                    label: name;
+                                    selected: index == root.audio-track;
+                                    clicked => { root.set-audio-track(index); }
+                                }
+                            }
+
+                            SettingChip {
+                                label: Tr.from-file;
+                                clicked => { root.load-audio-file(); }
+                            }
+                        }
+
+                        DelayRow {
+                            label: Tr.audio-delay;
+                            value: root.audio-delay-label;
+                            step(direction) => { root.step-audio-delay(direction); }
+                        }
+
+                        SettingOption {
+                            label: Tr.normalize;
+                            description: Tr.normalize-hint;
+                            selected: root.normalize;
+                            clicked => { root.toggle-normalize(); }
+                        }
+
+                        // ---- subtitles ----
+                        Text {
+                            text: Tr.subtitles;
+                            color: #FFFFFF;
+                            font-size: Typography.title-medium-size;
+                            font-weight: Typography.title-medium-weight-em;
+                        }
+
+                        HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            if root.subtitle-tracks.length > 1: HorizontalLayout {
+                                spacing: Spacing.small;
+
+                                for name[index] in root.subtitle-tracks: SettingChip {
+                                    label: name;
+                                    selected: index == root.subtitle-track;
+                                    clicked => { root.set-subtitle-track(index); }
+                                }
+                            }
+
+                            SettingChip {
+                                label: Tr.from-file;
+                                clicked => { root.load-subtitle-file(); }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            Text {
+                                text: Tr.subtitle-size;
+                                color: #FFFFFFB3;
+                                font-size: Typography.body-medium-size;
+                                vertical-alignment: center;
+                                min-width: 190px;
+                            }
+
+                            for name[index] in ["75%", "100%", "125%", "150%", "200%"]: SettingChip {
+                                label: name;
+                                selected: index == root.subtitle-scale;
+                                clicked => { root.set-subtitle-scale(index); }
+                            }
+                        }
+
+                        DelayRow {
+                            label: Tr.subtitle-delay;
+                            value: root.subtitle-delay-label;
+                            step(direction) => { root.step-subtitle-delay(direction); }
+                        }
+
+                        SettingOption {
+                            label: Tr.ass-override;
+                            description: Tr.ass-override-hint;
+                            selected: root.ass-override;
+                            clicked => { root.toggle-ass-override(); }
+                        }
+
+                        HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            Text {
+                                text: Tr.subtitle-fonts-hint;
+                                color: #FFFFFF8C;
+                                font-size: Typography.body-medium-size;
+                                wrap: word-wrap;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+
+                            SettingChip {
+                                label: Tr.open-folder;
+                                clicked => { root.open-fonts-folder(); }
+                            }
+                        }
+
                         SettingOption {
                             label: Tr.repeat;
                             description: Tr.repeat-hint;
@@ -743,61 +943,10 @@ export component PlayerPage inherits Rectangle {
                                 label: Tr.screenshot-without-subtitles;
                                 clicked => { root.screenshot(false); }
                             }
-                        }
 
-                        Text {
-                            text: Tr.quality;
-                            color: #FFFFFF;
-                            font-size: Typography.title-medium-size;
-                            font-weight: Typography.title-medium-weight-em;
-                        }
-
-                        HorizontalLayout {
-                            spacing: Spacing.small;
-                            alignment: start;
-
-                            for name[index] in root.qualities: SettingChip {
-                                label: name;
-                                selected: index == root.quality;
-                                clicked => { root.set-quality(index); }
-                            }
-                        }
-
-                        // Only worth a section when there is a choice. A single
-                        // audio track is not one, and "off" alone is not either.
-                        if root.audio-tracks.length > 1: Text {
-                            text: Tr.audio-track;
-                            color: #FFFFFF;
-                            font-size: Typography.title-medium-size;
-                            font-weight: Typography.title-medium-weight-em;
-                        }
-
-                        if root.audio-tracks.length > 1: HorizontalLayout {
-                            spacing: Spacing.small;
-                            alignment: start;
-
-                            for name[index] in root.audio-tracks: SettingChip {
-                                label: name;
-                                selected: index == root.audio-track;
-                                clicked => { root.set-audio-track(index); }
-                            }
-                        }
-
-                        if root.subtitle-tracks.length > 1: Text {
-                            text: Tr.subtitles;
-                            color: #FFFFFF;
-                            font-size: Typography.title-medium-size;
-                            font-weight: Typography.title-medium-weight-em;
-                        }
-
-                        if root.subtitle-tracks.length > 1: HorizontalLayout {
-                            spacing: Spacing.small;
-                            alignment: start;
-
-                            for name[index] in root.subtitle-tracks: SettingChip {
-                                label: name;
-                                selected: index == root.subtitle-track;
-                                clicked => { root.set-subtitle-track(index); }
+                            SettingChip {
+                                label: Tr.open-folder;
+                                clicked => { root.open-screenshots-folder(); }
                             }
                         }
 

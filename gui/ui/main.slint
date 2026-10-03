@@ -339,6 +339,20 @@ export component MainWindow inherits Window {
     in property <bool> repeat: false;
     callback toggle-repeat();
     callback screenshot(bool);
+    callback open-screenshots-folder();
+    in property <string> audio-delay-label: "0";
+    in property <string> subtitle-delay-label: "0";
+    in property <bool> normalize: false;
+    in property <int> subtitle-scale: 1;
+    in property <bool> ass-override: false;
+    callback step-audio-delay(int);
+    callback step-subtitle-delay(int);
+    callback toggle-normalize();
+    callback set-subtitle-scale(int);
+    callback toggle-ass-override();
+    callback load-audio-file();
+    callback load-subtitle-file();
+    callback open-fonts-folder();
     callback toggle-fullscreen();
     callback toggle-muted();
     /// Loudness, by a step up or down.
@@ -828,6 +842,11 @@ export component MainWindow inherits Window {
             upscale-quality: root.upscale-quality;
             interpolation: root.interpolation;
             repeat: root.repeat;
+            audio-delay-label: root.audio-delay-label;
+            subtitle-delay-label: root.subtitle-delay-label;
+            normalize: root.normalize;
+            subtitle-scale: root.subtitle-scale;
+            ass-override: root.ass-override;
             qualities: root.qualities;
             quality: root.quality;
             decoder: root.decoder;
@@ -861,6 +880,15 @@ export component MainWindow inherits Window {
             step-frame(forward) => { root.step-frame(forward); }
             toggle-repeat => { root.toggle-repeat(); }
             screenshot(subtitles) => { root.screenshot(subtitles); }
+            open-screenshots-folder => { root.open-screenshots-folder(); }
+            step-audio-delay(d) => { root.step-audio-delay(d); }
+            step-subtitle-delay(d) => { root.step-subtitle-delay(d); }
+            toggle-normalize => { root.toggle-normalize(); }
+            set-subtitle-scale(i) => { root.set-subtitle-scale(i); }
+            toggle-ass-override => { root.toggle-ass-override(); }
+            load-audio-file => { root.load-audio-file(); }
+            load-subtitle-file => { root.load-subtitle-file(); }
+            open-fonts-folder => { root.open-fonts-folder(); }
             toggle-theatre => { root.theatre = !root.theatre; }
             close => { root.theatre = false; root.close-player(); }
         }
@@ -1161,6 +1189,10 @@ export component MainWindow inherits Window {
             if (event.text == "i") { root.toggle-interpolation(); return accept; }
             if (event.text == "r") { root.toggle-repeat(); return accept; }
             if (event.text == "p") { root.screenshot(true); return accept; }
+            if (event.text == "z") { root.step-subtitle-delay(-1); return accept; }
+            if (event.text == "x") { root.step-subtitle-delay(1); return accept; }
+            if (event.text == "Z") { root.step-audio-delay(-1); return accept; }
+            if (event.text == "X") { root.step-audio-delay(1); return accept; }
             if (event.text == "P") { root.screenshot(false); return accept; }
             reject
         }

@@ -75,3 +75,25 @@ fn write_if_changed(path: &std::path::Path, contents: &str) -> std::io::Result<(
     }
     std::fs::write(path, contents)
 }
+
+/// Opens a folder of ours in the desktop's file manager.
+///
+/// The path goes to the platform's opener as a single argument, never
+/// through a shell. Only for folders this program made — the screenshots,
+/// the subtitle fonts — never a path someone else supplied.
+pub fn open_folder(path: &std::path::Path) {
+    #[cfg(target_os = "linux")]
+    let opened = std::process::Command::new("xdg-open").arg(path).spawn();
+    #[cfg(target_os = "macos")]
+    let opened = std::process::Command::new("open").arg(path).spawn();
+    #[cfg(target_os = "windows")]
+    let opened = std::process::Command::new("explorer").arg(path).spawn();
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    let opened: std::io::Result<std::process::Child> = Err(std::io::Error::other(
+        "no file manager opener on this platform",
+    ));
+
+    if let Err(error) = opened {
+        tracing::warn!(%error, path = %path.display(), "the folder could not be opened");
+    }
+}

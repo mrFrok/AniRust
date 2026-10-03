@@ -2129,6 +2129,13 @@ struct Settings {
     /// The episode loops instead of going on to the next. Not kept: it is a
     /// choice about this episode.
     repeat: Cell<bool>,
+    /// Shifts in seconds. Not kept either: they belong to a source, and the
+    /// next run may well play another.
+    audio_delay: Cell<f64>,
+    subtitle_delay: Cell<f64>,
+    normalize: Cell<bool>,
+    subtitle_scale: Cell<usize>,
+    ass_override: Cell<bool>,
     quality: Cell<usize>,
     decoder: Cell<usize>,
     /// mpv track ids behind the subtitle and audio menus.
@@ -2158,6 +2165,11 @@ impl Settings {
             interpolation: Cell::new(kept.interpolation),
             force_4k: Cell::new(kept.force_4k),
             repeat: Cell::new(false),
+            audio_delay: Cell::new(0.0),
+            subtitle_delay: Cell::new(0.0),
+            normalize: Cell::new(kept.normalize),
+            subtitle_scale: Cell::new(kept.subtitle_scale.min(SUBTITLE_SCALES.len() - 1)),
+            ass_override: Cell::new(kept.ass_override),
             quality: Cell::new(0),
             decoder: Cell::new(kept.decoder.min(DECODERS.len() - 1)),
             subtitles: RefCell::new(Vec::new()),
@@ -2184,6 +2196,44 @@ const DECODERS: [&str; 3] = [anirust_player::DEFAULT_HWDEC, "nvdec,vaapi", "no"]
 
 /// How fast the picture plays while the button is held down on it.
 const HOLD_SPEED: f64 = 2.0;
+
+/// Subtitle sizes the menu offers, as mpv's `sub-scale`.
+const SUBTITLE_SCALES: [f64; 5] = [0.75, 1.0, 1.25, 1.5, 2.0];
+
+/// How far one press moves a delay, in seconds.
+const DELAY_STEP: f64 = 0.1;
+
+/// Where screenshots go: a folder of the user's pictures.
+fn screenshots_dir() -> Option<std::path::PathBuf> {
+    dirs::picture_dir()
+        .or_else(dirs::home_dir)
+        .map(|dir| dir.join("AniRust"))
+}
+
+/// Where subtitles look for fonts the system lacks. Fan subtitles name fonts
+/// nobody has installed; dropped here, they are found.
+fn subtitle_fonts_dir() -> Option<std::path::PathBuf> {
+    dirs::data_dir().map(|dir| dir.join("anirust").join("fonts"))
+}
+
+/// A delay as the menu shows it: "0", "+0.3", "−1.2", with a decimal comma
+/// in Russian.
+fn format_delay(seconds: f64, ru: bool) -> String {
+    if seconds.abs() < DELAY_STEP / 2.0 {
+        return "0".to_owned();
+    }
+    let text = format!("{seconds:+.1}").replace('-', "−");
+    if ru { text.replace('.', ",") } else { text }
+}
+
+/// A delay moved one step either way, or back to none, rounded to the step
+/// so that ten presses come back to exactly where they started.
+fn step_delay(current: f64, direction: i32) -> f64 {
+    if direction == 0 {
+        return 0.0;
+    }
+    ((current + f64::from(direction.signum()) * DELAY_STEP) / DELAY_STEP).round() * DELAY_STEP
+}
 
 /// The rates the speed menu offers, which are also the notches `<` and `>`
 /// step between.
@@ -2217,13 +2267,25 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         .and_then(|()| player.set_volume(kept.volume))
         .and_then(|()| player.set_upscale(settings.upscale()))
         .and_then(|()| player.set_interpolation(kept.interpolation))
-        .and_then(|()| player.set_hwdec(DECODERS[settings.decoder.get()]));
+        .and_then(|()| player.set_hwdec(DECODERS[settings.decoder.get()]))
+        .and_then(|()| player.set_loudness_normalization(settings.normalize.get()))
+        .and_then(|()| player.set_subtitle_scale(SUBTITLE_SCALES[settings.subtitle_scale.get()]))
+        .and_then(|()| player.set_ass_override(settings.ass_override.get()));
     if let Err(error) = applied {
         tracing::warn!(%error, "the kept player settings were not applied");
     }
 
     bridge.set_force_4k(kept.force_4k);
     window.set_force_4k(kept.force_4k);
+
+    if let Some(fonts) = subtitle_fonts_dir() {
+        let ready = std::fs::create_dir_all(&fonts)
+            .map_err(anyhow::Error::from)
+            .and_then(|()| Ok(player.set_subtitle_fonts_dir(Some(&fonts))?));
+        if let Err(error) = ready {
+            tracing::warn!(%error, dir = %fonts.display(), "the subtitle fonts folder is not in use");
+        }
+    }
 
     // Writes the player's settings out, when they are kept.
     let keep: Rc<dyn Fn()> = {
@@ -2241,6 +2303,9 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
             all.player.decoder = settings.decoder.get();
             all.player.volume = player.volume();
             all.player.force_4k = settings.force_4k.get();
+            all.player.normalize = settings.normalize.get();
+            all.player.subtitle_scale = settings.subtitle_scale.get();
+            all.player.ass_override = settings.ass_override.get();
             prefs.set(all);
             all.save();
         })
@@ -2508,10 +2573,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     window.on_screenshot(move |with_subtitles| {
         let Some(window) = weak.upgrade() else { return };
         let ru = window.get_lang() == "ru";
-        let Some(dir) = dirs::picture_dir()
-            .or_else(dirs::home_dir)
-            .map(|dir| dir.join("AniRust"))
-        else {
+        let Some(dir) = screenshots_dir() else {
             return;
         };
         let at = player.position().unwrap_or_default().as_secs();
@@ -2554,6 +2616,141 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
                     .to_owned(),
                 );
             }
+        }
+    });
+
+    window.on_open_screenshots_folder(|| {
+        let Some(dir) = screenshots_dir() else { return };
+        match std::fs::create_dir_all(&dir) {
+            Ok(()) => desktop::open_folder(&dir),
+            Err(error) => tracing::warn!(%error, dir = %dir.display(), "no screenshots folder"),
+        }
+    });
+
+    window.on_open_fonts_folder(|| {
+        let Some(dir) = subtitle_fonts_dir() else {
+            return;
+        };
+        match std::fs::create_dir_all(&dir) {
+            Ok(()) => desktop::open_folder(&dir),
+            Err(error) => tracing::warn!(%error, dir = %dir.display(), "no subtitle fonts folder"),
+        }
+    });
+
+    let chosen = Rc::clone(settings);
+    let weak = window.as_weak();
+    window.on_step_audio_delay(move |direction| {
+        let Some(window) = weak.upgrade() else { return };
+        let delay = step_delay(chosen.audio_delay.get(), direction);
+        if let Err(error) = player.set_audio_delay(delay) {
+            tracing::warn!(%error, delay, "audio delay change failed");
+            return;
+        }
+        chosen.audio_delay.set(delay);
+        let ru = window.get_lang() == "ru";
+        let what = if ru { "Звук" } else { "Audio" };
+        show_hint(&window, format!("{what} {}", format_delay(delay, ru)));
+    });
+
+    let chosen = Rc::clone(settings);
+    let weak = window.as_weak();
+    window.on_step_subtitle_delay(move |direction| {
+        let Some(window) = weak.upgrade() else { return };
+        let delay = step_delay(chosen.subtitle_delay.get(), direction);
+        if let Err(error) = player.set_subtitle_delay(delay) {
+            tracing::warn!(%error, delay, "subtitle delay change failed");
+            return;
+        }
+        chosen.subtitle_delay.set(delay);
+        let ru = window.get_lang() == "ru";
+        let what = if ru { "Субтитры" } else { "Subtitles" };
+        show_hint(&window, format!("{what} {}", format_delay(delay, ru)));
+    });
+
+    let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
+    window.on_toggle_normalize(move || {
+        let on = !chosen.normalize.get();
+        if let Err(error) = player.set_loudness_normalization(on) {
+            tracing::warn!(%error, on, "loudness normalisation change failed");
+            return;
+        }
+        chosen.normalize.set(on);
+        keep_now();
+    });
+
+    let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
+    window.on_set_subtitle_scale(move |index| {
+        let index = (index.max(0) as usize).min(SUBTITLE_SCALES.len() - 1);
+        if let Err(error) = player.set_subtitle_scale(SUBTITLE_SCALES[index]) {
+            tracing::warn!(%error, index, "subtitle size change failed");
+            return;
+        }
+        chosen.subtitle_scale.set(index);
+        keep_now();
+    });
+
+    let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
+    window.on_toggle_ass_override(move || {
+        let on = !chosen.ass_override.get();
+        if let Err(error) = player.set_ass_override(on) {
+            tracing::warn!(%error, on, "ASS override change failed");
+            return;
+        }
+        chosen.ass_override.set(on);
+        keep_now();
+    });
+
+    // Files someone picks: another dub, or subtitles for the episode. Each
+    // becomes a track of this episode and is shown at once.
+    let weak = window.as_weak();
+    window.on_load_audio_file(move || {
+        let weak = weak.clone();
+        let picked = slint::spawn_local(async move {
+            let Some(file) = rfd::AsyncFileDialog::new()
+                .add_filter(
+                    "Audio",
+                    &[
+                        "mka", "aac", "ac3", "eac3", "flac", "m4a", "mp3", "ogg", "opus", "wav",
+                    ],
+                )
+                .pick_file()
+                .await
+            else {
+                return;
+            };
+            let Some(window) = weak.upgrade() else { return };
+            if let Err(error) = player.load_audio_file(file.path()) {
+                tracing::warn!(%error, "the audio file was not loaded");
+                show_hint(&window, "✕".to_owned());
+            }
+        });
+        if let Err(error) = picked {
+            tracing::warn!(%error, "the file picker did not open");
+        }
+    });
+
+    let weak = window.as_weak();
+    window.on_load_subtitle_file(move || {
+        let weak = weak.clone();
+        let picked = slint::spawn_local(async move {
+            let Some(file) = rfd::AsyncFileDialog::new()
+                .add_filter("Subtitles", &["ass", "ssa", "srt", "vtt", "sub", "sup"])
+                .pick_file()
+                .await
+            else {
+                return;
+            };
+            let Some(window) = weak.upgrade() else { return };
+            if let Err(error) = player.load_subtitle_file(file.path()) {
+                tracing::warn!(%error, "the subtitle file was not loaded");
+                show_hint(&window, "✕".to_owned());
+            }
+        });
+        if let Err(error) = picked {
+            tracing::warn!(%error, "the file picker did not open");
         }
     });
 
@@ -2792,6 +2989,12 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
 
             window.set_speed_label(format_speed(settings.speed.get()).into());
             window.set_upscale(settings.upscale_mode.get() as i32);
+            let ru = window.get_lang() == "ru";
+            window.set_audio_delay_label(format_delay(settings.audio_delay.get(), ru).into());
+            window.set_subtitle_delay_label(format_delay(settings.subtitle_delay.get(), ru).into());
+            window.set_normalize(settings.normalize.get());
+            window.set_subtitle_scale(settings.subtitle_scale.get() as i32);
+            window.set_ass_override(settings.ass_override.get());
             window.set_upscale_quality(settings.upscale_quality.get() as i32);
             window.set_interpolation(settings.interpolation.get());
             window.set_quality(settings.quality.get() as i32);
@@ -3083,6 +3286,28 @@ fn release_id_from_args() -> Result<Option<i64>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_delay_reads_with_its_sign_and_the_locale_decimal() {
+        assert_eq!(format_delay(0.0, true), "0");
+        assert_eq!(format_delay(0.3, false), "+0.3");
+        assert_eq!(format_delay(-1.2, true), "−1,2");
+        assert_eq!(format_delay(0.04, false), "0");
+    }
+
+    #[test]
+    fn ten_steps_up_and_ten_down_come_back_to_none() {
+        let mut delay = 0.0;
+        for _ in 0..10 {
+            delay = step_delay(delay, 1);
+        }
+        assert!((delay - 1.0).abs() < 1e-9, "{delay}");
+        for _ in 0..10 {
+            delay = step_delay(delay, -1);
+        }
+        assert_eq!(format_delay(delay, false), "0");
+        assert_eq!(step_delay(2.7, 0), 0.0);
+    }
 
     #[test]
     fn upscaling_is_reported_as_a_transformation() {
