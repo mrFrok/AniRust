@@ -66,6 +66,10 @@ export global Tr {
         : "Helps when the picture misbehaves, at a cost in CPU.";
     out property <string> lock-hint: lang == "ru"
         ? "Управление заблокировано" : "Controls locked";
+    out property <string> repeat: lang == "ru" ? "Повтор серии" : "Repeat episode";
+    out property <string> repeat-hint: lang == "ru"
+        ? "Серия начнётся заново вместо перехода к следующей. Клавиша R."
+        : "The episode starts over instead of going on to the next. Key R.";
     out property <string> upscale-mode: lang == "ru" ? "Режим" : "Mode";
     out property <string> upscale-quality: lang == "ru" ? "Качество" : "Quality";
     out property <string> quality-fast: lang == "ru" ? "Быстро" : "Fast";

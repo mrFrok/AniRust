@@ -335,6 +335,9 @@ export component MainWindow inherits Window {
     callback set-subtitle-track(int);
     callback set-audio-track(int);
     callback toggle-interpolation();
+    callback hold-speed(bool);
+    in property <bool> repeat: false;
+    callback toggle-repeat();
     callback toggle-fullscreen();
     callback toggle-muted();
     /// Loudness, by a step up or down.
@@ -823,6 +826,7 @@ export component MainWindow inherits Window {
             upscale: root.upscale;
             upscale-quality: root.upscale-quality;
             interpolation: root.interpolation;
+            repeat: root.repeat;
             qualities: root.qualities;
             quality: root.quality;
             decoder: root.decoder;
@@ -852,6 +856,9 @@ export component MainWindow inherits Window {
             set-audio-track(v) => { root.set-audio-track(v); }
             toggle-fullscreen => { root.toggle-fullscreen(); }
             toggle-interpolation => { root.toggle-interpolation(); }
+            hold-speed(on) => { root.hold-speed(on); }
+            step-frame(forward) => { root.step-frame(forward); }
+            toggle-repeat => { root.toggle-repeat(); }
             toggle-theatre => { root.theatre = !root.theatre; }
             close => { root.theatre = false; root.close-player(); }
         }
@@ -1150,6 +1157,7 @@ export component MainWindow inherits Window {
             if (event.text == "s") { root.skip-opening(); return accept; }
             if (event.text == "u") { root.set-upscale(Math.mod(root.upscale + 1, 7)); return accept; }
             if (event.text == "i") { root.toggle-interpolation(); return accept; }
+            if (event.text == "r") { root.toggle-repeat(); return accept; }
             reject
         }
     }

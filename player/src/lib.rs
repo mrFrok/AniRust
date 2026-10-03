@@ -551,6 +551,16 @@ impl Player {
         Ok(())
     }
 
+    /// Plays the file over and over, or once.
+    ///
+    /// A looping file never reaches its end, so whatever goes on to the next
+    /// episode at the end simply never fires.
+    pub fn set_loop(&self, on: bool) -> Result<()> {
+        self.mpv
+            .set_property("loop-file", if on { "inf" } else { "no" })?;
+        Ok(())
+    }
+
     pub fn set_muted(&self, muted: bool) -> Result<()> {
         self.mpv.set_property("mute", muted)?;
         Ok(())

@@ -84,6 +84,12 @@ export component PlayerPage inherits Rectangle {
     callback set-subtitle-track(int);
     callback set-audio-track(int);
     callback toggle-interpolation();
+    /// Pressed and held on the picture: play fast until let go.
+    callback hold-speed(bool);
+    callback step-frame(bool);
+    /// Playing the episode over again instead of going on to the next.
+    in property <bool> repeat: false;
+    callback toggle-repeat();
     callback toggle-fullscreen();
     /// Fill the window, or give the release screen its place back.
     callback toggle-theatre();
@@ -202,9 +208,41 @@ export component PlayerPage inherits Rectangle {
     changed mouse-at => { root.wake(); }
     property <length> mouse-at: hover.mouse-x + hover.mouse-y;
 
+    // Holding the button down on the picture plays it fast, as the official
+    // player does with a long press; letting go puts the speed back. The
+    // release that ends a hold is not also a click, or it would pause.
+    property <bool> holding: false;
+    property <bool> held: false;
+
+    hold-timer := Timer {
+        interval: 400ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            if (root.locked || root.sheet != "" || root.paused || !root.has-video) { return; }
+            root.holding = true;
+            root.held = true;
+            root.hold-speed(true);
+        }
+    }
+
     hover := TouchArea {
         mouse-cursor: root.chrome-visible ? MouseCursor.default : MouseCursor.none;
+        pointer-event(event) => {
+            if (event.button != PointerEventButton.left) { return; }
+            if (event.kind == PointerEventKind.down) {
+                root.held = false;
+                hold-timer.running = true;
+            } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                hold-timer.running = false;
+                if (root.holding) {
+                    root.holding = false;
+                    root.hold-speed(false);
+                }
+            }
+        }
         clicked => {
+            if (root.held) { root.held = false; return; }
             // A click inside a sheet must not also toggle playback, and a
             // locked overlay must not react at all.
             if (root.locked) { return; }
@@ -355,6 +393,15 @@ export component PlayerPage inherits Rectangle {
             clicked => { if (root.has-previous) { root.previous-episode(); } }
         }
 
+        // Stepping a frame is something done paused, so the steps appear
+        // either side of play only then.
+        if root.paused: IconButton {
+            icon: @image-url("../icons/frame-back.svg");
+            size: 26px;
+            box: 56px;
+            clicked => { root.step-frame(false); }
+        }
+
         IconButton {
             icon: root.paused
                 ? @image-url("../icons/play.svg")
@@ -362,6 +409,13 @@ export component PlayerPage inherits Rectangle {
             size: 52px;
             box: 72px;
             clicked => { root.toggle-pause(); }
+        }
+
+        if root.paused: IconButton {
+            icon: @image-url("../icons/frame-forward.svg");
+            size: 26px;
+            box: 56px;
+            clicked => { root.step-frame(true); }
         }
 
         IconButton {
@@ -652,6 +706,13 @@ export component PlayerPage inherits Rectangle {
 
                     if root.sheet == "settings": VerticalLayout {
                         spacing: Spacing.base;
+
+                        SettingOption {
+                            label: Tr.repeat;
+                            description: Tr.repeat-hint;
+                            selected: root.repeat;
+                            clicked => { root.toggle-repeat(); }
+                        }
 
                         Text {
                             text: Tr.quality;

@@ -2126,6 +2126,9 @@ struct Settings {
     upscale_quality: Cell<usize>,
     interpolation: Cell<bool>,
     force_4k: Cell<bool>,
+    /// The episode loops instead of going on to the next. Not kept: it is a
+    /// choice about this episode.
+    repeat: Cell<bool>,
     quality: Cell<usize>,
     decoder: Cell<usize>,
     /// mpv track ids behind the subtitle and audio menus.
@@ -2154,6 +2157,7 @@ impl Settings {
             upscale_quality: Cell::new(kept.upscale_quality.min(UpscaleQuality::ALL.len() - 1)),
             interpolation: Cell::new(kept.interpolation),
             force_4k: Cell::new(kept.force_4k),
+            repeat: Cell::new(false),
             quality: Cell::new(0),
             decoder: Cell::new(kept.decoder.min(DECODERS.len() - 1)),
             subtitles: RefCell::new(Vec::new()),
@@ -2177,6 +2181,9 @@ impl Settings {
 /// mpv `hwdec` values behind the decoder choice, in the order the sheet lists
 /// them: automatic, hardware, software.
 const DECODERS: [&str; 3] = [anirust_player::DEFAULT_HWDEC, "nvdec,vaapi", "no"];
+
+/// How fast the picture plays while the button is held down on it.
+const HOLD_SPEED: f64 = 2.0;
 
 /// The rates the speed menu offers, which are also the notches `<` and `>`
 /// step between.
@@ -2475,6 +2482,50 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         if let Err(error) = player.step_frame(forward) {
             tracing::warn!(%error, forward, "frame step failed");
         }
+    });
+
+    // Fast while held, then back to whatever the menu says. The menu's speed
+    // is not touched, so the hold is never kept or shown as the choice.
+    let chosen = Rc::clone(settings);
+    let weak = window.as_weak();
+    window.on_hold_speed(move |holding| {
+        let Some(window) = weak.upgrade() else { return };
+        let speed = if holding {
+            HOLD_SPEED.max(chosen.speed.get())
+        } else {
+            chosen.speed.get()
+        };
+        if let Err(error) = player.set_speed(speed) {
+            tracing::warn!(%error, speed, "hold speed change failed");
+            return;
+        }
+        if holding {
+            show_hint(&window, format!("{} ▶▶", format_speed(speed)));
+        }
+    });
+
+    let chosen = Rc::clone(settings);
+    let weak = window.as_weak();
+    window.on_toggle_repeat(move || {
+        let Some(window) = weak.upgrade() else { return };
+        let on = !chosen.repeat.get();
+        if let Err(error) = player.set_loop(on) {
+            tracing::warn!(%error, on, "repeat change failed");
+            return;
+        }
+        chosen.repeat.set(on);
+        window.set_repeat(on);
+        let ru = window.get_lang() == "ru";
+        show_hint(
+            &window,
+            match (on, ru) {
+                (true, true) => "Повтор серии включён",
+                (true, false) => "Repeating the episode",
+                (false, true) => "Повтор серии выключен",
+                (false, false) => "Not repeating",
+            }
+            .to_owned(),
+        );
     });
 
     // Off and back on, keeping whichever track was last chosen rather than
