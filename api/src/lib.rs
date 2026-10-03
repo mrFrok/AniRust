@@ -76,4 +76,5 @@ pub use models::{
     NotificationKind, NotificationPreferences, NotificationSwitch, Page, Profile, ProfileCompact,
     ProfileList, ProfileSlim, ProfileToken, Related, Release, ReleaseCategory, ReleaseCompact,
     ReleaseStatus, Schedule, SearchBy, Share, Source, SourceCompact, StreamingPlatform, WatchDay,
+    plain_text,
 };

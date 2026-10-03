@@ -1789,6 +1789,12 @@ fn wire_release(window: &MainWindow, app: &Rc<App>) {
 
     window.on_go_back(move || {
         let Some(window) = weak.upgrade() else { return };
+        // Leaving the release leaves its episode: a player decoding behind a
+        // screen nobody watches holds its frames, its buffer and the network
+        // for nothing.
+        if window.get_playing() {
+            window.invoke_close_player();
+        }
         window.set_screen("home".into());
         // Opened straight into a release from the command line, the browsing
         // screen behind it was never filled. Going back to an empty grid would
@@ -2626,7 +2632,15 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             );
 
             let playback = player.state();
-            window.set_state(state_name(playback).into());
+            // Idle while an episode is wanted is an episode still being
+            // found and opened, which the viewer should see as loading
+            // rather than as nothing to play.
+            let shown = if playback == PlaybackState::Idle && window.get_playing() {
+                "loading"
+            } else {
+                state_name(playback)
+            };
+            window.set_state(shown.into());
             window.set_paused(playback == PlaybackState::Paused);
             // The render loop reads this instead of querying mpv on every
             // frame; a quarter-second of staleness costs nothing here.

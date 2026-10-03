@@ -368,6 +368,9 @@ impl Client {
                 if code.is_success() {
                     Ok(envelope.payload)
                 } else {
+                    // The body says more than the code does, often enough.
+                    // It carries no token: the token travels in the query.
+                    tracing::debug!(path = %spec.path, %body, "refused");
                     Err(Error::Api { code })
                 }
             }
@@ -375,6 +378,7 @@ impl Client {
             // why — a rejection often replaces the payload with just a code.
             Err(source) => {
                 if let Some(code) = parse_code(&body).filter(|c| !c.is_success()) {
+                    tracing::debug!(path = %spec.path, %body, "refused");
                     Err(Error::Api { code })
                 } else {
                     Err(Error::Decode { source, body })

@@ -19,7 +19,14 @@ const DESKTOP_ENTRY: &str = include_str!("../../packaging/linux/io.github.mrfrok
 const ICON: &str = include_str!("../../packaging/icons/anirust.svg");
 
 /// Tells the windowing system who this is. Must come before the window.
+///
+/// The id is held by the platform, so the platform is brought up here first —
+/// the same one Slint would choose on its own, `SLINT_BACKEND` included.
+/// Left to the window, it comes up after the id has nowhere to go.
 pub fn identify() {
+    if let Err(error) = slint::BackendSelector::new().select() {
+        tracing::debug!(%error, "the platform was not brought up early");
+    }
     if let Err(error) = slint::set_xdg_app_id(APP_ID) {
         tracing::debug!(%error, "the application id was not set");
     }

@@ -29,7 +29,7 @@ pub use comment::{
 };
 pub use discover::{Collection, FeedSearch, Interesting, Schedule};
 pub use episode::{Dubber, Episode, EpisodeUpdate, Source};
-pub use feed::{Article, ArticleBlock, ArticlePayload, Channel, ProfileSlim};
+pub use feed::{Article, ArticleBlock, ArticlePayload, Channel, ProfileSlim, plain_text};
 pub use notification::{
     ArticleCompact, ChannelCompact, CommentCompact, EpisodeCompact, Named, Notification,
     NotificationDelete, NotificationKind, NotificationPreferences, NotificationSwitch,

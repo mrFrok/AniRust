@@ -176,6 +176,11 @@ pub fn load(
     http: reqwest::Client,
     release_id: i64,
 ) {
+    // Another release's episode stops: its picture would otherwise go on
+    // playing over this one's page.
+    if window.get_playing() && state.borrow().release_id != release_id {
+        window.invoke_close_player();
+    }
     window.set_release_loading(true);
     {
         let mut state = state.borrow_mut();
@@ -397,7 +402,7 @@ fn show_release(window: &MainWindow, release: &Release) {
     );
     window.set_release_rateable(!release.is_unreleased());
     window.set_release_watchable(!release.is_unreleased());
-    window.set_release_note(release.note.trim().into());
+    window.set_release_note(anirust_api::plain_text(&release.note).into());
     window.set_release_episodes_label(
         format!("{}/{}", release.episodes_released, release.episodes_total).into(),
     );

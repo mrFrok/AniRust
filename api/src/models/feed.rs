@@ -368,13 +368,61 @@ fn strip_markup(text: &str) -> String {
         rest = &rest[open + close + 1..];
     }
     out.push_str(rest);
+    decode_entities(&out)
+}
 
-    out.replace("&nbsp;", " ")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&amp;", "&")
+/// Text from the service's HTML-flavoured fields — a post's blocks, a
+/// release's note — with the tags taken out, a `<br>` kept as a line break,
+/// and every entity decoded.
+#[must_use]
+pub fn plain_text(html: &str) -> String {
+    strip_markup(html).trim().to_owned()
+}
+
+/// Decodes HTML entities: the named ones an editor writes, and every
+/// numeric one — the service writes emoji and quotes as `&#x1f341;` and
+/// `&#34;`. Anything that is not an entity is left as it is.
+fn decode_entities(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(amp) = rest.find('&') {
+        out.push_str(&rest[..amp]);
+        rest = &rest[amp..];
+        let decoded = rest[1..]
+            .find(';')
+            .filter(|end| *end <= 10)
+            .and_then(|end| {
+                let name = &rest[1..=end];
+                let ch = match name {
+                    "amp" => Some('&'),
+                    "lt" => Some('<'),
+                    "gt" => Some('>'),
+                    "quot" => Some('"'),
+                    "apos" => Some('\''),
+                    "nbsp" => Some(' '),
+                    _ => name
+                        .strip_prefix("#x")
+                        .or_else(|| name.strip_prefix("#X"))
+                        .map(|hex| u32::from_str_radix(hex, 16))
+                        .or_else(|| name.strip_prefix('#').map(str::parse::<u32>))
+                        .and_then(Result::ok)
+                        .and_then(char::from_u32),
+                };
+                ch.map(|ch| (ch, end + 2))
+            });
+        match decoded {
+            Some((ch, length)) => {
+                out.push(ch);
+                rest = &rest[length..];
+            }
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 #[cfg(test)]
@@ -400,6 +448,23 @@ mod feed_tests {
     #[test]
     fn a_line_break_survives_as_one() {
         assert_eq!(strip_markup("раз<br>два<br/>три"), "раз\nдва\nтри");
+    }
+
+    #[test]
+    fn numeric_entities_are_decoded() {
+        assert_eq!(
+            strip_markup("&#34;Да&#34; &#x1f341; &#43;1"),
+            "\"Да\" 🍁 +1"
+        );
+        assert_eq!(strip_markup("a &unknown; b & c"), "a &unknown; b & c");
+    }
+
+    #[test]
+    fn a_note_reads_as_lines() {
+        assert_eq!(
+            plain_text("Сезон вернулся.<br>До 12 серии.<br>Дальше перерыв "),
+            "Сезон вернулся.\nДо 12 серии.\nДальше перерыв"
+        );
     }
 
     #[test]
