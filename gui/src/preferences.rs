@@ -138,6 +138,8 @@ pub struct PlayerPreferences {
     pub subtitle_scale: usize,
     /// The player's subtitle style over the styles ASS files bring.
     pub ass_override: bool,
+    /// Position in the colour preset menu.
+    pub picture: usize,
 }
 
 impl Default for PlayerPreferences {
@@ -154,6 +156,7 @@ impl Default for PlayerPreferences {
             normalize: false,
             subtitle_scale: 1,
             ass_override: false,
+            picture: 0,
         }
     }
 }

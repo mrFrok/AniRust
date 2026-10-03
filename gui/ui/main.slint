@@ -345,6 +345,8 @@ export component MainWindow inherits Window {
     in property <bool> normalize: false;
     in property <int> subtitle-scale: 1;
     in property <bool> ass-override: false;
+    in property <int> picture: 0;
+    callback set-picture(int);
     callback step-audio-delay(int);
     callback step-subtitle-delay(int);
     callback toggle-normalize();
@@ -847,6 +849,7 @@ export component MainWindow inherits Window {
             normalize: root.normalize;
             subtitle-scale: root.subtitle-scale;
             ass-override: root.ass-override;
+            picture: root.picture;
             qualities: root.qualities;
             quality: root.quality;
             decoder: root.decoder;
@@ -886,6 +889,7 @@ export component MainWindow inherits Window {
             toggle-normalize => { root.toggle-normalize(); }
             set-subtitle-scale(i) => { root.set-subtitle-scale(i); }
             toggle-ass-override => { root.toggle-ass-override(); }
+            set-picture(i) => { root.set-picture(i); }
             load-audio-file => { root.load-audio-file(); }
             load-subtitle-file => { root.load-subtitle-file(); }
             open-fonts-folder => { root.open-fonts-folder(); }

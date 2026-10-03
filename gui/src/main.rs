@@ -47,8 +47,8 @@ use slint::ComponentHandle;
 use anirust_api::{Client, EpisodeSort};
 use anirust_extract::{Registry, ResolvedStream};
 use anirust_player::{
-    MediaSource, PlaybackState, Player, PlayerConfig, Track, TrackKind, UpscaleMode, UpscalePreset,
-    UpscaleQuality,
+    MediaSource, PictureAdjust, PlaybackState, Player, PlayerConfig, Track, TrackKind, UpscaleMode,
+    UpscalePreset, UpscaleQuality,
 };
 
 use crate::home::HomeState;
@@ -2136,6 +2136,7 @@ struct Settings {
     normalize: Cell<bool>,
     subtitle_scale: Cell<usize>,
     ass_override: Cell<bool>,
+    picture: Cell<usize>,
     quality: Cell<usize>,
     decoder: Cell<usize>,
     /// mpv track ids behind the subtitle and audio menus.
@@ -2170,6 +2171,7 @@ impl Settings {
             normalize: Cell::new(kept.normalize),
             subtitle_scale: Cell::new(kept.subtitle_scale.min(SUBTITLE_SCALES.len() - 1)),
             ass_override: Cell::new(kept.ass_override),
+            picture: Cell::new(kept.picture.min(PictureAdjust::PRESETS.len() - 1)),
             quality: Cell::new(0),
             decoder: Cell::new(kept.decoder.min(DECODERS.len() - 1)),
             subtitles: RefCell::new(Vec::new()),
@@ -2270,7 +2272,8 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         .and_then(|()| player.set_hwdec(DECODERS[settings.decoder.get()]))
         .and_then(|()| player.set_loudness_normalization(settings.normalize.get()))
         .and_then(|()| player.set_subtitle_scale(SUBTITLE_SCALES[settings.subtitle_scale.get()]))
-        .and_then(|()| player.set_ass_override(settings.ass_override.get()));
+        .and_then(|()| player.set_ass_override(settings.ass_override.get()))
+        .and_then(|()| player.set_picture(PictureAdjust::PRESETS[settings.picture.get()]));
     if let Err(error) = applied {
         tracing::warn!(%error, "the kept player settings were not applied");
     }
@@ -2306,6 +2309,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
             all.player.normalize = settings.normalize.get();
             all.player.subtitle_scale = settings.subtitle_scale.get();
             all.player.ass_override = settings.ass_override.get();
+            all.player.picture = settings.picture.get();
             prefs.set(all);
             all.save();
         })
@@ -2693,6 +2697,18 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 
     let chosen = Rc::clone(settings);
     let keep_now = Rc::clone(&keep);
+    window.on_set_picture(move |index| {
+        let index = (index.max(0) as usize).min(PictureAdjust::PRESETS.len() - 1);
+        if let Err(error) = player.set_picture(PictureAdjust::PRESETS[index]) {
+            tracing::warn!(%error, index, "colour preset change failed");
+            return;
+        }
+        chosen.picture.set(index);
+        keep_now();
+    });
+
+    let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
     window.on_toggle_ass_override(move || {
         let on = !chosen.ass_override.get();
         if let Err(error) = player.set_ass_override(on) {
@@ -2995,6 +3011,7 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             window.set_normalize(settings.normalize.get());
             window.set_subtitle_scale(settings.subtitle_scale.get() as i32);
             window.set_ass_override(settings.ass_override.get());
+            window.set_picture(settings.picture.get() as i32);
             window.set_upscale_quality(settings.upscale_quality.get() as i32);
             window.set_interpolation(settings.interpolation.get());
             window.set_quality(settings.quality.get() as i32);

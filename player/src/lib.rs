@@ -72,6 +72,47 @@ pub const DEFAULT_HWDEC: &str = "d3d11va,nvdec,d3d11va-copy,dxva2-copy";
 #[cfg(target_os = "macos")]
 pub const DEFAULT_HWDEC: &str = "videotoolbox,videotoolbox-copy";
 
+/// Colour adjustments, each from −100 to 100, 0 leaving the source alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PictureAdjust {
+    pub brightness: i8,
+    pub contrast: i8,
+    pub saturation: i8,
+    pub gamma: i8,
+}
+
+impl PictureAdjust {
+    /// The source as it is.
+    pub const NATURAL: Self = Self::new(0, 0, 0, 0);
+    /// Lifted shadows, for dark scenes and dim screens.
+    pub const BRIGHTER: Self = Self::new(6, 4, 0, 8);
+    /// More colour, for washed-out sources.
+    pub const VIVID: Self = Self::new(0, 6, 22, 0);
+    /// Less contrast and colour, for long evenings.
+    pub const SOFT: Self = Self::new(0, -6, -12, 0);
+    /// Slightly darker and deeper, for a dark room.
+    pub const DARK_ROOM: Self = Self::new(-4, 2, 0, -6);
+
+    /// Every preset, in the order a menu lists them.
+    pub const PRESETS: [Self; 5] = [
+        Self::NATURAL,
+        Self::BRIGHTER,
+        Self::VIVID,
+        Self::SOFT,
+        Self::DARK_ROOM,
+    ];
+
+    #[must_use]
+    pub const fn new(brightness: i8, contrast: i8, saturation: i8, gamma: i8) -> Self {
+        Self {
+            brightness,
+            contrast,
+            saturation,
+            gamma,
+        }
+    }
+}
+
 /// Pixel format for mpv's intermediate framebuffers.
 ///
 /// mpv would choose `rgba16f`, and left to itself it renders a band of
@@ -774,6 +815,19 @@ impl Player {
         self.mpv
             .set_property("glsl-shaders", paths.join(separator).as_str())?;
         tracing::info!(preset = %preset.name(), "upscaling");
+        Ok(())
+    }
+
+    /// Sets the picture's brightness, contrast, saturation and gamma, each
+    /// from −100 to 100 with 0 as the source has it.
+    pub fn set_picture(&self, adjust: PictureAdjust) -> Result<()> {
+        self.mpv
+            .set_property("brightness", i64::from(adjust.brightness))?;
+        self.mpv
+            .set_property("contrast", i64::from(adjust.contrast))?;
+        self.mpv
+            .set_property("saturation", i64::from(adjust.saturation))?;
+        self.mpv.set_property("gamma", i64::from(adjust.gamma))?;
         Ok(())
     }
 

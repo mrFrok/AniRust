@@ -143,6 +143,9 @@ export component PlayerPage inherits Rectangle {
     /// Index into the subtitle sizes: 75%, 100%, 125%, 150%, 200%.
     in property <int> subtitle-scale: 1;
     in property <bool> ass-override: false;
+    /// Index into the colour presets: natural, brighter, vivid, soft, dark room.
+    in property <int> picture: 0;
+    callback set-picture(int);
     /// −1 earlier, +1 later, 0 back to none.
     callback step-audio-delay(int);
     callback step-subtitle-delay(int);
@@ -674,7 +677,7 @@ export component PlayerPage inherits Rectangle {
 
                     HorizontalLayout {
                         Text {
-                            text: root.sheet == "anime4k" ? Tr.upscale
+                            text: root.sheet == "anime4k" ? Tr.picture-sheet
                                 : root.sheet == "settings" ? Tr.settings
                                 : Tr.speed;
                             color: #FFFFFF;
@@ -748,6 +751,24 @@ export component PlayerPage inherits Rectangle {
                                     selected: root.upscale-quality == index;
                                     clicked => { root.set-upscale-quality(index); }
                                 }
+                            }
+                        }
+
+                        Text {
+                            text: Tr.picture;
+                            color: #FFFFFF;
+                            font-size: Typography.title-small-size;
+                            font-weight: Typography.title-small-weight-em;
+                        }
+
+                        HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            for name[index] in [Tr.picture-natural, Tr.picture-brighter, Tr.picture-vivid, Tr.picture-soft, Tr.picture-dark-room]: SettingChip {
+                                label: name;
+                                selected: root.picture == index;
+                                clicked => { root.set-picture(index); }
                             }
                         }
 
