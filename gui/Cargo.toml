@@ -19,6 +19,11 @@ anirust-extract.workspace = true
 anirust-player.workspace = true
 anyhow.workspace = true
 reqwest.workspace = true
+# Unpacking NVIDIA's TensorRT-RTX when the person watching fetches it: a
+# .tar.gz on Linux, a .zip on Windows.
+flate2 = "1"
+tar = "0.4"
+zip = { version = "8", default-features = false, features = ["deflate"] }
 tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "time"] }
 futures.workspace = true
 tracing.workspace = true

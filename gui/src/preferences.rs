@@ -146,6 +146,10 @@ pub struct PlayerPreferences {
     pub rife_model: usize,
     /// Lower the load by itself when frames start dropping.
     pub adaptive: bool,
+    /// The engine for the networks: 0 Vulkan, 1 TensorRT.
+    pub engine: usize,
+    /// Real-ESRGAN doubling the picture first.
+    pub neural_upscale: bool,
 }
 
 impl Default for PlayerPreferences {
@@ -166,6 +170,8 @@ impl Default for PlayerPreferences {
             frame_rate: 0,
             rife_model: 0,
             adaptive: true,
+            engine: 0,
+            neural_upscale: false,
         }
     }
 }

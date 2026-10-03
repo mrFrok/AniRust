@@ -36,6 +36,7 @@ mod session;
 mod settings;
 mod standing;
 mod tasks;
+mod tensorrt;
 mod video;
 
 use std::cell::{Cell, RefCell};
@@ -48,8 +49,9 @@ use slint::ComponentHandle;
 use anirust_api::{Client, EpisodeSort};
 use anirust_extract::{Registry, ResolvedStream};
 use anirust_player::{
-    FrameGeneration, MediaSource, PictureAdjust, PlaybackState, Player, PlayerConfig, RifeInstall,
-    RifeModel, TargetRate, Track, TrackKind, UpscaleMode, UpscalePreset, UpscaleQuality,
+    Enhancement, FrameGeneration, MediaSource, Networks, PictureAdjust, PlaybackState, Player,
+    PlayerConfig, RifeInstall, RifeModel, TargetRate, TensorRt, Track, TrackKind, UpscaleMode,
+    UpscalePreset, UpscaleQuality,
 };
 
 use crate::home::HomeState;
@@ -2141,8 +2143,18 @@ struct Settings {
     /// Frame generation as the menu has it: 0 off, then the target rates.
     frame_rate: Cell<usize>,
     rife_model: Cell<usize>,
-    /// Where RIFE is, looked for once; `None` greys the menu out.
+    /// Where the Vulkan RIFE is, looked for once.
     rife: Option<RifeInstall>,
+    /// Which engine runs the networks: 0 Vulkan, 1 TensorRT.
+    engine: Cell<usize>,
+    /// Real-ESRGAN doubling the picture first. TensorRT only.
+    neural_upscale: Cell<bool>,
+    /// Whether the program carries its own part of the TensorRT engine.
+    mlrt_shipped: bool,
+    /// The TensorRT engine, once NVIDIA's runtime is there too.
+    trt: RefCell<Option<TensorRt>>,
+    /// What fetching NVIDIA's runtime is doing, for the line on screen.
+    trt_fetch: RefCell<String>,
     /// When frame generation was last switched on, until it has been seen
     /// working or failing.
     generation_since: Cell<Option<std::time::Instant>>,
@@ -2186,9 +2198,14 @@ impl Settings {
             subtitle_scale: Cell::new(kept.subtitle_scale.min(SUBTITLE_SCALES.len() - 1)),
             ass_override: Cell::new(kept.ass_override),
             picture: Cell::new(kept.picture.min(PictureAdjust::PRESETS.len() - 1)),
-            frame_rate: Cell::new(kept.frame_rate.min(TargetRate::ALL.len())),
+            frame_rate: Cell::new(kept.frame_rate.min(adapt::RATE_HALF_DISPLAY)),
             rife_model: Cell::new(kept.rife_model.min(RifeModel::ALL.len() - 1)),
             rife: RifeInstall::find(),
+            engine: Cell::new(kept.engine.min(1)),
+            neural_upscale: Cell::new(kept.neural_upscale),
+            mlrt_shipped: TensorRt::find_mlrt().is_some(),
+            trt: RefCell::new(TensorRt::find()),
+            trt_fetch: RefCell::new(String::new()),
             generation_since: Cell::new(None),
             display_fps: Cell::new(None),
             adaptive: Cell::new(kept.adaptive),
@@ -2211,6 +2228,8 @@ impl Settings {
             upscale_quality: self.upscale_quality.get(),
             frame_rate: self.frame_rate.get(),
             rife_model: self.rife_model.get(),
+            neural_upscale: self.on_tensorrt() && self.neural_upscale.get(),
+            display_hz: self.display_fps.get().map_or(0, |fps| fps.round() as u32),
         }
     }
 
@@ -2219,31 +2238,78 @@ impl Settings {
         self.upscale_quality.set(load.upscale_quality);
         self.frame_rate.set(load.frame_rate);
         self.rife_model.set(load.rife_model);
+        if !load.neural_upscale {
+            self.neural_upscale.set(false);
+        }
     }
 
     /// The frame generation the menus are set to, if any and if possible.
-    fn generation(&self) -> Option<(&RifeInstall, FrameGeneration)> {
-        let rate = *TargetRate::ALL.get(self.frame_rate.get().checked_sub(1)?)?;
-        let install = self.rife.as_ref()?;
-        Some((
-            install,
+    /// The rate the frame-generation menu asks for, if any.
+    fn target_rate(&self) -> Option<TargetRate> {
+        match self.frame_rate.get() {
+            adapt::RATE_DOUBLE => Some(TargetRate::Double),
+            adapt::RATE_SIXTY => Some(TargetRate::Sixty),
+            adapt::RATE_DISPLAY => Some(TargetRate::Display),
+            adapt::RATE_HALF_DISPLAY => Some(TargetRate::HalfDisplay),
+            _ => None,
+        }
+    }
+
+    /// Whether the TensorRT engine is chosen and complete.
+    fn on_tensorrt(&self) -> bool {
+        self.engine.get() == 1 && self.trt.borrow().is_some()
+    }
+
+    /// What the menus ask the neural filters for.
+    ///
+    /// TensorRT keeps 1080p sources at their size up to about 72 frames a
+    /// second — it makes 66 at 1080p — and brings them down to 720p above
+    /// that; Vulkan always brings them down.
+    fn enhancement(&self) -> Enhancement {
+        let tensorrt = self.on_tensorrt();
+        let frames = self.target_rate().map(|rate| {
+            let target = match rate {
+                TargetRate::Double => 60.0,
+                TargetRate::Sixty => 60.0,
+                TargetRate::Display => self.display_fps.get().unwrap_or(60.0),
+                TargetRate::HalfDisplay => self.display_fps.get().unwrap_or(120.0) / 2.0,
+            };
             FrameGeneration {
                 rate,
                 model: RifeModel::ALL[self.rife_model.get()],
-                ..FrameGeneration::default()
-            },
-        ))
+                max_height: if tensorrt && target <= 72.0 {
+                    1080
+                } else {
+                    720
+                },
+            }
+        });
+        Enhancement {
+            frames,
+            upscale: tensorrt && self.neural_upscale.get(),
+        }
     }
 
     /// Applies the menus' frame generation to the player.
+    /// Applies the menus' neural filters to the player.
+    ///
+    /// TensorRT when it is chosen and complete; Vulkan otherwise, which also
+    /// covers TensorRT chosen before NVIDIA's runtime has been fetched.
     fn apply_generation(&self, player: &Player) -> anirust_player::Result<()> {
-        let generation = self.generation();
-        if generation.is_some() {
+        let enhancement = self.enhancement();
+        let trt = self.trt.borrow();
+        let networks = match (self.engine.get(), trt.as_ref(), self.rife.as_ref()) {
+            (1, Some(trt), _) => Some(Networks::TensorRt(trt)),
+            (_, _, Some(rife)) => Some(Networks::Vulkan(rife)),
+            _ => None,
+        };
+        let wanted = networks.filter(|_| !enhancement.is_empty());
+        if wanted.is_some() {
             anirust_player::frames::prepare_vapoursynth();
         }
         self.generation_since
-            .set(generation.is_some().then(std::time::Instant::now));
-        player.set_frame_generation(generation)
+            .set((wanted.is_some() && enhancement.frames.is_some()).then(std::time::Instant::now));
+        player.set_enhancement(wanted.map(|networks| (networks, enhancement)))
     }
 
     /// The upscaling the menus are set to.
@@ -2279,6 +2345,37 @@ fn screenshots_dir() -> Option<std::path::PathBuf> {
 /// nobody has installed; dropped here, they are found.
 fn subtitle_fonts_dir() -> Option<std::path::PathBuf> {
     dirs::data_dir().map(|dir| dir.join("anirust").join("fonts"))
+}
+
+/// A line for fetching NVIDIA's runtime: how much has come, then unpacking.
+fn describe_fetch(progress: tensorrt::Progress, ru: bool) -> String {
+    const MB: u64 = 1024 * 1024;
+    match (progress, ru) {
+        (
+            tensorrt::Progress::Fetching {
+                done,
+                total: Some(total),
+            },
+            true,
+        ) => {
+            format!("Скачано {} из {} МБ", done / MB, total / MB)
+        }
+        (
+            tensorrt::Progress::Fetching {
+                done,
+                total: Some(total),
+            },
+            false,
+        ) => {
+            format!("{} of {} MB", done / MB, total / MB)
+        }
+        (tensorrt::Progress::Fetching { done, total: None }, true) => {
+            format!("Скачано {} МБ", done / MB)
+        }
+        (tensorrt::Progress::Fetching { done, total: None }, false) => format!("{} MB", done / MB),
+        (tensorrt::Progress::Unpacking, true) => "Распаковываю…".to_owned(),
+        (tensorrt::Progress::Unpacking, false) => "Unpacking…".to_owned(),
+    }
 }
 
 /// A delay as the menu shows it: "0", "+0.3", "−1.2", with a decimal comma
@@ -2377,6 +2474,8 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
             all.player.frame_rate = settings.frame_rate.get();
             all.player.rife_model = settings.rife_model.get();
             all.player.adaptive = settings.adaptive.get();
+            all.player.engine = settings.engine.get();
+            all.player.neural_upscale = settings.neural_upscale.get();
             prefs.set(all);
             all.save();
         })
@@ -2783,6 +2882,93 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 
     let chosen = Rc::clone(settings);
     let keep_now = Rc::clone(&keep);
+    window.on_set_neural_engine(move |index| {
+        chosen.engine.set(usize::from(index == 1));
+        keep_now();
+        if let Err(error) = chosen.apply_generation(player) {
+            tracing::warn!(%error, index, "engine change failed");
+        }
+    });
+
+    let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
+    window.on_toggle_neural_upscale(move || {
+        chosen.neural_upscale.set(!chosen.neural_upscale.get());
+        keep_now();
+        if let Err(error) = chosen.apply_generation(player) {
+            tracing::warn!(%error, "neural upscaling change failed");
+        }
+    });
+
+    // NVIDIA's runtime, fetched from NVIDIA when asked. The line on screen
+    // follows the download; once it is in, the engine starts using it.
+    let chosen = Rc::clone(settings);
+    let http = app.http.clone();
+    let weak = window.as_weak();
+    window.on_fetch_tensorrt(move || {
+        if !chosen.trt_fetch.borrow().is_empty() {
+            return;
+        }
+        let Some(window) = weak.upgrade() else { return };
+        let ru = window.get_lang() == "ru";
+        *chosen.trt_fetch.borrow_mut() = if ru {
+            "Скачиваю…"
+        } else {
+            "Fetching…"
+        }
+        .to_owned();
+
+        let (send, mut receive) = tokio::sync::mpsc::unbounded_channel::<tensorrt::Progress>();
+        let reporter = Rc::clone(&chosen);
+        let _ = slint::spawn_local(async move {
+            while let Some(progress) = receive.recv().await {
+                *reporter.trt_fetch.borrow_mut() = describe_fetch(progress, ru);
+            }
+        });
+
+        let chosen = Rc::clone(&chosen);
+        let weak = weak.clone();
+        tasks::spawn(
+            tensorrt::fetch(http.clone(), move |progress| {
+                let _ = send.send(progress);
+            }),
+            move |result| {
+                chosen.trt_fetch.borrow_mut().clear();
+                let Some(window) = weak.upgrade() else { return };
+                match result {
+                    Ok(_) => {
+                        *chosen.trt.borrow_mut() = TensorRt::find();
+                        if let Err(error) = chosen.apply_generation(player) {
+                            tracing::warn!(%error, "the TensorRT engine did not start");
+                        }
+                        show_hint(
+                            &window,
+                            if ru {
+                                "TensorRT готов"
+                            } else {
+                                "TensorRT is ready"
+                            }
+                            .to_owned(),
+                        );
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "TensorRT-RTX was not fetched");
+                        show_hint(
+                            &window,
+                            if ru {
+                                format!("TensorRT не скачался: {error}")
+                            } else {
+                                format!("TensorRT was not fetched: {error}")
+                            },
+                        );
+                    }
+                }
+            },
+        );
+    });
+
+    let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
     window.on_set_rife_model(move |index| {
         let index = (index.max(0) as usize).min(RifeModel::ALL.len() - 1);
         chosen.rife_model.set(index);
@@ -3027,7 +3213,7 @@ fn follow_display(window: &MainWindow, player: &Player, settings: &Settings) {
         return;
     }
     tracing::info!(fps, "display rate");
-    let at_display_rate = settings.frame_rate.get() == TargetRate::ALL.len();
+    let at_display_rate = settings.frame_rate.get() >= adapt::RATE_DISPLAY;
     if at_display_rate && let Err(error) = settings.apply_generation(player) {
         tracing::warn!(%error, "frame generation did not follow the display");
     }
@@ -3080,6 +3266,7 @@ fn keep_up(
         all.player.upscale_quality = lowered.upscale_quality;
         all.player.frame_rate = lowered.frame_rate;
         all.player.rife_model = lowered.rife_model;
+        all.player.neural_upscale = settings.neural_upscale.get();
         prefs.set(all);
         all.save();
     }
@@ -3157,7 +3344,14 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             // the source, and reporting the source would understate it.
             let generated = generated_fps(player, &settings);
             window.set_quality_label(
-                quality_label(player.video_size(), bridge.rendered_size(), generated).into(),
+                quality_label(
+                    player.video_size(),
+                    player.filtered_size(),
+                    bridge.rendered_size(),
+                    generated,
+                    window.get_lang() == "ru",
+                )
+                .into(),
             );
 
             let playback = player.state();
@@ -3202,7 +3396,12 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             window.set_picture(settings.picture.get() as i32);
             window.set_frame_rate(settings.frame_rate.get() as i32);
             window.set_rife_model(settings.rife_model.get() as i32);
-            window.set_frames_available(settings.rife.is_some());
+            window.set_frames_available(settings.rife.is_some() || settings.on_tensorrt());
+            window.set_neural_engine(settings.engine.get() as i32);
+            window.set_tensorrt_shipped(settings.mlrt_shipped);
+            window.set_tensorrt_ready(settings.trt.borrow().is_some());
+            window.set_tensorrt_fetch(settings.trt_fetch.borrow().as_str().into());
+            window.set_neural_upscale(settings.neural_upscale.get());
             window.set_adaptive(settings.adaptive.get());
             window.set_upscale_quality(settings.upscale_quality.get() as i32);
             window.set_interpolation(settings.interpolation.get());
@@ -3381,22 +3580,34 @@ fn fraction_of(position: Duration, duration: Option<Duration>) -> f32 {
 /// cannot back.
 fn quality_label(
     source: Option<(u32, u32)>,
+    filtered: Option<(u32, u32)>,
     rendered: Option<(u32, u32)>,
     generated_fps: Option<f64>,
+    ru: bool,
 ) -> String {
     let Some((_, source_h)) = source else {
         return "—".to_owned();
     };
 
-    let size = match rendered {
-        Some((_, rendered_h)) if rendered_h > source_h => {
-            format!("{source_h}p → {rendered_h}p")
-        }
-        _ => format!("{source_h}p"),
-    };
+    // A network that enlarged the picture is named, so the step reads as
+    // the network's and not the shaders'.
+    let mut label = format!("{source_h}p");
+    let mut top = source_h;
+    if let Some((_, filtered_h)) = filtered
+        && filtered_h > source_h
+    {
+        let ai = if ru { "ИИ" } else { "AI" };
+        label = format!("{label} → {filtered_h}p {ai}");
+        top = filtered_h;
+    }
+    if let Some((_, rendered_h)) = rendered
+        && rendered_h > top
+    {
+        label = format!("{label} → {rendered_h}p");
+    }
     match generated_fps {
-        Some(fps) => format!("{size} · {fps:.0} fps"),
-        None => size,
+        Some(fps) => format!("{label} · {fps:.0} fps"),
+        None => label,
     }
 }
 
@@ -3557,7 +3768,7 @@ mod tests {
     #[test]
     fn upscaling_is_reported_as_a_transformation() {
         assert_eq!(
-            quality_label(Some((1280, 720)), Some((2560, 1440)), None),
+            quality_label(Some((1280, 720)), None, Some((2560, 1440)), None, true),
             "720p → 1440p"
         );
     }
@@ -3565,7 +3776,7 @@ mod tests {
     #[test]
     fn rendering_at_the_source_size_reports_one_number() {
         assert_eq!(
-            quality_label(Some((1280, 720)), Some((1280, 720)), None),
+            quality_label(Some((1280, 720)), None, Some((1280, 720)), None, true),
             "720p"
         );
     }
@@ -3573,7 +3784,7 @@ mod tests {
     #[test]
     fn a_smaller_render_never_reads_as_an_upgrade() {
         assert_eq!(
-            quality_label(Some((1920, 1080)), Some((1280, 720)), None),
+            quality_label(Some((1920, 1080)), None, Some((1280, 720)), None, true),
             "1080p"
         );
     }
@@ -3581,14 +3792,45 @@ mod tests {
     #[test]
     fn generated_frames_add_their_rate() {
         assert_eq!(
-            quality_label(Some((1280, 720)), Some((2560, 1440)), Some(59.94)),
+            quality_label(
+                Some((1280, 720)),
+                None,
+                Some((2560, 1440)),
+                Some(59.94),
+                true
+            ),
             "720p → 1440p · 60 fps"
         );
     }
 
     #[test]
+    fn a_network_upscale_is_named_on_its_step() {
+        assert_eq!(
+            quality_label(
+                Some((1280, 720)),
+                Some((2560, 1440)),
+                Some((3840, 2160)),
+                None,
+                true
+            ),
+            "720p → 1440p ИИ → 2160p"
+        );
+        // Frame generation brought the picture down: not an upscale.
+        assert_eq!(
+            quality_label(
+                Some((1920, 1080)),
+                Some((1280, 720)),
+                Some((3840, 2160)),
+                Some(60.0),
+                true
+            ),
+            "1080p → 2160p · 60 fps"
+        );
+    }
+
+    #[test]
     fn nothing_loaded_shows_a_placeholder() {
-        assert_eq!(quality_label(None, None, None), "—");
+        assert_eq!(quality_label(None, None, None, None, true), "—");
     }
 
     #[test]

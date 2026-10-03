@@ -156,6 +156,18 @@ export component PlayerPage inherits Rectangle {
     in property <int> display-fps: 0;
     callback set-frame-rate(int);
     callback set-rife-model(int);
+    /// The engine for the networks: 0 Vulkan, 1 TensorRT.
+    in property <int> neural-engine: 0;
+    /// Whether the program carries its part of the TensorRT engine, and
+    /// whether NVIDIA's runtime is there to go with it.
+    in property <bool> tensorrt-shipped: false;
+    in property <bool> tensorrt-ready: false;
+    /// What fetching NVIDIA's runtime is doing; empty when nothing.
+    in property <string> tensorrt-fetch;
+    in property <bool> neural-upscale: false;
+    callback set-neural-engine(int);
+    callback fetch-tensorrt();
+    callback toggle-neural-upscale();
     /// Lowering the load by itself when frames drop.
     in property <bool> adaptive: true;
     callback toggle-adaptive();
@@ -785,6 +797,63 @@ export component PlayerPage inherits Rectangle {
                             }
                         }
 
+                        // ---- the engine for the networks ----
+                        if root.tensorrt-shipped: Text {
+                            text: Tr.neural-engine;
+                            color: #FFFFFF;
+                            font-size: Typography.title-small-size;
+                            font-weight: Typography.title-small-weight-em;
+                        }
+
+                        if root.tensorrt-shipped: HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            for name[index] in [Tr.engine-vulkan, Tr.engine-tensorrt]: SettingChip {
+                                label: name;
+                                recommended: index == 1;
+                                selected: root.neural-engine == index;
+                                clicked => { root.set-neural-engine(index); }
+                            }
+                        }
+
+                        // TensorRT-RTX is NVIDIA's: fetched from NVIDIA, on
+                        // the person's say-so, and said to be so.
+                        if root.tensorrt-shipped && root.neural-engine == 1 && !root.tensorrt-ready: VerticalLayout {
+                            spacing: Spacing.small;
+
+                            Text {
+                                text: Tr.tensorrt-needed;
+                                color: #FFFFFF8C;
+                                font-size: Typography.body-medium-size;
+                                wrap: word-wrap;
+                            }
+
+                            HorizontalLayout {
+                                spacing: Spacing.small;
+                                alignment: start;
+
+                                if root.tensorrt-fetch == "": SettingChip {
+                                    label: Tr.tensorrt-fetch;
+                                    clicked => { root.fetch-tensorrt(); }
+                                }
+
+                                if root.tensorrt-fetch != "": Text {
+                                    text: root.tensorrt-fetch;
+                                    color: #FFFFFF;
+                                    font-size: Typography.body-medium-size;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        if root.neural-engine == 1 && root.tensorrt-ready: SettingOption {
+                            label: Tr.neural-upscale;
+                            description: Tr.neural-upscale-hint;
+                            selected: root.neural-upscale;
+                            clicked => { root.toggle-neural-upscale(); }
+                        }
+
                         Text {
                             text: Tr.frame-generation;
                             color: #FFFFFF;
@@ -803,9 +872,13 @@ export component PlayerPage inherits Rectangle {
                             spacing: Spacing.small;
                             alignment: start;
 
-                            for name[index] in [Tr.off, "×2", "60", root.display-fps > 0 ? Tr.frame-rate-display + " · " + root.display-fps : Tr.frame-rate-display]: SettingChip {
+                            // Half the screen's rate is where keeping up steps
+                            // down to; it shows on the screen-rate chip.
+                            for name[index] in [Tr.off, "×2", "60", root.display-fps <= 0 ? Tr.frame-rate-display
+                                    : root.frame-rate == 4 ? Tr.frame-rate-display + " · " + floor(root.display-fps / 2)
+                                    : Tr.frame-rate-display + " · " + root.display-fps]: SettingChip {
                                 label: name;
-                                selected: root.frame-rate == index;
+                                selected: root.frame-rate == index || (index == 3 && root.frame-rate == 4);
                                 clicked => { root.set-frame-rate(index); }
                             }
                         }

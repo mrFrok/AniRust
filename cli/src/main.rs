@@ -16,8 +16,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 use anirust_api::{Client, EpisodeSort, ProfileList, SearchBy};
 use anirust_extract::{Registry, ResolvedStream, StreamKind, StreamVariant};
 use anirust_player::{
-    FrameGeneration, MediaSource, Player, PlayerConfig, RifeInstall, RifeModel, TargetRate,
-    UpscaleMode, UpscalePreset, UpscaleQuality,
+    Enhancement, FrameGeneration, MediaSource, Networks, Player, PlayerConfig, RifeInstall,
+    RifeModel, TargetRate, TensorRt, UpscaleMode, UpscalePreset, UpscaleQuality,
 };
 
 use crate::i18n::Lang;
@@ -179,6 +179,13 @@ enum Command {
         /// Which RIFE network generates them.
         #[arg(long, value_enum, default_value_t = Rife::Fast)]
         rife: Rife,
+        /// Run the networks on TensorRT (NVIDIA RTX; ANIRUST_MLRT_DIR and
+        /// ANIRUST_TRT_RTX_DIR) instead of Vulkan.
+        #[arg(long)]
+        tensorrt: bool,
+        /// Double the picture with Real-ESRGAN first. TensorRT only.
+        #[arg(long)]
+        neural_upscale: bool,
     },
     /// Walk the API chain to one episode and resolve it in one step.
     ///
@@ -280,6 +287,8 @@ struct PlayOptions<'a> {
     upscale: UpscalePreset,
     interpolation: bool,
     generate: Option<FrameGeneration>,
+    tensorrt: bool,
+    neural_upscale: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
@@ -587,6 +596,8 @@ async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
             interpolation,
             generate,
             rife,
+            tensorrt,
+            neural_upscale,
         } => {
             let episode =
                 pick_episode(client, *release_id, *dubber, *source, *position, lang).await?;
@@ -612,6 +623,8 @@ async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
                     upscale: UpscalePreset::new((*upscale).into(), (*quality).into()),
                     interpolation: *interpolation,
                     generate,
+                    tensorrt: *tensorrt,
+                    neural_upscale: *neural_upscale,
                 },
                 lang,
             )?;
@@ -820,6 +833,8 @@ fn play(stream: &ResolvedStream, options: &PlayOptions<'_>, lang: Lang) -> Resul
         upscale,
         interpolation,
         generate,
+        tensorrt,
+        neural_upscale,
     } = *options;
     let best = stream.best().with_context(|| lang.err_nothing_resolved())?;
 
@@ -875,18 +890,32 @@ fn play(stream: &ResolvedStream, options: &PlayOptions<'_>, lang: Lang) -> Resul
     }
     println!("{}", lang.play_speed(player.speed()?));
 
-    if let Some(generation) = generate {
-        let install = RifeInstall::find()
-            .context("RIFE is not installed: set ANIRUST_RIFE_DIR to the plugin's folder")?;
-        player.set_frame_generation(Some((&install, generation)))?;
+    let enhancement = Enhancement {
+        frames: generate,
+        upscale: neural_upscale,
+    };
+    let enhanced = !enhancement.is_empty();
+    if enhanced {
+        if tensorrt {
+            let trt = TensorRt::find()
+                .context("TensorRT is not there: set ANIRUST_MLRT_DIR and ANIRUST_TRT_RTX_DIR")?;
+            player.set_enhancement(Some((Networks::TensorRt(&trt), enhancement)))?;
+        } else {
+            let install = RifeInstall::find()
+                .context("RIFE is not installed: set ANIRUST_RIFE_DIR to the plugin's folder")?;
+            player.set_enhancement(Some((Networks::Vulkan(&install), enhancement)))?;
+        }
     }
 
     std::thread::sleep(std::time::Duration::from_secs(seconds));
-    if generate.is_some() {
+    if enhanced {
         println!(
-            "frames: {:.2} fps in, {:.2} fps out",
+            "frames: {:.2} fps in, {:.2} fps out, {:?} → {:?}, {} dropped",
             player.source_fps().unwrap_or_default(),
-            player.output_fps().unwrap_or_default()
+            player.output_fps().unwrap_or_default(),
+            player.video_size(),
+            player.filtered_size(),
+            player.dropped_frames()
         );
         if let Some(error) = anirust_player::frames::last_error() {
             println!("frame generation failed:\n{error}");

@@ -28,20 +28,33 @@ const SETTLE: Duration = Duration::from_secs(4);
 pub struct Load {
     pub upscale_mode: usize,
     pub upscale_quality: usize,
-    /// 0 off, then ×2, 60, the screen's rate.
+    /// 0 off, then ×2, 60, the screen's rate, half the screen's rate.
     pub frame_rate: usize,
     /// 0 fast, 1 quality.
     pub rife_model: usize,
+    /// Real-ESRGAN doubling the picture before anything else.
+    pub neural_upscale: bool,
+    /// The screen's refresh rate, 0 when not known.
+    pub display_hz: u32,
 }
+
+/// The frame rates of [`Load::frame_rate`].
+pub const RATE_DOUBLE: usize = 1;
+pub const RATE_SIXTY: usize = 2;
+pub const RATE_DISPLAY: usize = 3;
+pub const RATE_HALF_DISPLAY: usize = 4;
 
 /// One step down.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Step {
+    /// Neural upscaling off: the heaviest thing a frame goes through.
+    NeuralUpscaleOff,
     /// The quality RIFE network for the fast one.
     FastRife,
     /// Anime4K one quality lower.
     LowerUpscale,
-    /// Fewer generated frames: the screen's rate to 60, 60 to ×2.
+    /// Fewer generated frames: the screen's rate to half of it when that is
+    /// still 60 or more, otherwise to 60; half the screen's to 60; 60 to ×2.
     LowerFrameRate,
     FramesOff,
     UpscaleOff,
@@ -51,7 +64,9 @@ impl Load {
     /// The next step down from here, or `None` with nothing left to lower.
     #[must_use]
     pub fn next_step(self) -> Option<Step> {
-        if self.frame_rate > 0 && self.rife_model > 0 {
+        if self.neural_upscale {
+            Some(Step::NeuralUpscaleOff)
+        } else if self.frame_rate > 0 && self.rife_model > 0 {
             Some(Step::FastRife)
         } else if self.upscale_mode > 0 && self.upscale_quality > 0 {
             Some(Step::LowerUpscale)
@@ -79,7 +94,15 @@ impl Load {
                 ..self
             },
             Step::LowerFrameRate => Self {
-                frame_rate: self.frame_rate - 1,
+                frame_rate: match self.frame_rate {
+                    RATE_DISPLAY if self.display_hz / 2 >= 60 => RATE_HALF_DISPLAY,
+                    RATE_DISPLAY | RATE_HALF_DISPLAY => RATE_SIXTY,
+                    rate => rate - 1,
+                },
+                ..self
+            },
+            Step::NeuralUpscaleOff => Self {
+                neural_upscale: false,
                 ..self
             },
             Step::FramesOff => Self {
@@ -96,7 +119,7 @@ impl Load {
     /// Whether there is any load to watch.
     #[must_use]
     pub fn is_enhanced(self) -> bool {
-        self.upscale_mode > 0 || self.frame_rate > 0
+        self.upscale_mode > 0 || self.frame_rate > 0 || self.neural_upscale
     }
 }
 
@@ -105,6 +128,10 @@ impl Step {
     #[must_use]
     pub fn notice(self, ru: bool) -> &'static str {
         match (self, ru) {
+            (Self::NeuralUpscaleOff, true) => {
+                "Видеокарта не успевает: нейросетевой апскейл выключен"
+            }
+            (Self::NeuralUpscaleOff, false) => "The GPU is falling behind: neural upscaling off",
             (Self::FastRife, true) => {
                 "Видеокарта не успевает: генерация кадров переключена на быструю"
             }
@@ -174,8 +201,10 @@ mod tests {
         Load {
             upscale_mode: 4,
             upscale_quality: 3,
-            frame_rate: 3,
+            frame_rate: RATE_DISPLAY,
             rife_model: 1,
+            neural_upscale: true,
+            display_hz: 180,
         }
     }
 
@@ -190,10 +219,13 @@ mod tests {
         assert_eq!(
             steps,
             [
+                Step::NeuralUpscaleOff,
                 Step::FastRife,
                 Step::LowerUpscale,
                 Step::LowerUpscale,
                 Step::LowerUpscale,
+                // 180 → 90 → 60 → ×2
+                Step::LowerFrameRate,
                 Step::LowerFrameRate,
                 Step::LowerFrameRate,
                 Step::FramesOff,
@@ -201,6 +233,26 @@ mod tests {
             ]
         );
         assert!(!load.is_enhanced());
+    }
+
+    #[test]
+    fn half_the_screen_rate_is_skipped_when_it_is_under_sixty() {
+        let load = Load {
+            frame_rate: RATE_DISPLAY,
+            display_hz: 75,
+            ..heaviest()
+        };
+        assert_eq!(load.after(Step::LowerFrameRate).frame_rate, RATE_SIXTY);
+        let load = Load {
+            display_hz: 180,
+            ..load
+        };
+        assert_eq!(
+            load.after(Step::LowerFrameRate).frame_rate,
+            RATE_HALF_DISPLAY
+        );
+        let half = load.after(Step::LowerFrameRate);
+        assert_eq!(half.after(Step::LowerFrameRate).frame_rate, RATE_SIXTY);
     }
 
     #[test]

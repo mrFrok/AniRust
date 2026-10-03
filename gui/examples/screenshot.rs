@@ -685,6 +685,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_upscale_quality(2);
         ui.set_frames_available(true);
         ui.set_frame_rate(2);
+        ui.set_tensorrt_shipped(true);
+        ui.set_neural_engine(1);
         ui.set_player_sheet("anime4k".into());
     }
     // A pointer put where the account button is, so the tooltip that says what

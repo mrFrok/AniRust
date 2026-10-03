@@ -33,7 +33,9 @@ pub mod render;
 pub mod shaders;
 pub mod tracks;
 
-pub use frames::{FrameGeneration, RifeInstall, RifeModel, TargetRate};
+pub use frames::{
+    Enhancement, FrameGeneration, Networks, RifeInstall, RifeModel, TargetRate, TensorRt,
+};
 pub use render::{NativeDisplay, Renderer};
 pub use shaders::{UpscaleMode, UpscalePreset, UpscaleQuality};
 pub use tracks::{Track, TrackKind};
@@ -886,19 +888,25 @@ impl Player {
         Ok(())
     }
 
-    /// Generates frames between the source's with RIFE, or stops.
+    /// Runs neural filters on the picture — RIFE frame generation, neural
+    /// upscaling — on the engine given, or stops them with `None`.
     ///
     /// The script is written fresh each time, and any note a previous one
     /// left is cleared, so [`frames::last_error`] only ever speaks of this
     /// attempt. A failure does not stop playback: mpv drops the filter and
     /// plays the episode as it is, which [`Self::output_fps`] shows.
-    pub fn set_frame_generation(
+    pub fn set_enhancement(
         &self,
-        generation: Option<(&RifeInstall, FrameGeneration)>,
+        enhancement: Option<(frames::Networks<'_>, frames::Enhancement)>,
     ) -> Result<()> {
         use std::sync::atomic::Ordering;
 
-        let Some((install, generation)) = generation else {
+        // Upscaling alone on Vulkan has nothing to run: no filter at all.
+        let enhancement = enhancement.filter(|(networks, enhancement)| {
+            enhancement.frames.is_some()
+                || (enhancement.upscale && matches!(networks, frames::Networks::TensorRt(_)))
+        });
+        let Some((networks, enhancement)) = enhancement else {
             self.mpv.set_property("vf", "")?;
             self.generating.store(false, Ordering::Relaxed);
             return self.apply_hwdec();
@@ -910,10 +918,11 @@ impl Player {
         let _ = std::fs::remove_file(&error_file);
         let display_fps = self.display_fps.lock().ok().and_then(|kept| *kept);
         std::fs::create_dir_all(&dir)
+            .and_then(|()| std::fs::create_dir_all(frames::engines_dir()))
             .and_then(|()| {
                 std::fs::write(
                     &script,
-                    install.script(generation, display_fps, &error_file),
+                    frames::script(networks, enhancement, display_fps, &error_file),
                 )
             })
             .map_err(|source| Error::Io {
@@ -928,7 +937,11 @@ impl Player {
             frames::mpv_quoted(&script.to_string_lossy())
         );
         self.mpv.set_property("vf", filter.as_str())?;
-        tracing::info!(?generation, script = %script.display(), "frame generation on");
+        let engine = match networks {
+            frames::Networks::Vulkan(_) => "vulkan",
+            frames::Networks::TensorRt(_) => "tensorrt",
+        };
+        tracing::info!(engine, ?enhancement, script = %script.display(), "neural filters on");
         Ok(())
     }
 
@@ -993,6 +1006,16 @@ impl Player {
     pub fn video_size(&self) -> Option<(u32, u32)> {
         let width = self.mpv.get_property::<i64>("width").ok()?;
         let height = self.mpv.get_property::<i64>("height").ok()?;
+        (width > 0 && height > 0).then_some((width as u32, height as u32))
+    }
+
+    /// The picture's size after the filters: larger than [`Self::video_size`]
+    /// when a network upscaled it, smaller when frame generation brought it
+    /// down to run.
+    #[must_use]
+    pub fn filtered_size(&self) -> Option<(u32, u32)> {
+        let width = self.mpv.get_property::<i64>("video-out-params/w").ok()?;
+        let height = self.mpv.get_property::<i64>("video-out-params/h").ok()?;
         (width > 0 && height > 0).then_some((width as u32, height as u32))
     }
 
