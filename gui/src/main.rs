@@ -101,7 +101,7 @@ fn main() -> Result<()> {
     let http = reqwest_client();
     let account = Rc::new(RefCell::new(Session::default()));
     let app = Rc::new(App {
-        client: Rc::new(Client::new().context("creating the API client")?),
+        client: Rc::new(api_client().context("creating the API client")?),
         registry: Rc::new(Registry::new(http.clone())),
         http,
         bridge,
@@ -2894,6 +2894,15 @@ pub fn format_time(value: Duration) -> String {
         format!("{hours}:{minutes:02}:{seconds:02}")
     } else {
         format!("{minutes}:{seconds:02}")
+    }
+}
+
+/// The API client. `ANIRUST_API_URL` points it elsewhere — another of the
+/// service's hosts — for checking whether a behaviour is the host's.
+fn api_client() -> anirust_api::Result<Client> {
+    match std::env::var("ANIRUST_API_URL") {
+        Ok(url) if !url.trim().is_empty() => Client::builder().base_urls([url.trim()]).build(),
+        _ => Client::new(),
     }
 }
 
