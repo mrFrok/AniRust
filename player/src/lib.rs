@@ -33,7 +33,7 @@ pub mod shaders;
 pub mod tracks;
 
 pub use render::{NativeDisplay, Renderer};
-pub use shaders::UpscalePreset;
+pub use shaders::{UpscaleMode, UpscalePreset, UpscaleQuality};
 pub use tracks::{Track, TrackKind};
 
 /// How long to wait on a connection or a read before trying again.
@@ -191,7 +191,7 @@ impl Default for PlayerConfig {
             video_output: VideoOutput::default(),
             hwdec: std::borrow::Cow::Borrowed(DEFAULT_HWDEC),
             interpolation: false,
-            upscale: UpscalePreset::Off,
+            upscale: UpscalePreset::OFF,
             network_timeout_secs: DEFAULT_NETWORK_TIMEOUT_SECS,
             cache_secs: 30,
             shader_dir: None,
@@ -652,8 +652,8 @@ impl Player {
         Ok(())
     }
 
-    /// Applies an Anime4K preset, or clears shaders with
-    /// [`UpscalePreset::Off`].
+    /// Applies an upscaling preset, or clears shaders with
+    /// [`UpscalePreset::OFF`].
     pub fn set_upscale(&self, preset: UpscalePreset) -> Result<()> {
         let Some(chain) = preset.shader_chain() else {
             self.mpv.set_property("glsl-shaders", "")?;
@@ -664,23 +664,27 @@ impl Player {
         // player is created, so a preset cannot fail for want of files.
         let Some(dir) = self.shader_dir.as_deref() else {
             tracing::warn!(
-                preset = preset.name(),
+                preset = %preset.name(),
                 "no shader directory; upscaling stays off"
             );
             self.mpv.set_property("glsl-shaders", "")?;
             return Ok(());
         };
 
-        // mpv separates list entries with ':' on Unix. A shader path
-        // containing one would be ambiguous, which is why the directory is
-        // configuration rather than something guessed from the environment.
+        // mpv separates path-list entries with ':' on Unix and ';' on
+        // Windows, where ':' follows every drive letter. A shader path
+        // containing the separator would be ambiguous, which is why the
+        // directory is configuration rather than something guessed from the
+        // environment.
+        let separator = if cfg!(windows) { ";" } else { ":" };
         let paths: Vec<String> = chain
             .iter()
             .map(|file| dir.join(file).to_string_lossy().into_owned())
             .collect();
 
         self.mpv
-            .set_property("glsl-shaders", paths.join(":").as_str())?;
+            .set_property("glsl-shaders", paths.join(separator).as_str())?;
+        tracing::info!(preset = %preset.name(), "upscaling");
         Ok(())
     }
 
@@ -836,7 +840,7 @@ mod tests {
         // Interpolation costs GPU time and is a matter of taste, so it is
         // opt-in rather than on by default.
         assert!(!config.interpolation);
-        assert_eq!(config.upscale, UpscalePreset::Off);
+        assert_eq!(config.upscale, UpscalePreset::OFF);
         assert_eq!(config.network_timeout_secs, DEFAULT_NETWORK_TIMEOUT_SECS);
     }
 }

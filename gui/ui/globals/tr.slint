@@ -42,8 +42,8 @@ export global Tr {
 
     // ---- upscale presets -------------------------------------------------
     out property <string> upscale-hint: lang == "ru"
-        ? "Повышает чёткость аниме. Чем тяжелее пресет, тем выше нагрузка на видеокарту."
-        : "Sharpens anime. The heavier the preset, the more it asks of the GPU.";
+        ? "Повышает чёткость аниме. Чем выше качество, тем больше нагрузка на видеокарту."
+        : "Sharpens anime. The higher the quality, the more it asks of the GPU.";
     out property <string> interpolation-hint: lang == "ru"
         ? "Сглаживает рывки, когда частота кадров не совпадает с частотой монитора. Новых кадров не добавляет."
         : "Smooths judder when the frame rate does not match the display. Does not invent frames.";
@@ -66,9 +66,37 @@ export global Tr {
         : "Helps when the picture misbehaves, at a cost in CPU.";
     out property <string> lock-hint: lang == "ru"
         ? "Управление заблокировано" : "Controls locked";
-    out property <string> preset-fast: lang == "ru" ? "Быстро" : "Fast";
-    out property <string> preset-balanced: lang == "ru" ? "Сбалансировано" : "Balanced";
-    out property <string> preset-quality: lang == "ru" ? "Качество" : "Quality";
+    out property <string> upscale-mode: lang == "ru" ? "Режим" : "Mode";
+    out property <string> upscale-quality: lang == "ru" ? "Качество" : "Quality";
+    out property <string> quality-fast: lang == "ru" ? "Быстро" : "Fast";
+    out property <string> quality-high: lang == "ru" ? "Высокое" : "High";
+    out property <string> quality-max: lang == "ru" ? "Максимум" : "Max";
+    out property <string> quality-ultra: lang == "ru" ? "Ультра" : "Ultra";
+
+    /// What each upscale mode is for, by its index in the player's menu.
+    public pure function upscale-mode-hint(mode: int) -> string {
+        mode == 1 ? (lang == "ru"
+            ? "A — для большинства аниме в 1080p: возвращает чёткость размытым линиям."
+            : "A — for most anime at 1080p: brings blurred lines back into focus.")
+        : mode == 2 ? (lang == "ru"
+            ? "B — для 720p: убирает ореолы и лесенки после уменьшения."
+            : "B — for 720p: removes ringing and jagged edges left by downscaling.")
+        : mode == 3 ? (lang == "ru"
+            ? "C — для 480p и чётких исходников: увеличивает и убирает шум, ничего не дорисовывая."
+            : "C — for 480p and sharp sources: upscales and denoises without restoring.")
+        : mode == 4 ? (lang == "ru"
+            ? "A+A — ещё резче, для очень размытых исходников."
+            : "A+A — sharper still, for very blurry sources.")
+        : mode == 5 ? (lang == "ru"
+            ? "B+B — B со вторым мягким восстановлением."
+            : "B+B — B with a second soft restore.")
+        : mode == 6 ? (lang == "ru"
+            ? "C+A — C с восстановлением после увеличения."
+            : "C+A — C with a restore after the upscale.")
+        : (lang == "ru"
+            ? "Шейдеры выключены, картинку масштабирует сам mpv."
+            : "Shaders off; mpv scales the picture itself.")
+    }
 
     // ---- generic ---------------------------------------------------------
     out property <string> back: lang == "ru" ? "Назад" : "Back";

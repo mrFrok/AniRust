@@ -125,8 +125,9 @@ pub struct PlayerPreferences {
     pub remember: bool,
     pub speed: f64,
     pub volume: i64,
-    /// Positions in the player's menus.
-    pub upscale: usize,
+    /// Positions in the player's menus: the upscale mode and its quality.
+    pub upscale_mode: usize,
+    pub upscale_quality: usize,
     pub interpolation: bool,
     pub decoder: usize,
     /// Upscale to 4K whatever the window's size.
@@ -139,7 +140,8 @@ impl Default for PlayerPreferences {
             remember: true,
             speed: 1.0,
             volume: 100,
-            upscale: 0,
+            upscale_mode: 0,
+            upscale_quality: 1,
             interpolation: false,
             decoder: 0,
             force_4k: false,

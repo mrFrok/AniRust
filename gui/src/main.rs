@@ -47,7 +47,8 @@ use slint::ComponentHandle;
 use anirust_api::{Client, EpisodeSort};
 use anirust_extract::{Registry, ResolvedStream};
 use anirust_player::{
-    MediaSource, PlaybackState, Player, PlayerConfig, Track, TrackKind, UpscalePreset,
+    MediaSource, PlaybackState, Player, PlayerConfig, Track, TrackKind, UpscaleMode, UpscalePreset,
+    UpscaleQuality,
 };
 
 use crate::home::HomeState;
@@ -2121,7 +2122,8 @@ fn show_neighbours(window: &MainWindow, state: &Rc<RefCell<ReleaseState>>, posit
 /// interface owns; mpv has no notion of a preset once a shader list is applied.
 struct Settings {
     speed: Cell<f64>,
-    upscale: Cell<usize>,
+    upscale_mode: Cell<usize>,
+    upscale_quality: Cell<usize>,
     interpolation: Cell<bool>,
     force_4k: Cell<bool>,
     quality: Cell<usize>,
@@ -2148,7 +2150,8 @@ impl Settings {
     fn from_preferences(kept: preferences::PlayerPreferences) -> Self {
         Self {
             speed: Cell::new(kept.speed),
-            upscale: Cell::new(kept.upscale.min(PRESETS.len() - 1)),
+            upscale_mode: Cell::new(kept.upscale_mode.min(UpscaleMode::ALL.len() - 1)),
+            upscale_quality: Cell::new(kept.upscale_quality.min(UpscaleQuality::ALL.len() - 1)),
             interpolation: Cell::new(kept.interpolation),
             force_4k: Cell::new(kept.force_4k),
             quality: Cell::new(0),
@@ -2161,12 +2164,15 @@ impl Settings {
     }
 }
 
-const PRESETS: [UpscalePreset; 4] = [
-    UpscalePreset::Off,
-    UpscalePreset::Fast,
-    UpscalePreset::Balanced,
-    UpscalePreset::Quality,
-];
+impl Settings {
+    /// The upscaling the menus are set to.
+    fn upscale(&self) -> UpscalePreset {
+        UpscalePreset::new(
+            UpscaleMode::ALL[self.upscale_mode.get()],
+            UpscaleQuality::ALL[self.upscale_quality.get()],
+        )
+    }
+}
 
 /// mpv `hwdec` values behind the decoder choice, in the order the sheet lists
 /// them: automatic, hardware, software.
@@ -2202,7 +2208,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     let applied = player
         .set_speed(kept.speed)
         .and_then(|()| player.set_volume(kept.volume))
-        .and_then(|()| player.set_upscale(PRESETS[settings.upscale.get()]))
+        .and_then(|()| player.set_upscale(settings.upscale()))
         .and_then(|()| player.set_interpolation(kept.interpolation))
         .and_then(|()| player.set_hwdec(DECODERS[settings.decoder.get()]));
     if let Err(error) = applied {
@@ -2222,7 +2228,8 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
                 return;
             }
             all.player.speed = settings.speed.get();
-            all.player.upscale = settings.upscale.get();
+            all.player.upscale_mode = settings.upscale_mode.get();
+            all.player.upscale_quality = settings.upscale_quality.get();
             all.player.interpolation = settings.interpolation.get();
             all.player.decoder = settings.decoder.get();
             all.player.volume = player.volume();
@@ -2309,11 +2316,24 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     let chosen = Rc::clone(settings);
     let keep_now = Rc::clone(&keep);
     window.on_set_upscale(move |index| {
-        let index = (index.max(0) as usize).min(PRESETS.len() - 1);
-        chosen.upscale.set(index);
+        let index = (index.max(0) as usize).min(UpscaleMode::ALL.len() - 1);
+        chosen.upscale_mode.set(index);
         keep_now();
-        if let Err(error) = player.set_upscale(PRESETS[index]) {
-            tracing::warn!(%error, preset = PRESETS[index].name(), "upscale change failed");
+        let preset = chosen.upscale();
+        if let Err(error) = player.set_upscale(preset) {
+            tracing::warn!(%error, preset = %preset.name(), "upscale change failed");
+        }
+    });
+
+    let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
+    window.on_set_upscale_quality(move |index| {
+        let index = (index.max(0) as usize).min(UpscaleQuality::ALL.len() - 1);
+        chosen.upscale_quality.set(index);
+        keep_now();
+        let preset = chosen.upscale();
+        if let Err(error) = player.set_upscale(preset) {
+            tracing::warn!(%error, preset = %preset.name(), "upscale change failed");
         }
     });
 
@@ -2667,7 +2687,8 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             show_tracks(&window, player, &settings, &known_tracks);
 
             window.set_speed_label(format_speed(settings.speed.get()).into());
-            window.set_upscale(settings.upscale.get() as i32);
+            window.set_upscale(settings.upscale_mode.get() as i32);
+            window.set_upscale_quality(settings.upscale_quality.get() as i32);
             window.set_interpolation(settings.interpolation.get());
             window.set_quality(settings.quality.get() as i32);
             window.set_decoder(settings.decoder.get() as i32);

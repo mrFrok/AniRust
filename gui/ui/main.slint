@@ -288,8 +288,11 @@ export component MainWindow inherits Window {
     in property <string> quality-label: "—";
     in property <string> decoder-label: "HW";
     in property <string> speed-label: "1x";
-    /// Index into the upscale presets: 0 off, 1 fast, 2 balanced, 3 quality.
+    /// Index into the upscale modes; see the player page.
     in property <int> upscale: 0;
+    in property <int> upscale-quality: 1;
+    /// The player's open sheet, if any.
+    in-out property <string> player-sheet <=> player.sheet;
     in property <bool> interpolation: false;
     in property <[string]> qualities: [];
     in property <int> quality: 0;
@@ -326,6 +329,7 @@ export component MainWindow inherits Window {
     callback next-episode();
     callback set-speed(float);
     callback set-upscale(int);
+    callback set-upscale-quality(int);
     callback set-quality(int);
     callback set-decoder(int);
     callback set-subtitle-track(int);
@@ -817,6 +821,7 @@ export component MainWindow inherits Window {
             decoder-label: root.decoder-label;
             speed-label: root.speed-label;
             upscale: root.upscale;
+            upscale-quality: root.upscale-quality;
             interpolation: root.interpolation;
             qualities: root.qualities;
             quality: root.quality;
@@ -840,6 +845,7 @@ export component MainWindow inherits Window {
             next-episode => { root.next-episode(); }
             set-speed(v) => { root.set-speed(v); }
             set-upscale(v) => { root.set-upscale(v); }
+            set-upscale-quality(v) => { root.set-upscale-quality(v); }
             set-quality(v) => { root.set-quality(v); }
             set-decoder(v) => { root.set-decoder(v); }
             set-subtitle-track(v) => { root.set-subtitle-track(v); }
@@ -1142,7 +1148,7 @@ export component MainWindow inherits Window {
             // ---- ours ----
             if (event.text == "c") { root.toggle-captions(); return accept; }
             if (event.text == "s") { root.skip-opening(); return accept; }
-            if (event.text == "u") { root.set-upscale(Math.mod(root.upscale + 1, 4)); return accept; }
+            if (event.text == "u") { root.set-upscale(Math.mod(root.upscale + 1, 7)); return accept; }
             if (event.text == "i") { root.toggle-interpolation(); return accept; }
             reject
         }

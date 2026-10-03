@@ -31,8 +31,11 @@ export component PlayerPage inherits Rectangle {
     in property <string> quality-label: "—";
     in property <string> decoder-label: "HW";
     in property <string> speed-label: "1x";
-    /// Index into the upscale presets: 0 off, 1 fast, 2 balanced, 3 quality.
+    /// Index into the upscale modes: 0 off, 1–6 Anime4K's A, B, C, A+A, B+B,
+    /// C+A.
     in property <int> upscale: 0;
+    /// Index into the qualities: 0 fast, 1 high, 2 max, 3 ultra.
+    in property <int> upscale-quality: 1;
     /// Rendering at 4K whatever the window's size.
     in property <bool> force-4k: false;
     callback toggle-force-4k();
@@ -75,6 +78,7 @@ export component PlayerPage inherits Rectangle {
     callback next-episode();
     callback set-speed(float);
     callback set-upscale(int);
+    callback set-upscale-quality(int);
     callback set-quality(int);
     callback set-decoder(int);
     callback set-subtitle-track(int);
@@ -103,8 +107,9 @@ export component PlayerPage inherits Rectangle {
 
     property <bool> chrome-visible: true;
     property <bool> waiting: root.state == "loading" || root.state == "buffering";
-    /// Which sheet is open: "", "speed", "upscale".
-    property <string> sheet: "";
+    /// Which sheet is open: "", "speed", "anime4k", "settings". Settable from
+    /// outside so a key can open one, and a screenshot can show one.
+    in-out property <string> sheet: "";
     /// Locked hides every control but the lock itself, so a stray touch
     /// cannot pause or seek. The reference has this because a phone lives in
     /// a pocket; on a desktop it is just as useful against a cat.
@@ -525,225 +530,258 @@ export component PlayerPage inherits Rectangle {
             clicked => { root.sheet = ""; }
         }
 
+        // As tall as its contents, up to the player's own height less a
+        // strip of scrim to close it by; past that it scrolls. The player in
+        // a release page is short, and the upscale sheet is not.
         sheet := Rectangle {
             y: parent.height - self.height;
             width: 100%;
-            height: sheet-body.preferred-height + Spacing.loose;
+            height: min(sheet-body.preferred-height + Spacing.loose, parent.height - 2 * Spacing.loose);
             background: MaterialPalette.surface-container;
             border-top-left-radius: Shape.extra-large;
             border-top-right-radius: Shape.extra-large;
+            clip: true;
 
             // Swallow clicks so they do not reach the scrim behind.
             TouchArea {}
 
-            sheet-body := VerticalLayout {
-                padding: Spacing.comfortable;
-                spacing: Spacing.base;
+            sheet-flick := Flickable {
+                width: 100%;
+                height: 100%;
+                content-width: self.width;
+                content-height: sheet-body.preferred-height + Spacing.loose;
 
-                HorizontalLayout {
-                    Text {
-                        text: root.sheet == "anime4k" ? "Anime4K"
-                            : root.sheet == "settings" ? Tr.settings
-                            : Tr.speed;
-                        color: #FFFFFF;
-                        font-size: Typography.headline-small-size;
-                        horizontal-stretch: 1;
-                    }
-
-                    IconButton {
-                        icon: @image-url("../icons/close.svg");
-                        size: 20px;
-                        clicked => { root.sheet = ""; }
-                    }
-                }
-
-                if root.sheet == "anime4k": VerticalLayout {
-                    spacing: Spacing.medium;
-
-                    Text {
-                        text: Tr.upscale-hint;
-                        color: #FFFFFF8C;
-                        font-size: Typography.body-medium-size;
-                        wrap: word-wrap;
-                    }
-
-                    HorizontalLayout {
-                        spacing: Spacing.small;
-                        alignment: start;
-
-                        SettingChip {
-                            label: Tr.off;
-                            selected: root.upscale == 0;
-                            clicked => { root.set-upscale(0); }
-                        }
-
-                        SettingChip {
-                            label: Tr.preset-fast;
-                            selected: root.upscale == 1;
-                            clicked => { root.set-upscale(1); }
-                        }
-
-                        SettingChip {
-                            label: Tr.preset-balanced;
-                            recommended: true;
-                            selected: root.upscale == 2;
-                            clicked => { root.set-upscale(2); }
-                        }
-
-                        SettingChip {
-                            label: Tr.preset-quality;
-                            heavy: true;
-                            selected: root.upscale == 3;
-                            clicked => { root.set-upscale(3); }
-                        }
-                    }
-
-                    SettingOption {
-                        label: Tr.interpolation;
-                        description: Tr.interpolation-hint;
-                        selected: root.interpolation;
-                        clicked => { root.toggle-interpolation(); }
-                    }
-
-                    SettingOption {
-                        label: Tr.force-4k;
-                        description: Tr.force-4k-hint;
-                        selected: root.force-4k;
-                        clicked => { root.toggle-force-4k(); }
-                    }
-                }
-
-                if root.sheet == "settings": VerticalLayout {
+                sheet-body := VerticalLayout {
+                    width: sheet-flick.width;
+                    padding: Spacing.comfortable;
                     spacing: Spacing.base;
 
-                    Text {
-                        text: Tr.quality;
-                        color: #FFFFFF;
-                        font-size: Typography.title-medium-size;
-                        font-weight: Typography.title-medium-weight-em;
-                    }
-
                     HorizontalLayout {
-                        spacing: Spacing.small;
-                        alignment: start;
+                        Text {
+                            text: root.sheet == "anime4k" ? Tr.upscale
+                                : root.sheet == "settings" ? Tr.settings
+                                : Tr.speed;
+                            color: #FFFFFF;
+                            font-size: Typography.headline-small-size;
+                            horizontal-stretch: 1;
+                        }
 
-                        for name[index] in root.qualities: SettingChip {
-                            label: name;
-                            selected: index == root.quality;
-                            clicked => { root.set-quality(index); }
+                        IconButton {
+                            icon: @image-url("../icons/close.svg");
+                            size: 20px;
+                            clicked => { root.sheet = ""; }
                         }
                     }
 
-                    // Only worth a section when there is a choice. A single
-                    // audio track is not one, and "off" alone is not either.
-                    if root.audio-tracks.length > 1: Text {
-                        text: Tr.audio-track;
-                        color: #FFFFFF;
-                        font-size: Typography.title-medium-size;
-                        font-weight: Typography.title-medium-weight-em;
-                    }
+                    if root.sheet == "anime4k": VerticalLayout {
+                        spacing: Spacing.medium;
 
-                    if root.audio-tracks.length > 1: HorizontalLayout {
-                        spacing: Spacing.small;
-                        alignment: start;
+                        Text {
+                            text: Tr.upscale-hint;
+                            color: #FFFFFF8C;
+                            font-size: Typography.body-medium-size;
+                            wrap: word-wrap;
+                        }
 
-                        for name[index] in root.audio-tracks: SettingChip {
-                            label: name;
-                            selected: index == root.audio-track;
-                            clicked => { root.set-audio-track(index); }
+                        Text {
+                            text: Tr.upscale-mode;
+                            color: #FFFFFF;
+                            font-size: Typography.title-small-size;
+                            font-weight: Typography.title-small-weight-em;
+                        }
+
+                        HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            for name[index] in [Tr.off, "A", "B", "C", "A+A", "B+B", "C+A"]: SettingChip {
+                                label: name;
+                                recommended: index == 1;
+                                selected: root.upscale == index;
+                                clicked => { root.set-upscale(index); }
+                            }
+                        }
+
+                        Text {
+                            text: Tr.upscale-mode-hint(root.upscale);
+                            color: #FFFFFF8C;
+                            font-size: Typography.body-medium-size;
+                            wrap: word-wrap;
+                        }
+
+                        // Quality means nothing with the shaders off, so it is
+                        // not offered until a mode is.
+                        if root.upscale != 0: VerticalLayout {
+                            spacing: Spacing.medium;
+
+                            Text {
+                                text: Tr.upscale-quality;
+                                color: #FFFFFF;
+                                font-size: Typography.title-small-size;
+                                font-weight: Typography.title-small-weight-em;
+                            }
+
+                            HorizontalLayout {
+                                spacing: Spacing.small;
+                                alignment: start;
+
+                                for name[index] in [Tr.quality-fast, Tr.quality-high, Tr.quality-max, Tr.quality-ultra]: SettingChip {
+                                    label: name;
+                                    recommended: index == 1;
+                                    heavy: index == 3;
+                                    selected: root.upscale-quality == index;
+                                    clicked => { root.set-upscale-quality(index); }
+                                }
+                            }
+                        }
+
+                        SettingOption {
+                            label: Tr.interpolation;
+                            description: Tr.interpolation-hint;
+                            selected: root.interpolation;
+                            clicked => { root.toggle-interpolation(); }
+                        }
+
+                        SettingOption {
+                            label: Tr.force-4k;
+                            description: Tr.force-4k-hint;
+                            selected: root.force-4k;
+                            clicked => { root.toggle-force-4k(); }
                         }
                     }
 
-                    if root.subtitle-tracks.length > 1: Text {
-                        text: Tr.subtitles;
-                        color: #FFFFFF;
-                        font-size: Typography.title-medium-size;
-                        font-weight: Typography.title-medium-weight-em;
-                    }
+                    if root.sheet == "settings": VerticalLayout {
+                        spacing: Spacing.base;
 
-                    if root.subtitle-tracks.length > 1: HorizontalLayout {
-                        spacing: Spacing.small;
-                        alignment: start;
+                        Text {
+                            text: Tr.quality;
+                            color: #FFFFFF;
+                            font-size: Typography.title-medium-size;
+                            font-weight: Typography.title-medium-weight-em;
+                        }
 
-                        for name[index] in root.subtitle-tracks: SettingChip {
-                            label: name;
-                            selected: index == root.subtitle-track;
-                            clicked => { root.set-subtitle-track(index); }
+                        HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            for name[index] in root.qualities: SettingChip {
+                                label: name;
+                                selected: index == root.quality;
+                                clicked => { root.set-quality(index); }
+                            }
+                        }
+
+                        // Only worth a section when there is a choice. A single
+                        // audio track is not one, and "off" alone is not either.
+                        if root.audio-tracks.length > 1: Text {
+                            text: Tr.audio-track;
+                            color: #FFFFFF;
+                            font-size: Typography.title-medium-size;
+                            font-weight: Typography.title-medium-weight-em;
+                        }
+
+                        if root.audio-tracks.length > 1: HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            for name[index] in root.audio-tracks: SettingChip {
+                                label: name;
+                                selected: index == root.audio-track;
+                                clicked => { root.set-audio-track(index); }
+                            }
+                        }
+
+                        if root.subtitle-tracks.length > 1: Text {
+                            text: Tr.subtitles;
+                            color: #FFFFFF;
+                            font-size: Typography.title-medium-size;
+                            font-weight: Typography.title-medium-weight-em;
+                        }
+
+                        if root.subtitle-tracks.length > 1: HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            for name[index] in root.subtitle-tracks: SettingChip {
+                                label: name;
+                                selected: index == root.subtitle-track;
+                                clicked => { root.set-subtitle-track(index); }
+                            }
+                        }
+
+                        Text {
+                            text: Tr.decoder;
+                            color: #FFFFFF;
+                            font-size: Typography.title-medium-size;
+                            font-weight: Typography.title-medium-weight-em;
+                        }
+
+                        Text {
+                            text: Tr.decoder-hint;
+                            color: #FFFFFF8C;
+                            font-size: Typography.body-medium-size;
+                            wrap: word-wrap;
+                        }
+
+                        SettingOption {
+                            label: Tr.decoder-auto;
+                            description: Tr.decoder-auto-hint;
+                            selected: root.decoder == 0;
+                            clicked => { root.set-decoder(0); }
+                        }
+
+                        SettingOption {
+                            label: Tr.decoder-hw;
+                            description: Tr.decoder-hw-hint;
+                            badge: "HW";
+                            selected: root.decoder == 1;
+                            clicked => { root.set-decoder(1); }
+                        }
+
+                        SettingOption {
+                            label: Tr.decoder-sw;
+                            description: Tr.decoder-sw-hint;
+                            badge: "SW";
+                            selected: root.decoder == 2;
+                            clicked => { root.set-decoder(2); }
                         }
                     }
 
-                    Text {
-                        text: Tr.decoder;
-                        color: #FFFFFF;
-                        font-size: Typography.title-medium-size;
-                        font-weight: Typography.title-medium-weight-em;
-                    }
+                    if root.sheet == "speed": HorizontalLayout {
+                        spacing: Spacing.small;
+                        alignment: start;
 
-                    Text {
-                        text: Tr.decoder-hint;
-                        color: #FFFFFF8C;
-                        font-size: Typography.body-medium-size;
-                        wrap: word-wrap;
-                    }
-
-                    SettingOption {
-                        label: Tr.decoder-auto;
-                        description: Tr.decoder-auto-hint;
-                        selected: root.decoder == 0;
-                        clicked => { root.set-decoder(0); }
-                    }
-
-                    SettingOption {
-                        label: Tr.decoder-hw;
-                        description: Tr.decoder-hw-hint;
-                        badge: "HW";
-                        selected: root.decoder == 1;
-                        clicked => { root.set-decoder(1); }
-                    }
-
-                    SettingOption {
-                        label: Tr.decoder-sw;
-                        description: Tr.decoder-sw-hint;
-                        badge: "SW";
-                        selected: root.decoder == 2;
-                        clicked => { root.set-decoder(2); }
-                    }
-                }
-
-                if root.sheet == "speed": HorizontalLayout {
-                    spacing: Spacing.small;
-                    alignment: start;
-
-                    SettingChip {
-                        label: "0.5x";
-                        selected: root.speed-label == "0.5x";
-                        clicked => { root.set-speed(0.5); }
-                    }
-                    SettingChip {
-                        label: "0.75x";
-                        selected: root.speed-label == "0.75x";
-                        clicked => { root.set-speed(0.75); }
-                    }
-                    SettingChip {
-                        label: "1x";
-                        recommended: true;
-                        selected: root.speed-label == "1x";
-                        clicked => { root.set-speed(1.0); }
-                    }
-                    SettingChip {
-                        label: "1.25x";
-                        selected: root.speed-label == "1.25x";
-                        clicked => { root.set-speed(1.25); }
-                    }
-                    SettingChip {
-                        label: "1.5x";
-                        selected: root.speed-label == "1.5x";
-                        clicked => { root.set-speed(1.5); }
-                    }
-                    SettingChip {
-                        label: "2x";
-                        selected: root.speed-label == "2x";
-                        clicked => { root.set-speed(2.0); }
+                        SettingChip {
+                            label: "0.5x";
+                            selected: root.speed-label == "0.5x";
+                            clicked => { root.set-speed(0.5); }
+                        }
+                        SettingChip {
+                            label: "0.75x";
+                            selected: root.speed-label == "0.75x";
+                            clicked => { root.set-speed(0.75); }
+                        }
+                        SettingChip {
+                            label: "1x";
+                            recommended: true;
+                            selected: root.speed-label == "1x";
+                            clicked => { root.set-speed(1.0); }
+                        }
+                        SettingChip {
+                            label: "1.25x";
+                            selected: root.speed-label == "1.25x";
+                            clicked => { root.set-speed(1.25); }
+                        }
+                        SettingChip {
+                            label: "1.5x";
+                            selected: root.speed-label == "1.5x";
+                            clicked => { root.set-speed(1.5); }
+                        }
+                        SettingChip {
+                            label: "2x";
+                            selected: root.speed-label == "2x";
+                            clicked => { root.set-speed(2.0); }
+                        }
                     }
                 }
             }

@@ -15,7 +15,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use anirust_api::{Client, EpisodeSort, ProfileList, SearchBy};
 use anirust_extract::{Registry, ResolvedStream, StreamKind, StreamVariant};
-use anirust_player::{MediaSource, Player, PlayerConfig, UpscalePreset};
+use anirust_player::{
+    MediaSource, Player, PlayerConfig, UpscaleMode, UpscalePreset, UpscaleQuality,
+};
 
 use crate::i18n::Lang;
 
@@ -157,12 +159,15 @@ enum Command {
         /// Playback speed to exercise.
         #[arg(long, default_value_t = 1.0)]
         speed: f64,
-        /// Directory holding the Anime4K shaders.
+        /// Directory holding the shaders, instead of the ones built in.
         #[arg(long, env = "ANIRUST_SHADER_DIR")]
         shader_dir: Option<std::path::PathBuf>,
-        /// Upscaling preset. Needs --shader-dir.
+        /// Upscaling recipe: one of Anime4K's modes.
         #[arg(long, value_enum, default_value_t = Upscale::Off)]
         upscale: Upscale,
+        /// How big a network runs the recipe.
+        #[arg(long, value_enum, default_value_t = Quality::High)]
+        quality: Quality,
         /// Enable temporal interpolation.
         #[arg(long)]
         interpolation: bool,
@@ -220,18 +225,46 @@ struct StreamOutput {
 #[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
 enum Upscale {
     Off,
-    Fast,
-    Balanced,
-    Quality,
+    A,
+    B,
+    C,
+    #[value(name = "a+a")]
+    AA,
+    #[value(name = "b+b")]
+    BB,
+    #[value(name = "c+a")]
+    CA,
 }
 
-impl From<Upscale> for UpscalePreset {
+impl From<Upscale> for UpscaleMode {
     fn from(u: Upscale) -> Self {
         match u {
             Upscale::Off => Self::Off,
-            Upscale::Fast => Self::Fast,
-            Upscale::Balanced => Self::Balanced,
-            Upscale::Quality => Self::Quality,
+            Upscale::A => Self::A,
+            Upscale::B => Self::B,
+            Upscale::C => Self::C,
+            Upscale::AA => Self::AA,
+            Upscale::BB => Self::BB,
+            Upscale::CA => Self::CA,
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+enum Quality {
+    Fast,
+    High,
+    Max,
+    Ultra,
+}
+
+impl From<Quality> for UpscaleQuality {
+    fn from(q: Quality) -> Self {
+        match q {
+            Quality::Fast => Self::Fast,
+            Quality::High => Self::High,
+            Quality::Max => Self::Max,
+            Quality::Ultra => Self::Ultra,
         }
     }
 }
@@ -518,6 +551,7 @@ async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
             speed,
             shader_dir,
             upscale,
+            quality,
             interpolation,
         } => {
             let episode =
@@ -528,7 +562,7 @@ async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
                 *seconds,
                 *speed,
                 shader_dir.as_deref(),
-                *upscale,
+                UpscalePreset::new((*upscale).into(), (*quality).into()),
                 *interpolation,
                 lang,
             )?;
@@ -734,7 +768,7 @@ fn play(
     seconds: u64,
     speed: f64,
     shader_dir: Option<&std::path::Path>,
-    upscale: Upscale,
+    upscale: UpscalePreset,
     interpolation: bool,
     lang: Lang,
 ) -> Result<()> {
@@ -742,8 +776,8 @@ fn play(
 
     // The player carries the shaders and writes them out on startup, so a
     // preset only has to be checked when the caller overrode the directory.
-    let mut preset: UpscalePreset = upscale.into();
-    if preset != UpscalePreset::Off
+    let mut preset = upscale;
+    if preset.mode != UpscaleMode::Off
         && let Some(dir) = shader_dir
     {
         let missing = UpscalePreset::missing_from(dir);
@@ -752,7 +786,7 @@ fn play(
                 "{}",
                 lang.play_shaders_missing(missing.len(), &dir.display().to_string())
             );
-            preset = UpscalePreset::Off;
+            preset = UpscalePreset::OFF;
         }
     }
 

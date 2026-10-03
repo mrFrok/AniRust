@@ -659,8 +659,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // list learns its own height. Only then does starting an episode mean
     // anything — scrolling to it needs a list that has been laid out.
     draw(&window);
-    if state == "playing" || state == "theatre" {
+    if state == "playing" || state == "theatre" || state == "upscale" {
         start_playing(&ui, state == "theatre");
+    }
+    // The upscale sheet, a mode and a quality picked.
+    if state == "upscale" {
+        ui.set_upscale(4);
+        ui.set_upscale_quality(2);
+        ui.set_player_sheet("anime4k".into());
     }
     // A pointer put where the account button is, so the tooltip that says what
     // clicking it does is drawn. Measured from the right edge, which is where

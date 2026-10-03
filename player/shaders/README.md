@@ -1,37 +1,37 @@
-# Anime4K shaders
+# Upscaling shaders
 
-This directory is where the [Anime4K](https://github.com/bloc97/Anime4K) GLSL
-shaders go. They are **not vendored** here; fetch them from upstream.
+The [Anime4K](https://github.com/bloc97/Anime4K) v4.0.1 GLSL shaders mpv runs
+to upscale anime. They are vendored here unchanged and embedded in the binary,
+which writes them to the cache directory on first use, so upscaling needs no
+installation step. Anime4K is MIT-licensed (`LICENSE-Anime4K`), compatible with
+this project's GPLv3.
 
-Anime4K is MIT-licensed, which is compatible with this project's GPLv3. mpv
-loads the shaders natively through `glsl-shaders`, so there is nothing to
-reimplement — a preset is an ordered list of files, and
-`player/src/shaders.rs` holds those lists.
+## Presets
 
-## Installing
+A preset is a mode and a quality. `player/src/shaders.rs` builds the chains:
 
-Download `Anime4K_v4.0.zip` from the upstream releases page and extract the
-`.glsl` files here, or point `PlayerConfig::shader_dir` at wherever you keep
-them. The probe accepts `--shader-dir`, and also reads `ANIRUST_SHADER_DIR`.
+- Anime4K's modes A, B, C, A+A, B+B and C+A follow the recipes in Anime4K's
+  instructions for mpv. The quality picks the network sizes: Fast M then S,
+  High L then M, Max VL then M (Anime4K's own high-end choice), Ultra a VL
+  restore, a UL upscale, then L.
+- Every Anime4K chain doubles twice, with the auto-downscale passes between the
+  two doublings, so 720p reaches 4K through two network passes. Each pass
+  checks the sizes involved and skips itself when it is not needed.
 
-## Files the presets need
+The tests in `shaders.rs` check the order — highlights clamped first, every
+restore feeding a later upscale, the downscale between the two doublings — and
+that every file a chain names is embedded and none is a UL restore.
 
-| Preset | Shaders |
-| --- | --- |
-| Off | none |
-| Fast | `Clamp_Highlights`, `Restore_CNN_S`, `Upscale_CNN_x2_S` |
-| Balanced | `Clamp_Highlights`, `Restore_CNN_M`, `Upscale_CNN_x2_M`, `AutoDownscalePre_x2` |
-| Quality | `Clamp_Highlights`, `Restore_CNN_L`, `Upscale_CNN_x2_L`, `AutoDownscalePre_x2`, `Restore_CNN_S` |
+## Left out
 
-All names are prefixed `Anime4K_` and suffixed `.glsl`.
+- `Restore_CNN_UL` and `Restore_CNN_Soft_UL` need more varying variables than
+  OpenGL allows (31) and fail to link; mpv renders through OpenGL here.
+- [ArtCNN](https://github.com/Artoriuz/ArtCNN) builds only under Vulkan, which
+  libmpv's render API does not offer.
 
-`UpscalePreset::missing_from` reports which of these a directory lacks, and the
-player falls back to no upscaling rather than failing when an install is
-incomplete.
+## Using other copies
 
-## Order
-
-`Clamp_Highlights` runs first so later passes see untouched highlights, and
-restoration runs before upscaling. `player/src/shaders.rs` has tests asserting
-both, so a careless edit to a chain fails the build rather than quietly
-degrading the picture.
+`PlayerConfig::shader_dir` points the player at another directory; the probe
+takes `--shader-dir` or `ANIRUST_SHADER_DIR`. `UpscalePreset::missing_from`
+reports which files a directory lacks, and the probe then plays without
+upscaling.
