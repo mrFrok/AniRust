@@ -1,9 +1,9 @@
 #!/bin/sh
 # Builds vstrt_rtx — vs-mlrt's TensorRT-RTX filter for VapourSynth — for
-# Linux, ported to VapourSynth's API 4 by vstrt-api4.patch.
+# Linux, ported to VapourSynth's API 4 by port-api4.py.
 #
 # vs-mlrt (https://github.com/AmusementClub/vs-mlrt, GPL-3.0) still speaks
-# API 3, which VapourSynth stopped loading in R73; the patch moves vstrt to
+# API 3, which VapourSynth stopped loading in R73; the port moves vstrt to
 # API 4 without changing what it does or the names vsmlrt.py calls. The
 # result is ours to ship under the GPL. TensorRT-RTX itself is not: the
 # build links against NVIDIA's SDK, downloaded here for that alone, and at
@@ -36,7 +36,7 @@ if [ ! -d vs-mlrt ]; then
     mv "vs-mlrt-$vs_mlrt" vs-mlrt
     (
         cd vs-mlrt
-        patch -p1 < "$root/packaging/mlrt/vstrt-api4.patch"
+        python3 "$root/packaging/mlrt/port-api4.py" vstrt
         # vstrt's CMake names the build after `git describe`.
         git init -q
         git add -A

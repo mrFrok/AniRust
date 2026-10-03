@@ -2158,6 +2158,9 @@ struct Settings {
     /// When frame generation was last switched on, until it has been seen
     /// working or failing.
     generation_since: Cell<Option<std::time::Instant>>,
+    /// Whether the line about TensorRT building an engine has been shown
+    /// since the filters were last applied.
+    engine_build_said: Cell<bool>,
     /// The monitor's refresh rate as last told to mpv.
     display_fps: Cell<Option<f64>>,
     /// Whether to lower the load when frames drop, and the watch doing it.
@@ -2207,6 +2210,7 @@ impl Settings {
             trt: RefCell::new(TensorRt::find()),
             trt_fetch: RefCell::new(String::new()),
             generation_since: Cell::new(None),
+            engine_build_said: Cell::new(false),
             display_fps: Cell::new(None),
             adaptive: Cell::new(kept.adaptive),
             watch: RefCell::new(adapt::Watch::default()),
@@ -2309,6 +2313,7 @@ impl Settings {
         }
         self.generation_since
             .set((wanted.is_some() && enhancement.frames.is_some()).then(std::time::Instant::now));
+        self.engine_build_said.set(false);
         player.set_enhancement(wanted.map(|networks| (networks, enhancement)))
     }
 
@@ -3343,6 +3348,9 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             // upscaling on, the picture leaving the renderer is larger than
             // the source, and reporting the source would understate it.
             let generated = generated_fps(player, &settings);
+            if generated.is_none() {
+                explain_engine_build(&window, &settings);
+            }
             window.set_quality_label(
                 quality_label(
                     player.video_size(),
@@ -3628,12 +3636,16 @@ fn generated_fps(player: &Player, settings: &Settings) -> Option<f64> {
         if since.elapsed() < std::time::Duration::from_secs(3) {
             return working.then_some(out);
         }
+        // TensorRT compiles a network for the card the first time it meets a
+        // picture size, which holds the picture for ten seconds or so.
+        let grace = if settings.on_tensorrt() { 30 } else { 6 };
         if working {
             tracing::info!(source, out, "frame generation is working");
             settings.generation_since.set(None);
-        } else if since.elapsed() > std::time::Duration::from_secs(6) && player.is_playing() {
+        } else if since.elapsed() > std::time::Duration::from_secs(grace) && player.is_playing() {
             let note = anirust_player::frames::last_error().unwrap_or_else(|| {
-                "no note from the script: is VapourSynth installed, and does this libmpv have                  its filter?"
+                "no note from the script: is VapourSynth installed, and does this libmpv have \
+                 its filter?"
                     .to_owned()
             });
             tracing::warn!(source, out, %note, "frame generation did not start");
@@ -3641,6 +3653,32 @@ fn generated_fps(player: &Player, settings: &Settings) -> Option<f64> {
         }
     }
     working.then_some(out)
+}
+
+/// Says, once, that TensorRT is compiling a network for this card, when the
+/// picture has stood still for a few seconds after the filters changed —
+/// otherwise a frozen frame goes unexplained.
+fn explain_engine_build(window: &MainWindow, settings: &Settings) {
+    let Some(since) = settings.generation_since.get() else {
+        return;
+    };
+    if !settings.on_tensorrt()
+        || settings.engine_build_said.get()
+        || since.elapsed() < std::time::Duration::from_secs(3)
+    {
+        return;
+    }
+    settings.engine_build_said.set(true);
+    let ru = window.get_lang() == "ru";
+    show_hint(
+        window,
+        if ru {
+            "Собираю движок TensorRT под эту видеокарту: один раз, около 15 секунд"
+        } else {
+            "Building a TensorRT engine for this card: once, about 15 seconds"
+        }
+        .to_owned(),
+    );
 }
 
 /// What the quality menu calls a rendition.
