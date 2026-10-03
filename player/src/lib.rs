@@ -346,6 +346,8 @@ pub struct Player {
     /// their copy-back forms and put them back afterwards.
     hwdec: std::sync::Mutex<String>,
     generating: std::sync::atomic::AtomicBool,
+    /// The display's refresh rate as last told, for scripts that aim at it.
+    display_fps: std::sync::Mutex<Option<f64>>,
 }
 
 impl Player {
@@ -401,6 +403,7 @@ impl Player {
             shader_dir: Some(shader_dir),
             hwdec: std::sync::Mutex::new(config.hwdec.to_string()),
             generating: std::sync::atomic::AtomicBool::new(false),
+            display_fps: std::sync::Mutex::new(None),
         };
 
         player.set_network_timeout(config.network_timeout_secs)?;
@@ -905,8 +908,14 @@ impl Player {
         let script = dir.join("rife.vpy");
         let error_file = dir.join("rife-error.txt");
         let _ = std::fs::remove_file(&error_file);
+        let display_fps = self.display_fps.lock().ok().and_then(|kept| *kept);
         std::fs::create_dir_all(&dir)
-            .and_then(|()| std::fs::write(&script, install.script(generation, &error_file)))
+            .and_then(|()| {
+                std::fs::write(
+                    &script,
+                    install.script(generation, display_fps, &error_file),
+                )
+            })
             .map_err(|source| Error::Io {
                 path: script.clone(),
                 source,
@@ -920,6 +929,25 @@ impl Player {
         );
         self.mpv.set_property("vf", filter.as_str())?;
         tracing::info!(?generation, script = %script.display(), "frame generation on");
+        Ok(())
+    }
+
+    /// Tells mpv the display's refresh rate, or lets it guess again with
+    /// `None`.
+    ///
+    /// Rendering through the render API, mpv has no window to ask, and
+    /// assumes no rate at all: display-synced interpolation then has nothing
+    /// to resample to, and a VapourSynth script's `display_fps` reads 0.
+    ///
+    /// Frame generation at the screen's rate reads it from here too: mpv's
+    /// filters ask the video output directly and get no answer, override or
+    /// not, so the next script written carries the rate itself.
+    pub fn set_display_fps(&self, fps: Option<f64>) -> Result<()> {
+        if let Ok(mut kept) = self.display_fps.lock() {
+            *kept = fps;
+        }
+        self.mpv
+            .set_property("display-fps-override", fps.unwrap_or(0.0))?;
         Ok(())
     }
 

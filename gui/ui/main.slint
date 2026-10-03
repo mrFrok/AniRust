@@ -350,6 +350,7 @@ export component MainWindow inherits Window {
     in property <int> frame-rate: 0;
     in property <int> rife-model: 0;
     in property <bool> frames-available: false;
+    in property <int> display-fps: 0;
     callback set-frame-rate(int);
     callback set-rife-model(int);
     in property <bool> adaptive: true;
@@ -860,6 +861,7 @@ export component MainWindow inherits Window {
             frame-rate: root.frame-rate;
             rife-model: root.rife-model;
             frames-available: root.frames-available;
+            display-fps: root.display-fps;
             adaptive: root.adaptive;
             qualities: root.qualities;
             quality: root.quality;

@@ -2146,6 +2146,8 @@ struct Settings {
     /// When frame generation was last switched on, until it has been seen
     /// working or failing.
     generation_since: Cell<Option<std::time::Instant>>,
+    /// The monitor's refresh rate as last told to mpv.
+    display_fps: Cell<Option<f64>>,
     /// Whether to lower the load when frames drop, and the watch doing it.
     adaptive: Cell<bool>,
     watch: RefCell<adapt::Watch>,
@@ -2188,6 +2190,7 @@ impl Settings {
             rife_model: Cell::new(kept.rife_model.min(RifeModel::ALL.len() - 1)),
             rife: RifeInstall::find(),
             generation_since: Cell::new(None),
+            display_fps: Cell::new(None),
             adaptive: Cell::new(kept.adaptive),
             watch: RefCell::new(adapt::Watch::default()),
             quality: Cell::new(0),
@@ -3001,6 +3004,35 @@ fn wire_stepping(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 /// Fast enough that a clock and a progress bar look alive, slow enough that it
 /// costs nothing next to rendering. The video itself is not driven from here —
 /// that runs at display rate in the video bridge.
+/// Keeps mpv told the refresh rate of the monitor the window is on.
+///
+/// Checked on every status tick — cheap — because the window can be dragged
+/// to another monitor. When the rate changes while frames are generated at
+/// the screen's rate, the script is written again so it aims at the new one.
+fn follow_display(window: &MainWindow, player: &Player, settings: &Settings) {
+    let Some(fps) = desktop::refresh_rate(window.window()) else {
+        return;
+    };
+    let changed = settings
+        .display_fps
+        .get()
+        .is_none_or(|known| (known - fps).abs() > 0.5);
+    if !changed {
+        return;
+    }
+    settings.display_fps.set(Some(fps));
+    window.set_display_fps(fps.round() as i32);
+    if let Err(error) = player.set_display_fps(Some(fps)) {
+        tracing::warn!(%error, fps, "the display rate was not passed on");
+        return;
+    }
+    tracing::info!(fps, "display rate");
+    let at_display_rate = settings.frame_rate.get() == TargetRate::ALL.len();
+    if at_display_rate && let Err(error) = settings.apply_generation(player) {
+        tracing::warn!(%error, "frame generation did not follow the display");
+    }
+}
+
 /// Lowers the load a step when the machine is dropping frames, if allowed.
 ///
 /// Only plain playback is judged — not a pause, not buffering — and only when
@@ -3079,6 +3111,10 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
         Duration::from_millis(250),
         move || {
             let Some(window) = weak.upgrade() else { return };
+
+            // Before anything else: mpv should know the screen's rate by the
+            // time an episode starts, not a tick after.
+            follow_display(&window, player, &settings);
 
             // With nothing loaded there is nothing to mirror, and asking mpv
             // for properties it has no file for is pure waste.

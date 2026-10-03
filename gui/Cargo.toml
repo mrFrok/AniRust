@@ -55,6 +55,9 @@ slint = { version = "1.18", default-features = false, features = [
     # The window's native display, which mpv needs for hardware decoding on
     # AMD and Intel under Linux.
     "raw-window-handle-06",
+    # The monitor the window is on, for its refresh rate: mpv cannot see it
+    # through the render API, and frame generation and interpolation need it.
+    "unstable-winit-030",
 ] }
 raw-window-handle = "0.6"
 

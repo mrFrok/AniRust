@@ -97,3 +97,24 @@ pub fn open_folder(path: &std::path::Path) {
         tracing::warn!(%error, path = %path.display(), "the folder could not be opened");
     }
 }
+
+/// The refresh rate of the monitor the window is on, in frames a second.
+///
+/// mpv cannot see it through the render API, so without this it assumes
+/// nothing — frame generation "at the screen's rate" falls back to 60 on a
+/// 180 Hz monitor, and interpolation has no display to resample to. Asked of
+/// winit, which knows it on every platform; `None` before the window exists
+/// or where the system will not say.
+pub fn refresh_rate(window: &slint::Window) -> Option<f64> {
+    use slint::winit_030::WinitWindowAccessor;
+
+    window
+        .with_winit_window(|window| {
+            window
+                .current_monitor()
+                .and_then(|monitor| monitor.refresh_rate_millihertz())
+        })
+        .flatten()
+        .map(|millihertz| f64::from(millihertz) / 1000.0)
+        .filter(|fps| *fps > 1.0)
+}

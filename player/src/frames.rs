@@ -141,15 +141,29 @@ impl RifeInstall {
     /// The VapourSynth script that makes `generation` happen.
     ///
     /// mpv defines `video_in`, `container_fps` and `display_fps` before it
-    /// runs. Any exception is written to `error_file` and raised again, so mpv
+    /// runs — but its `display_fps` comes straight from the video output,
+    /// which under the render API knows no rate and says 0. So the screen's
+    /// rate is written into the script when the caller knows it, and mpv's
+    /// own, then 60, are only fallbacks.
+    ///
+    /// Any exception is written to `error_file` and raised again, so mpv
     /// drops the filter and plays on, and the reason is not lost.
     #[must_use]
-    pub fn script(&self, generation: FrameGeneration, error_file: &Path) -> String {
-        let target = match generation.rate {
-            TargetRate::Double => "source * 2",
-            TargetRate::Sixty => "Fraction(60)",
-            TargetRate::Display => {
+    pub fn script(
+        &self,
+        generation: FrameGeneration,
+        display_fps: Option<f64>,
+        error_file: &Path,
+    ) -> String {
+        let target = match (generation.rate, display_fps) {
+            (TargetRate::Double, _) => "source * 2".to_owned(),
+            (TargetRate::Sixty, _) => "Fraction(60)".to_owned(),
+            (TargetRate::Display, Some(fps)) => {
+                format!("Fraction({fps:.3}).limit_denominator(1001)")
+            }
+            (TargetRate::Display, None) => {
                 "Fraction(display_fps).limit_denominator(1001) if display_fps > 0 else Fraction(60)"
+                    .to_owned()
             }
         };
         format!(
@@ -334,16 +348,16 @@ mod tests {
             plugin: PathBuf::from("/opt/rife/librife.so"),
             models: PathBuf::from("/opt/rife/models"),
         };
-        let script = install.script(
-            FrameGeneration {
-                rate: TargetRate::Display,
-                model: RifeModel::Quality,
-                max_height: 720,
-            },
-            Path::new("/tmp/err.txt"),
-        );
+        let generation = FrameGeneration {
+            rate: TargetRate::Display,
+            model: RifeModel::Quality,
+            max_height: 720,
+        };
+        let script = install.script(generation, None, Path::new("/tmp/err.txt"));
         assert!(script.contains("\"/opt/rife/models/rife-v4.26_ensembleFalse\""));
         assert!(script.contains("display_fps"));
+        let told = install.script(generation, Some(179.999), Path::new("/tmp/err.txt"));
+        assert!(told.contains("target = Fraction(179.999).limit_denominator(1001)"));
         assert!(script.contains("max_height = 720"));
         assert!(script.contains("core.std.LoadPlugin(\"/opt/rife/librife.so\")"));
     }

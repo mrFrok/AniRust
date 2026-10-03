@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! ANIRUST_RIFE_DIR=/path/to/rife \
-//!     cargo run -p anirust-player --example frames -- video.mkv [seconds] [fast|quality]
+//!     cargo run -p anirust-player --example frames -- video.mkv [seconds] [fast|quality] [display-fps]
 //! ```
 //!
 //! Needs a libmpv built with the VapourSynth filter (`LD_LIBRARY_PATH` at one
@@ -15,7 +15,7 @@
 use std::time::Duration;
 
 use anirust_player::{
-    FrameGeneration, MediaSource, Player, PlayerConfig, RifeInstall, RifeModel, frames,
+    FrameGeneration, MediaSource, Player, PlayerConfig, RifeInstall, RifeModel, TargetRate, frames,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,14 +28,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("quality") => RifeModel::Quality,
         _ => RifeModel::Fast,
     };
+    // A display rate aims at it, as the GUI does with the monitor's.
+    let display: Option<f64> = args.next().map(|s| s.parse()).transpose()?;
 
     let install = RifeInstall::find().ok_or("RIFE is not installed; set ANIRUST_RIFE_DIR")?;
     let player = Player::new(&PlayerConfig::headless())?;
     player.open(&MediaSource::new(file))?;
+    player.set_display_fps(display)?;
     player.set_frame_generation(Some((
         &install,
         FrameGeneration {
             model,
+            rate: if display.is_some() {
+                TargetRate::Display
+            } else {
+                TargetRate::Sixty
+            },
             ..FrameGeneration::default()
         },
     )))?;

@@ -152,6 +152,8 @@ export component PlayerPage inherits Rectangle {
     in property <int> rife-model: 0;
     /// Whether RIFE was found at all.
     in property <bool> frames-available: false;
+    /// The monitor's refresh rate, rounded; 0 when not known.
+    in property <int> display-fps: 0;
     callback set-frame-rate(int);
     callback set-rife-model(int);
     /// Lowering the load by itself when frames drop.
@@ -801,7 +803,7 @@ export component PlayerPage inherits Rectangle {
                             spacing: Spacing.small;
                             alignment: start;
 
-                            for name[index] in [Tr.off, "×2", "60", Tr.frame-rate-display]: SettingChip {
+                            for name[index] in [Tr.off, "×2", "60", root.display-fps > 0 ? Tr.frame-rate-display + " · " + root.display-fps : Tr.frame-rate-display]: SettingChip {
                                 label: name;
                                 selected: root.frame-rate == index;
                                 clicked => { root.set-frame-rate(index); }
