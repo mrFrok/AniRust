@@ -14,6 +14,7 @@
 //! Nothing here blocks the event loop. Every lookup and every extractor run
 //! goes through [`tasks`] and comes back on the UI thread.
 
+mod adapt;
 mod bookmarks;
 mod channel_admin;
 mod collections;
@@ -2145,6 +2146,9 @@ struct Settings {
     /// When frame generation was last switched on, until it has been seen
     /// working or failing.
     generation_since: Cell<Option<std::time::Instant>>,
+    /// Whether to lower the load when frames drop, and the watch doing it.
+    adaptive: Cell<bool>,
+    watch: RefCell<adapt::Watch>,
     quality: Cell<usize>,
     decoder: Cell<usize>,
     /// mpv track ids behind the subtitle and audio menus.
@@ -2184,6 +2188,8 @@ impl Settings {
             rife_model: Cell::new(kept.rife_model.min(RifeModel::ALL.len() - 1)),
             rife: RifeInstall::find(),
             generation_since: Cell::new(None),
+            adaptive: Cell::new(kept.adaptive),
+            watch: RefCell::new(adapt::Watch::default()),
             quality: Cell::new(0),
             decoder: Cell::new(kept.decoder.min(DECODERS.len() - 1)),
             subtitles: RefCell::new(Vec::new()),
@@ -2195,6 +2201,23 @@ impl Settings {
 }
 
 impl Settings {
+    /// The load the menus put on the GPU.
+    fn load(&self) -> adapt::Load {
+        adapt::Load {
+            upscale_mode: self.upscale_mode.get(),
+            upscale_quality: self.upscale_quality.get(),
+            frame_rate: self.frame_rate.get(),
+            rife_model: self.rife_model.get(),
+        }
+    }
+
+    fn set_load(&self, load: adapt::Load) {
+        self.upscale_mode.set(load.upscale_mode);
+        self.upscale_quality.set(load.upscale_quality);
+        self.frame_rate.set(load.frame_rate);
+        self.rife_model.set(load.rife_model);
+    }
+
     /// The frame generation the menus are set to, if any and if possible.
     fn generation(&self) -> Option<(&RifeInstall, FrameGeneration)> {
         let rate = *TargetRate::ALL.get(self.frame_rate.get().checked_sub(1)?)?;
@@ -2350,6 +2373,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
             all.player.picture = settings.picture.get();
             all.player.frame_rate = settings.frame_rate.get();
             all.player.rife_model = settings.rife_model.get();
+            all.player.adaptive = settings.adaptive.get();
             prefs.set(all);
             all.save();
         })
@@ -2748,6 +2772,14 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 
     let chosen = Rc::clone(settings);
     let keep_now = Rc::clone(&keep);
+    window.on_toggle_adaptive(move || {
+        chosen.adaptive.set(!chosen.adaptive.get());
+        chosen.watch.borrow_mut().reset();
+        keep_now();
+    });
+
+    let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
     window.on_set_rife_model(move |index| {
         let index = (index.max(0) as usize).min(RifeModel::ALL.len() - 1);
         chosen.rife_model.set(index);
@@ -2969,8 +3001,62 @@ fn wire_stepping(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 /// Fast enough that a clock and a progress bar look alive, slow enough that it
 /// costs nothing next to rendering. The video itself is not driven from here —
 /// that runs at display rate in the video bridge.
+/// Lowers the load a step when the machine is dropping frames, if allowed.
+///
+/// Only plain playback is judged — not a pause, not buffering — and only when
+/// something heavy is on. The step is applied at once, kept in the
+/// preferences when they are kept, and said on screen.
+fn keep_up(
+    window: &MainWindow,
+    player: &Player,
+    settings: &Settings,
+    prefs: &Cell<preferences::Preferences>,
+    playback: PlaybackState,
+) {
+    let load = settings.load();
+    let mut watch = settings.watch.borrow_mut();
+    if !settings.adaptive.get() || playback != PlaybackState::Playing || !load.is_enhanced() {
+        watch.reset();
+        return;
+    }
+    let now = std::time::Instant::now();
+    if !watch.falling_behind(now, player.dropped_frames()) {
+        return;
+    }
+    let Some(step) = load.next_step() else {
+        return;
+    };
+    let lowered = load.after(step);
+    tracing::warn!(
+        ?step,
+        ?load,
+        ?lowered,
+        "frames are dropping; lowering the load"
+    );
+    settings.set_load(lowered);
+    let applied = player
+        .set_upscale(settings.upscale())
+        .and_then(|()| settings.apply_generation(player));
+    if let Err(error) = applied {
+        tracing::warn!(%error, "the lower load was not applied");
+    }
+    watch.settle(now);
+
+    let mut all = prefs.get();
+    if all.player.remember {
+        all.player.upscale_mode = lowered.upscale_mode;
+        all.player.upscale_quality = lowered.upscale_quality;
+        all.player.frame_rate = lowered.frame_rate;
+        all.player.rife_model = lowered.rife_model;
+        prefs.set(all);
+        all.save();
+    }
+    show_hint(window, step.notice(window.get_lang() == "ru").to_owned());
+}
+
 fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
     let player = app.bridge.player();
+    let prefs = Rc::clone(&app.prefs);
     let weak = window.as_weak();
     let settings = Rc::clone(&app.settings);
     let bridge = Rc::clone(&app.bridge);
@@ -3049,6 +3135,7 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             };
             window.set_state(shown.into());
             window.set_paused(playback == PlaybackState::Paused);
+            keep_up(&window, player, &settings, &prefs, playback);
             // The render loop reads this instead of querying mpv on every
             // frame; a quarter-second of staleness costs nothing here.
             bridge.set_advancing(playback.is_active());
@@ -3080,6 +3167,7 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             window.set_frame_rate(settings.frame_rate.get() as i32);
             window.set_rife_model(settings.rife_model.get() as i32);
             window.set_frames_available(settings.rife.is_some());
+            window.set_adaptive(settings.adaptive.get());
             window.set_upscale_quality(settings.upscale_quality.get() as i32);
             window.set_interpolation(settings.interpolation.get());
             window.set_quality(settings.quality.get() as i32);

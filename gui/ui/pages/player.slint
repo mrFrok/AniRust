@@ -154,6 +154,9 @@ export component PlayerPage inherits Rectangle {
     in property <bool> frames-available: false;
     callback set-frame-rate(int);
     callback set-rife-model(int);
+    /// Lowering the load by itself when frames drop.
+    in property <bool> adaptive: true;
+    callback toggle-adaptive();
     /// −1 earlier, +1 later, 0 back to none.
     callback step-audio-delay(int);
     callback step-subtitle-delay(int);
@@ -816,6 +819,13 @@ export component PlayerPage inherits Rectangle {
                                 selected: root.rife-model == index;
                                 clicked => { root.set-rife-model(index); }
                             }
+                        }
+
+                        SettingOption {
+                            label: Tr.adaptive;
+                            description: Tr.adaptive-hint;
+                            selected: root.adaptive;
+                            clicked => { root.toggle-adaptive(); }
                         }
 
                         SettingOption {

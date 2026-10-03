@@ -144,6 +144,8 @@ pub struct PlayerPreferences {
     pub frame_rate: usize,
     /// Which RIFE network: 0 fast, 1 quality.
     pub rife_model: usize,
+    /// Lower the load by itself when frames start dropping.
+    pub adaptive: bool,
 }
 
 impl Default for PlayerPreferences {
@@ -163,6 +165,7 @@ impl Default for PlayerPreferences {
             picture: 0,
             frame_rate: 0,
             rife_model: 0,
+            adaptive: true,
         }
     }
 }

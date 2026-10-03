@@ -79,6 +79,10 @@ export global Tr {
         ? "Недоступна: нужны VapourSynth и плагин RIFE. Как установить — в README."
         : "Unavailable: needs VapourSynth and the RIFE plugin. The README says how to install them.";
     out property <string> frame-rate-display: lang == "ru" ? "Как у монитора" : "Display rate";
+    out property <string> adaptive: lang == "ru" ? "Подстраивать под видеокарту" : "Adapt to the GPU";
+    out property <string> adaptive-hint: lang == "ru"
+        ? "Если кадры начнут пропадать, качество само снизится на ступень — и останется таким."
+        : "If frames start dropping, quality comes down a step by itself, and stays there.";
     out property <string> rife-fast: lang == "ru" ? "Быстрая" : "Fast";
     out property <string> rife-quality: lang == "ru" ? "Качественная" : "Quality";
     out property <string> picture: lang == "ru" ? "Цвет" : "Colour";

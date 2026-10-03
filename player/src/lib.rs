@@ -933,6 +933,18 @@ impl Player {
             .filter(|fps| *fps > 0.0)
     }
 
+    /// Frames dropped so far in this file for being late: by the decoder and
+    /// by the output together. A count that keeps rising during plain
+    /// playback means the machine is not keeping up.
+    #[must_use]
+    pub fn dropped_frames(&self) -> u64 {
+        ["frame-drop-count", "vo-drop-frame-count"]
+            .iter()
+            .filter_map(|name| self.mpv.get_property::<i64>(name).ok())
+            .map(|count| u64::try_from(count).unwrap_or(0))
+            .sum()
+    }
+
     /// The source's own frame rate.
     #[must_use]
     pub fn source_fps(&self) -> Option<f64> {
