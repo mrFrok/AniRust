@@ -89,3 +89,11 @@ strip = "symbols"
 # optimising dependencies only keeps our own crates fast to rebuild.
 [profile.dev.package."*"]
 opt-level = 2
+# Dependencies are not debugged here, and their debug info was most of a
+# debug build's size — tens of gigabytes once it piled up.
+debug = false
+
+# Line tables are enough for a panic's file and line; full debug info for our
+# own crates is a debugger's, and costs gigabytes per rebuild.
+[profile.dev]
+debug = "line-tables-only"
