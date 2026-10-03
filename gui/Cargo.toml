@@ -79,3 +79,4 @@ assets = [
 
 [build-dependencies]
 slint-build = "1.18"
+winresource = { version = "0.1", default-features = false }

@@ -21,4 +21,17 @@ fn main() {
             Path::new(&manifest_dir).join(MATERIAL_LIB),
         )]));
     slint_build::compile_with_config("ui/main.slint", config).expect("compiling the Slint UI");
+
+    // The icon Explorer and the taskbar show for the .exe itself; the window
+    // sets its own from the SVG once it is up. The target, not the host,
+    // decides: a build for Windows made on Linux goes through MinGW's windres.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        println!("cargo:rerun-if-changed=../packaging/icons/anirust.ico");
+        winresource::WindowsResource::new()
+            .set_icon("../packaging/icons/anirust.ico")
+            .set("ProductName", "AniRust")
+            .set("FileDescription", "AniRust")
+            .compile()
+            .expect("embedding the Windows icon");
+    }
 }

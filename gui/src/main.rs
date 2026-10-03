@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+// A release build on Windows is a window, not a console program with a
+// window: no black box behind it. Debug builds keep the console for logs.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 //! AniRust.
 //!
 //! One window, two screens: the release screen chooses what to watch, the
@@ -67,7 +71,8 @@ fn main() -> Result<()> {
                 .with_default_directive("anirust=info".parse()?)
                 .from_env_lossy(),
         )
-        .with_writer(std::io::stderr)
+        .with_writer(log_writer())
+        .with_ansi(cfg!(not(all(windows, not(debug_assertions)))))
         .init();
 
     let opening = release_id_from_args()?;
@@ -2895,6 +2900,26 @@ pub fn format_time(value: Duration) -> String {
     } else {
         format!("{minutes}:{seconds:02}")
     }
+}
+
+/// Where the log goes. A release build on Windows has no console, so its log
+/// is a file in the data folder, `anirust.log`, started afresh each run —
+/// something a tester can send. Everywhere else it is standard error.
+fn log_writer() -> tracing_subscriber::fmt::writer::BoxMakeWriter {
+    use tracing_subscriber::fmt::writer::BoxMakeWriter;
+
+    if cfg!(all(windows, not(debug_assertions))) {
+        let file = dirs::data_local_dir()
+            .map(|dir| dir.join("anirust"))
+            .and_then(|dir| {
+                std::fs::create_dir_all(&dir).ok()?;
+                std::fs::File::create(dir.join("anirust.log")).ok()
+            });
+        if let Some(file) = file {
+            return BoxMakeWriter::new(std::sync::Mutex::new(file));
+        }
+    }
+    BoxMakeWriter::new(std::io::stderr)
 }
 
 /// The API client. `ANIRUST_API_URL` points it elsewhere — another of the
