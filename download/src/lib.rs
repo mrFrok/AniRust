@@ -194,9 +194,6 @@ impl Download {
 }
 
 /// A filename for an episode, safe on every platform this runs on.
-///
-/// Titles routinely contain characters Windows refuses and `/`, which would
-/// quietly write somewhere else entirely.
 #[must_use]
 pub fn file_name(release: &str, episode: i32, dubber: &str) -> String {
     let stem = if dubber.is_empty() {
@@ -204,8 +201,17 @@ pub fn file_name(release: &str, episode: i32, dubber: &str) -> String {
     } else {
         format!("{release} - {episode:02} [{dubber}]")
     };
+    format!("{}.mp4", safe_stem(&stem))
+}
 
-    let cleaned: String = stem
+/// `text` made safe as a file name, before its extension, on every platform
+/// this runs on.
+///
+/// Titles routinely contain characters Windows refuses and `/`, which would
+/// quietly write somewhere else entirely.
+#[must_use]
+pub fn safe_stem(text: &str) -> String {
+    let cleaned: String = text
         .chars()
         .map(|c| match c {
             '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
@@ -216,7 +222,7 @@ pub fn file_name(release: &str, episode: i32, dubber: &str) -> String {
 
     // Trailing dots and spaces are legal to create and impossible to open on
     // Windows.
-    format!("{}.mp4", cleaned.trim_end_matches(['.', ' ']))
+    cleaned.trim_end_matches(['.', ' ']).to_owned()
 }
 
 #[cfg(test)]

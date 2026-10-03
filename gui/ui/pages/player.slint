@@ -90,6 +90,8 @@ export component PlayerPage inherits Rectangle {
     /// Playing the episode over again instead of going on to the next.
     in property <bool> repeat: false;
     callback toggle-repeat();
+    /// Saves the frame on screen, with the subtitles on it or without.
+    callback screenshot(bool);
     callback toggle-fullscreen();
     /// Fill the window, or give the release screen its place back.
     callback toggle-theatre();
@@ -712,6 +714,35 @@ export component PlayerPage inherits Rectangle {
                             description: Tr.repeat-hint;
                             selected: root.repeat;
                             clicked => { root.toggle-repeat(); }
+                        }
+
+                        Text {
+                            text: Tr.screenshot;
+                            color: #FFFFFF;
+                            font-size: Typography.title-medium-size;
+                            font-weight: Typography.title-medium-weight-em;
+                        }
+
+                        Text {
+                            text: Tr.screenshot-hint;
+                            color: #FFFFFF8C;
+                            font-size: Typography.body-medium-size;
+                            wrap: word-wrap;
+                        }
+
+                        HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            SettingChip {
+                                label: Tr.screenshot-with-subtitles;
+                                clicked => { root.screenshot(true); }
+                            }
+
+                            SettingChip {
+                                label: Tr.screenshot-without-subtitles;
+                                clicked => { root.screenshot(false); }
+                            }
                         }
 
                         Text {

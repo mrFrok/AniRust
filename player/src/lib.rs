@@ -551,6 +551,16 @@ impl Player {
         Ok(())
     }
 
+    /// Saves the frame on screen as a picture at `path`, its format taken
+    /// from the extension: with the subtitles drawn on it as they are on
+    /// screen, or the bare video.
+    pub fn screenshot(&self, path: &std::path::Path, with_subtitles: bool) -> Result<()> {
+        let path = path.to_string_lossy();
+        let what = if with_subtitles { "subtitles" } else { "video" };
+        self.mpv.command("screenshot-to-file", &[&path, what])?;
+        Ok(())
+    }
+
     /// Plays the file over and over, or once.
     ///
     /// A looping file never reaches its end, so whatever goes on to the next

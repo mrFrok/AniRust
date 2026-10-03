@@ -338,6 +338,7 @@ export component MainWindow inherits Window {
     callback hold-speed(bool);
     in property <bool> repeat: false;
     callback toggle-repeat();
+    callback screenshot(bool);
     callback toggle-fullscreen();
     callback toggle-muted();
     /// Loudness, by a step up or down.
@@ -859,6 +860,7 @@ export component MainWindow inherits Window {
             hold-speed(on) => { root.hold-speed(on); }
             step-frame(forward) => { root.step-frame(forward); }
             toggle-repeat => { root.toggle-repeat(); }
+            screenshot(subtitles) => { root.screenshot(subtitles); }
             toggle-theatre => { root.theatre = !root.theatre; }
             close => { root.theatre = false; root.close-player(); }
         }
@@ -1158,6 +1160,8 @@ export component MainWindow inherits Window {
             if (event.text == "u") { root.set-upscale(Math.mod(root.upscale + 1, 7)); return accept; }
             if (event.text == "i") { root.toggle-interpolation(); return accept; }
             if (event.text == "r") { root.toggle-repeat(); return accept; }
+            if (event.text == "p") { root.screenshot(true); return accept; }
+            if (event.text == "P") { root.screenshot(false); return accept; }
             reject
         }
     }

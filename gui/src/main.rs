@@ -2504,6 +2504,59 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         }
     });
 
+    let weak = window.as_weak();
+    window.on_screenshot(move |with_subtitles| {
+        let Some(window) = weak.upgrade() else { return };
+        let ru = window.get_lang() == "ru";
+        let Some(dir) = dirs::picture_dir()
+            .or_else(dirs::home_dir)
+            .map(|dir| dir.join("AniRust"))
+        else {
+            return;
+        };
+        let at = player.position().unwrap_or_default().as_secs();
+        let stem = anirust_download::safe_stem(&format!(
+            "{} - {:02} - {:02}m{:02}s{}",
+            window.get_release_title(),
+            window.get_current_episode(),
+            at / 60,
+            at % 60,
+            if with_subtitles { "" } else { " (clean)" },
+        ));
+        let path = dir.join(format!("{stem}.png"));
+        let saved = std::fs::create_dir_all(&dir)
+            .map_err(anyhow::Error::from)
+            .and_then(|()| Ok(player.screenshot(&path, with_subtitles)?));
+        match saved {
+            Ok(()) => {
+                tracing::info!(path = %path.display(), with_subtitles, "screenshot saved");
+                show_hint(
+                    &window,
+                    format!(
+                        "📷 {}",
+                        if ru {
+                            "Снимок сохранён"
+                        } else {
+                            "Screenshot saved"
+                        }
+                    ),
+                );
+            }
+            Err(error) => {
+                tracing::warn!(%error, path = %path.display(), "screenshot failed");
+                show_hint(
+                    &window,
+                    if ru {
+                        "Снимок не сохранился"
+                    } else {
+                        "The screenshot failed"
+                    }
+                    .to_owned(),
+                );
+            }
+        }
+    });
+
     let chosen = Rc::clone(settings);
     let weak = window.as_weak();
     window.on_toggle_repeat(move || {
