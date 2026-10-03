@@ -652,19 +652,27 @@ pub fn toggle_subscription(
     );
 }
 
-/// The heart on a post: an up vote on the service's one vote scale.
+/// The account's vote on a post, on the service's scale: 1 down, 2 up, 0 none.
+const DOWN: i32 = 1;
 const UP: i32 = 2;
 
-/// Gives a post a heart, or takes it back. The count moves with it at once,
-/// and both go back if the server refuses.
-pub fn toggle_like(
+/// Rates a post up or down, or takes the rating back when the account had
+/// already given that one. The score moves at once, and goes back if the
+/// server refuses.
+pub fn vote_post(
     window: &MainWindow,
     state: &Rc<RefCell<FeedState>>,
     client: &Client,
     index: i32,
+    vote: i32,
 ) {
     let Ok(at) = usize::try_from(index) else {
         return;
+    };
+    let cast = match vote {
+        UP => CommentVote::Up,
+        DOWN => CommentVote::Down,
+        _ => return,
     };
     let Some((article_id, before_vote, before_count)) = state
         .borrow()
@@ -674,28 +682,27 @@ pub fn toggle_like(
     else {
         return;
     };
-    let liking = before_vote != UP;
-    let after_vote = if liking { UP } else { 0 };
+    let after_vote = if before_vote == vote { 0 } else { vote };
     let after_count = recount(before_count, before_vote, after_vote);
 
-    set_like(state, at, after_vote, after_count);
+    set_vote(state, at, after_vote, after_count);
 
     let weak = window.as_weak();
     let state = Rc::clone(state);
     let api = client.clone();
     tasks::spawn(
-        // The official client sends the up vote either way: the service
+        // The official client sends the arrow pressed either way: the service
         // takes a vote it already has as taking it back. A 0 is not sent.
-        async move { api.article_vote(article_id, CommentVote::Up).await },
+        async move { api.article_vote(article_id, cast).await },
         move |result| {
             if weak.upgrade().is_none() {
                 return;
             }
             match result {
-                Ok(()) => tracing::info!(article_id, liking, "heart counted"),
+                Ok(()) => tracing::info!(article_id, vote = after_vote, "post rated"),
                 Err(error) => {
-                    tracing::warn!(%error, article_id, liking, "the heart was not counted");
-                    set_like(&state, at, before_vote, before_count);
+                    tracing::warn!(%error, article_id, vote, "the rating was not counted");
+                    set_vote(&state, at, before_vote, before_count);
                 }
             }
         },
@@ -703,18 +710,18 @@ pub fn toggle_like(
 }
 
 /// A post's score after the account's vote changes from `before` to `after`:
-/// an up vote is worth one, a down vote minus one. A heart on a post this
-/// account had voted down moves it by two.
+/// an up vote is worth one, a down vote minus one. Turning a down vote into
+/// an up one moves it by two.
 fn recount(score: i64, before: i32, after: i32) -> i64 {
     let worth = |vote: i32| match vote {
         UP => 1,
-        1 => -1,
+        DOWN => -1,
         _ => 0,
     };
     score - worth(before) + worth(after)
 }
 
-fn set_like(state: &Rc<RefCell<FeedState>>, at: usize, vote: i32, count_now: i64) {
+fn set_vote(state: &Rc<RefCell<FeedState>>, at: usize, vote: i32, count_now: i64) {
     let mut state = state.borrow_mut();
     let Some(article) = state.articles.get_mut(at) else {
         return;
@@ -724,7 +731,7 @@ fn set_like(state: &Rc<RefCell<FeedState>>, at: usize, vote: i32, count_now: i64
     if let Some(model) = state.posts.clone()
         && let Some(mut post) = model.row_data(at)
     {
-        post.liked = vote == UP;
+        post.my_vote = vote;
         post.votes = count(count_now);
         model.set_row_data(at, post);
     }
@@ -837,7 +844,7 @@ fn post_for(article: &Article, now: i64, me: i64) -> FeedPost {
         picture_ratio: article.first_image_ratio().unwrap_or(0.0),
         comments: count(article.comment_count),
         votes: count(article.vote_count),
-        liked: article.vote == UP,
+        my_vote: article.vote,
         pinned: article.is_pinned,
         can_edit: own,
         can_delete: own || runs,
@@ -896,10 +903,20 @@ mod tests {
     use anirust_api::{Channel, ProfileSlim};
 
     #[test]
-    fn a_heart_moves_the_score_by_what_the_old_vote_was_worth() {
+    fn a_vote_moves_the_score_by_what_the_old_vote_was_worth() {
         assert_eq!(recount(10, 0, UP), 11);
         assert_eq!(recount(10, UP, 0), 9);
-        assert_eq!(recount(10, 1, UP), 12, "a down vote turned into a heart");
+        assert_eq!(
+            recount(10, DOWN, UP),
+            12,
+            "a down vote turned into an up vote"
+        );
+        assert_eq!(
+            recount(10, UP, DOWN),
+            8,
+            "an up vote turned into a down vote"
+        );
+        assert_eq!(recount(10, DOWN, 0), 11);
     }
 
     #[test]

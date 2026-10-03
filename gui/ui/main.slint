@@ -470,7 +470,7 @@ export component MainWindow inherits Window {
     in property <string> feed-notice;
     callback select-feed-tab(int);
     callback toggle-subscription(int);
-    callback toggle-like(int);
+    callback vote-post(int, int);
     in property <[ChannelItem]> feed-channels: [];
     in property <int> subscription-count: 0;
     in property <bool> channel-open: false;
@@ -587,7 +587,7 @@ export component MainWindow inherits Window {
             create-blog => { root.create-blog(); }
             can-write: root.feed-can-write;
             report-channel => { root.report("channel", -1); }
-            toggle-like(i) => { root.toggle-like(i); }
+            vote-post(i, v) => { root.vote-post(i, v); }
             channels: root.feed-channels;
             subscription-count: root.subscription-count;
             channel-open: root.channel-open;

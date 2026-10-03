@@ -16,7 +16,7 @@ import { CommentItem, PickerOption } from "../structs.slint";
 import { Dropdown } from "release-parts.slint";
 
 /// A vote button: an arrow that lights when it is the account's vote.
-component VoteArrow inherits Rectangle {
+export component VoteArrow inherits Rectangle {
     in property <bool> up;
     in property <bool> active;
     callback clicked;

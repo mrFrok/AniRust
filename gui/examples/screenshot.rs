@@ -917,7 +917,7 @@ fn sample_posts() -> Vec<FeedPost> {
         has_picture: false,
         comments: 4,
         votes: 37,
-        liked: false,
+        my_vote: 0,
         pinned: false,
         can_edit: false,
         can_delete: false,
@@ -939,7 +939,7 @@ fn sample_posts() -> Vec<FeedPost> {
             )
         },
         FeedPost {
-            liked: true,
+            my_vote: 2,
             has_picture: true,
             picture: stand_in_avatar(),
             picture_loaded: true,

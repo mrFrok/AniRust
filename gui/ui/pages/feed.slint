@@ -19,6 +19,7 @@ import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { FeedPost, ChannelItem } from "../structs.slint";
+import { VoteArrow } from "../components/comments.slint";
 
 /// An icon and a number beside it.
 component Tally inherits HorizontalLayout {
@@ -52,7 +53,8 @@ component PostCard inherits Rectangle {
     in property <FeedPost> post;
     callback toggle-subscription();
     callback open-comments();
-    callback toggle-like();
+    /// 1 down, 2 up; pressing the arrow already lit takes the rating back.
+    callback vote(int);
     callback open-channel();
     callback report();
     callback edit();
@@ -182,35 +184,45 @@ component PostCard inherits Rectangle {
         HorizontalLayout {
             spacing: Spacing.base;
 
-            // The heart is the account's vote, and the count beside it moves
-            // with it. Without an account it asks for one.
-            Rectangle {
-                width: heart-tally.preferred-width + Spacing.small;
-                height: 28px;
-                border-radius: Shape.small;
-                background: heart-touch.has-hover ? MaterialPalette.surface-container-high : transparent;
+            // The account's rating, as in the official client: up, the score,
+            // down. The score moves with the vote. Without an account the
+            // arrows ask for one.
+            HorizontalLayout {
+                spacing: Spacing.tight;
 
-                // Sized outright: a layout inside a plain rectangle is not
-                // given a size by it, and draws its text into nothing.
-                heart-tally := Tally {
-                    x: Spacing.tight;
-                    width: self.preferred-width;
-                    height: parent.height;
-                    icon: root.post.liked
-                        ? @image-url("../icons/heart-filled.svg")
-                        : @image-url("../icons/heart.svg");
-                    tint: root.post.liked ? MaterialPalette.primary : MaterialPalette.on-surface-variant;
-                    value: root.post.votes;
+                VerticalLayout {
+                    alignment: center;
+
+                    VoteArrow {
+                        up: true;
+                        active: root.post.my-vote == 2;
+                        clicked => { root.vote(2); }
+                    }
                 }
 
-                heart-touch := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.toggle-like(); }
+                Text {
+                    text: root.post.votes;
+                    color: root.post.votes > 0
+                        ? MaterialPalette.primary
+                        : (root.post.votes < 0 ? MaterialPalette.error : MaterialPalette.on-surface-variant);
+                    font-size: Typography.label-large-size;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                    min-width: 20px;
+                }
+
+                VerticalLayout {
+                    alignment: center;
+
+                    VoteArrow {
+                        up: false;
+                        active: root.post.my-vote == 1;
+                        clicked => { root.vote(1); }
+                    }
                 }
             }
 
-            // The comment count opens the thread; the vote count is only a
-            // count until votes are something this screen casts.
+            // The comment count opens the thread.
             Rectangle {
                 width: comments-tally.preferred-width + Spacing.small;
                 height: 28px;
@@ -456,7 +468,7 @@ export component FeedPage inherits Rectangle {
     callback manage-channel();
     callback create-channel();
     callback create-blog();
-    callback toggle-like(int);
+    callback vote-post(int, int);
     callback sign-in();
 
     /// The channels tab: subscriptions, then suggestions, in one list.
@@ -685,7 +697,7 @@ export component FeedPage inherits Rectangle {
                     edit => { root.edit-post(index); }
                     pin => { root.pin-post(index); }
                     delete => { root.delete-post(index); }
-                    toggle-like => { root.toggle-like(index); }
+                    vote(v) => { root.vote-post(index, v); }
                     open-channel => { root.open-post-channel(index); }
                 }
             }

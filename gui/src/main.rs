@@ -753,17 +753,17 @@ fn wire_feed(window: &MainWindow, app: &Rc<App>) {
         }
     });
 
-    window.on_toggle_like({
+    window.on_vote_post({
         let app = Rc::clone(app);
         let weak = weak.clone();
-        move |index| {
+        move |index, vote| {
             let Some(window) = weak.upgrade() else { return };
             if !app.client.is_authenticated() {
                 window.set_sign_in_error("".into());
                 window.set_show_sign_in(true);
                 return;
             }
-            feed::toggle_like(&window, &app.feed, &app.client, index);
+            feed::vote_post(&window, &app.feed, &app.client, index, vote);
         }
     });
 

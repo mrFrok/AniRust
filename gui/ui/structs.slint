@@ -155,8 +155,8 @@ export struct FeedPost {
     picture-ratio: float,
     comments: int,
     votes: int,
-    /// Whether the account has given it a heart.
-    liked: bool,
+    /// This account's rating of it: 0 none, 1 down, 2 up.
+    my-vote: int,
     pinned: bool,
     /// The account wrote it, and may change it.
     can-edit: bool,
