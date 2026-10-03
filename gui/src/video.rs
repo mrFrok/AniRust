@@ -35,7 +35,7 @@ use anyhow::{Context, Result, anyhow};
 use glow::HasContext;
 use slint::{ComponentHandle, GraphicsAPI, Image, RenderingState};
 
-use anirust_player::{MediaSource, Player, Renderer, render::Target};
+use anirust_player::{MediaSource, NativeDisplay, Player, Renderer, render::Target};
 
 /// Frames at which `ANIRUST_DUMP` captures the texture.
 ///
@@ -402,7 +402,10 @@ impl VideoBridge {
             .set_rendering_notifier(move |state, graphics_api| {
                 match state {
                     RenderingState::RenderingSetup => {
-                        match setup(player, graphics_api) {
+                        let display = wake
+                            .upgrade()
+                            .map_or(NativeDisplay::None, |component| native_display(&component));
+                        match setup(player, graphics_api, display) {
                             Ok(mut new_live) => {
                                 tracing::info!("render context created");
                                 // Fires on an mpv thread: the only safe action
@@ -553,7 +556,30 @@ impl VideoBridge {
     }
 }
 
-fn setup(player: &'static Player, graphics_api: &GraphicsAPI<'_>) -> Result<Live> {
+/// The window's display, for mpv's hardware decoding. Only Wayland and Xlib
+/// displays can be handed over; anything else leaves mpv to decode without
+/// zero-copy interop.
+fn native_display<C: slint::ComponentHandle>(component: &C) -> NativeDisplay {
+    use raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
+    let handle = component.window().window_handle();
+    let found = match handle.display_handle().map(|display| display.as_raw()) {
+        Ok(RawDisplayHandle::Wayland(wayland)) => {
+            NativeDisplay::Wayland(wayland.display.as_ptr().cast_const())
+        }
+        Ok(RawDisplayHandle::Xlib(xlib)) => xlib.display.map_or(NativeDisplay::None, |display| {
+            NativeDisplay::X11(display.as_ptr().cast_const())
+        }),
+        _ => NativeDisplay::None,
+    };
+    tracing::info!(display = ?found, "native display for hardware decoding");
+    found
+}
+
+fn setup(
+    player: &'static Player,
+    graphics_api: &GraphicsAPI<'_>,
+    display: NativeDisplay,
+) -> Result<Live> {
     let GraphicsAPI::NativeOpenGL { get_proc_address } = graphics_api else {
         return Err(anyhow!(
             "video needs the OpenGL renderer; Slint is using a different one"
@@ -568,7 +594,11 @@ fn setup(player: &'static Player, graphics_api: &GraphicsAPI<'_>) -> Result<Live
     // mpv resolves GL entry points through the same loader. The pointer is
     // stored in the render context, so it must not borrow anything local.
     let renderer = player
-        .renderer(GlLoader::open()?, |loader, name| loader.resolve(name))
+        .renderer(
+            GlLoader::open()?,
+            |loader, name| loader.resolve(name),
+            display,
+        )
         .context("creating mpv's render context")?;
 
     Ok(Live {

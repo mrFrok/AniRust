@@ -90,8 +90,9 @@ impl<'player> Renderer<'player> {
         player: &'player Player,
         gl_context: C,
         get_proc_address: fn(&C, &str) -> *mut c_void,
+        display: NativeDisplay,
     ) -> Result<Self> {
-        let context = player.mpv().create_render_context(vec![
+        let mut params = vec![
             RenderParam::ApiType(RenderParamApiType::OpenGl),
             RenderParam::InitParams(OpenGLInitParams {
                 get_proc_address,
@@ -102,7 +103,18 @@ impl<'player> Renderer<'player> {
             // the client to keep asking for frames: a UI that only repaints
             // when told will stall, so the caller must drive a repaint loop of
             // its own. See the timer in the GUI's video bridge.
-        ])?;
+        ];
+        // VA-API hands frames to OpenGL through the windowing system's
+        // display, and mpv cannot find that display on its own inside a
+        // render context. Without it, hardware decoding on AMD and Intel
+        // falls back to software without a word. NVIDIA's decoder goes
+        // through CUDA and needs none of this, which is why it worked.
+        match display {
+            NativeDisplay::Wayland(display) => params.push(RenderParam::WaylandDisplay(display)),
+            NativeDisplay::X11(display) => params.push(RenderParam::X11Display(display)),
+            NativeDisplay::None => {}
+        }
+        let context = player.mpv().create_render_context(params)?;
 
         Ok(Self { context })
     }
@@ -161,14 +173,27 @@ impl<'player> Renderer<'player> {
     }
 }
 
+/// The windowing system's display, which hardware decoding on Linux needs
+/// to hand frames to OpenGL. The pointer must outlive the renderer; a
+/// toolkit's display lives as long as the program.
+#[derive(Debug, Clone, Copy)]
+pub enum NativeDisplay {
+    None,
+    /// A `wl_display*`.
+    Wayland(*const c_void),
+    /// An Xlib `Display*`.
+    X11(*const c_void),
+}
+
 impl Player {
     /// Convenience wrapper over [`Renderer::new`].
     pub fn renderer<C: 'static>(
         &self,
         gl_context: C,
         get_proc_address: fn(&C, &str) -> *mut c_void,
+        display: NativeDisplay,
     ) -> Result<Renderer<'_>> {
-        Renderer::new(self, gl_context, get_proc_address)
+        Renderer::new(self, gl_context, get_proc_address, display)
     }
 }
 

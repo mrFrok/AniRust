@@ -32,7 +32,7 @@ pub mod render;
 pub mod shaders;
 pub mod tracks;
 
-pub use render::Renderer;
+pub use render::{NativeDisplay, Renderer};
 pub use shaders::UpscalePreset;
 pub use tracks::{Track, TrackKind};
 
@@ -59,8 +59,18 @@ const RECONNECT: &str =
 /// bands across the picture on an RTX 4070 Ti SUPER; `nvdec` is NVIDIA's own
 /// path and renders cleanly. mpv skips entries the machine does not have, so
 /// listing `nvdec` first costs nothing on AMD or Intel, where `vaapi` is the
-/// right answer and comes next.
-pub const DEFAULT_HWDEC: &str = "nvdec,vaapi,vulkan";
+/// right answer and comes next. The `-copy` variants close each list: they
+/// decode on the GPU and copy frames back, which works when the zero-copy
+/// interop does not come up, and is still far lighter than software.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub const DEFAULT_HWDEC: &str = "nvdec,vaapi,vulkan,nvdec-copy,vaapi-copy";
+
+/// Direct3D 11 is the decoder every Windows GPU has; NVIDIA's own after it.
+#[cfg(windows)]
+pub const DEFAULT_HWDEC: &str = "d3d11va,nvdec,d3d11va-copy,dxva2-copy";
+
+#[cfg(target_os = "macos")]
+pub const DEFAULT_HWDEC: &str = "videotoolbox,videotoolbox-copy";
 
 /// Pixel format for mpv's intermediate framebuffers.
 ///

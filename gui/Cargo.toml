@@ -52,7 +52,11 @@ slint = { version = "1.18", default-features = false, features = [
     "renderer-femtovg",
     "renderer-software",
     "accessibility",
+    # The window's native display, which mpv needs for hardware decoding on
+    # AMD and Intel under Linux.
+    "raw-window-handle-06",
 ] }
+raw-window-handle = "0.6"
 
 # `cargo deb -p anirust-gui` — a .deb for Debian and Ubuntu.
 [package.metadata.deb]
