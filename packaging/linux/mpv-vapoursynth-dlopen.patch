@@ -1,0 +1,89 @@
+diff -ru a/meson.build b/meson.build
+--- a/meson.build
++++ b/meson.build
+@@ -761,12 +761,13 @@
+     dependencies += uchardet
+ endif
+ 
++# VSScript is opened at run time (see vf_vapoursynth.c), so only the headers
++# are needed to build, and libmpv loads without VapourSynth installed.
+ vapoursynth = dependency('vapoursynth', version: '>= 56', required: get_option('vapoursynth'))
+-vapoursynth_script = dependency('vapoursynth-script', version: '>= 56',
+-                                required: get_option('vapoursynth'))
+-features += {'vapoursynth': vapoursynth.found() and vapoursynth_script.found()}
++features += {'vapoursynth': vapoursynth.found()}
+ if features['vapoursynth']
+-    dependencies += [vapoursynth, vapoursynth_script]
++    dependencies += [vapoursynth.partial_dependency(compile_args: true, includes: true),
++                     cc.find_library('dl', required: false)]
+     sources += files('video/filter/vf_vapoursynth.c')
+ endif
+ 
+diff -ru a/video/filter/vf_vapoursynth.c b/video/filter/vf_vapoursynth.c
+--- a/video/filter/vf_vapoursynth.c
++++ b/video/filter/vf_vapoursynth.c
+@@ -22,6 +22,8 @@
+ #include <limits.h>
+ #include <assert.h>
+ 
++#include <dlfcn.h>
++
+ #include <VapourSynth4.h>
+ #include <VSScript4.h>
+ 
+@@ -802,9 +804,54 @@
+     {0}
+ };
+ 
++// VSScript checks its configuration against the path it was loaded from, and
++// `vapoursynth config` records the real file rather than the symlinks
++// distributions put in the library directory. So where the library can be
++// found it is opened by its real path, and by name only failing that.
++static void *open_vsscript(const char *name)
++{
++    static const char *const dirs[] = {
++        "/usr/local/lib", "/usr/lib", "/usr/lib64",
++        "/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu",
++    };
++    char path[PATH_MAX], real[PATH_MAX];
++    for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
++        snprintf(path, sizeof(path), "%s/%s", dirs[i], name);
++        if (!realpath(path, real))
++            continue;
++        void *lib = dlopen(real, RTLD_NOW | RTLD_GLOBAL);
++        if (lib)
++            return lib;
++    }
++    return dlopen(name, RTLD_NOW | RTLD_GLOBAL);
++}
++
++// VSScript is looked up when the filter is first used rather than linked, so
++// that a libmpv built with this filter still loads where VapourSynth is not
++// installed; the filter alone then fails, saying why.
++static const VSSCRIPTAPI *load_vsscript(void)
++{
++    static const char *const names[] = {
++        "libvapoursynth-script.so.0",
++        "libvapoursynth-script.so",
++        "libvsscript.so",
++    };
++    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
++        void *lib = open_vsscript(names[i]);
++        if (!lib)
++            continue;
++        const VSSCRIPTAPI *(*get)(int) =
++            (const VSSCRIPTAPI *(*)(int))dlsym(lib, "getVSScriptAPI");
++        if (get)
++            return get(VSSCRIPT_API_VERSION);
++        dlclose(lib);
++    }
++    return NULL;
++}
++
+ static int drv_vss_init(struct priv *p)
+ {
+-    p->vs_script_api = getVSScriptAPI(VSSCRIPT_API_VERSION);
++    p->vs_script_api = load_vsscript();
+     if (!p->vs_script_api) {
+         MP_FATAL(p, "Could not initialize VapourSynth scripting.\n");
+         return -1;

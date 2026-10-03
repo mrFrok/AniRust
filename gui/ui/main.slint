@@ -347,6 +347,11 @@ export component MainWindow inherits Window {
     in property <bool> ass-override: false;
     in property <int> picture: 0;
     callback set-picture(int);
+    in property <int> frame-rate: 0;
+    in property <int> rife-model: 0;
+    in property <bool> frames-available: false;
+    callback set-frame-rate(int);
+    callback set-rife-model(int);
     callback step-audio-delay(int);
     callback step-subtitle-delay(int);
     callback toggle-normalize();
@@ -850,6 +855,9 @@ export component MainWindow inherits Window {
             subtitle-scale: root.subtitle-scale;
             ass-override: root.ass-override;
             picture: root.picture;
+            frame-rate: root.frame-rate;
+            rife-model: root.rife-model;
+            frames-available: root.frames-available;
             qualities: root.qualities;
             quality: root.quality;
             decoder: root.decoder;
@@ -890,6 +898,8 @@ export component MainWindow inherits Window {
             set-subtitle-scale(i) => { root.set-subtitle-scale(i); }
             toggle-ass-override => { root.toggle-ass-override(); }
             set-picture(i) => { root.set-picture(i); }
+            set-frame-rate(i) => { root.set-frame-rate(i); }
+            set-rife-model(i) => { root.set-rife-model(i); }
             load-audio-file => { root.load-audio-file(); }
             load-subtitle-file => { root.load-subtitle-file(); }
             open-fonts-folder => { root.open-fonts-folder(); }

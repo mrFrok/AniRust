@@ -140,6 +140,10 @@ pub struct PlayerPreferences {
     pub ass_override: bool,
     /// Position in the colour preset menu.
     pub picture: usize,
+    /// Frame generation: 0 off, then ×2, 60, the screen's rate.
+    pub frame_rate: usize,
+    /// Which RIFE network: 0 fast, 1 quality.
+    pub rife_model: usize,
 }
 
 impl Default for PlayerPreferences {
@@ -157,6 +161,8 @@ impl Default for PlayerPreferences {
             subtitle_scale: 1,
             ass_override: false,
             picture: 0,
+            frame_rate: 0,
+            rife_model: 0,
         }
     }
 }

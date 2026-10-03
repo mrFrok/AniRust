@@ -71,6 +71,16 @@ export global Tr {
         ? "Серия начнётся заново вместо перехода к следующей. Клавиша R."
         : "The episode starts over instead of going on to the next. Key R.";
     out property <string> picture-sheet: lang == "ru" ? "Картинка" : "Picture";
+    out property <string> frame-generation: lang == "ru" ? "Генерация кадров" : "Frame generation";
+    out property <string> frame-generation-hint: lang == "ru"
+        ? "RIFE дорисовывает кадры между настоящими — движение становится плавным. Сильно нагружает видеокарту: вместе с ней лучше апскейл «Быстро»."
+        : "RIFE draws frames between the real ones, for smooth motion. Heavy on the GPU: pair it with Fast upscaling.";
+    out property <string> frame-generation-missing: lang == "ru"
+        ? "Недоступна: нужны VapourSynth и плагин RIFE. Как установить — в README."
+        : "Unavailable: needs VapourSynth and the RIFE plugin. The README says how to install them.";
+    out property <string> frame-rate-display: lang == "ru" ? "Как у монитора" : "Display rate";
+    out property <string> rife-fast: lang == "ru" ? "Быстрая" : "Fast";
+    out property <string> rife-quality: lang == "ru" ? "Качественная" : "Quality";
     out property <string> picture: lang == "ru" ? "Цвет" : "Colour";
     out property <string> picture-natural: lang == "ru" ? "Как есть" : "Natural";
     out property <string> picture-brighter: lang == "ru" ? "Ярче" : "Brighter";

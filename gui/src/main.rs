@@ -47,8 +47,8 @@ use slint::ComponentHandle;
 use anirust_api::{Client, EpisodeSort};
 use anirust_extract::{Registry, ResolvedStream};
 use anirust_player::{
-    MediaSource, PictureAdjust, PlaybackState, Player, PlayerConfig, Track, TrackKind, UpscaleMode,
-    UpscalePreset, UpscaleQuality,
+    FrameGeneration, MediaSource, PictureAdjust, PlaybackState, Player, PlayerConfig, RifeInstall,
+    RifeModel, TargetRate, Track, TrackKind, UpscaleMode, UpscalePreset, UpscaleQuality,
 };
 
 use crate::home::HomeState;
@@ -2137,6 +2137,14 @@ struct Settings {
     subtitle_scale: Cell<usize>,
     ass_override: Cell<bool>,
     picture: Cell<usize>,
+    /// Frame generation as the menu has it: 0 off, then the target rates.
+    frame_rate: Cell<usize>,
+    rife_model: Cell<usize>,
+    /// Where RIFE is, looked for once; `None` greys the menu out.
+    rife: Option<RifeInstall>,
+    /// When frame generation was last switched on, until it has been seen
+    /// working or failing.
+    generation_since: Cell<Option<std::time::Instant>>,
     quality: Cell<usize>,
     decoder: Cell<usize>,
     /// mpv track ids behind the subtitle and audio menus.
@@ -2172,6 +2180,10 @@ impl Settings {
             subtitle_scale: Cell::new(kept.subtitle_scale.min(SUBTITLE_SCALES.len() - 1)),
             ass_override: Cell::new(kept.ass_override),
             picture: Cell::new(kept.picture.min(PictureAdjust::PRESETS.len() - 1)),
+            frame_rate: Cell::new(kept.frame_rate.min(TargetRate::ALL.len())),
+            rife_model: Cell::new(kept.rife_model.min(RifeModel::ALL.len() - 1)),
+            rife: RifeInstall::find(),
+            generation_since: Cell::new(None),
             quality: Cell::new(0),
             decoder: Cell::new(kept.decoder.min(DECODERS.len() - 1)),
             subtitles: RefCell::new(Vec::new()),
@@ -2183,6 +2195,31 @@ impl Settings {
 }
 
 impl Settings {
+    /// The frame generation the menus are set to, if any and if possible.
+    fn generation(&self) -> Option<(&RifeInstall, FrameGeneration)> {
+        let rate = *TargetRate::ALL.get(self.frame_rate.get().checked_sub(1)?)?;
+        let install = self.rife.as_ref()?;
+        Some((
+            install,
+            FrameGeneration {
+                rate,
+                model: RifeModel::ALL[self.rife_model.get()],
+                ..FrameGeneration::default()
+            },
+        ))
+    }
+
+    /// Applies the menus' frame generation to the player.
+    fn apply_generation(&self, player: &Player) -> anirust_player::Result<()> {
+        let generation = self.generation();
+        if generation.is_some() {
+            anirust_player::frames::prepare_vapoursynth();
+        }
+        self.generation_since
+            .set(generation.is_some().then(std::time::Instant::now));
+        player.set_frame_generation(generation)
+    }
+
     /// The upscaling the menus are set to.
     fn upscale(&self) -> UpscalePreset {
         UpscalePreset::new(
@@ -2273,7 +2310,8 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         .and_then(|()| player.set_loudness_normalization(settings.normalize.get()))
         .and_then(|()| player.set_subtitle_scale(SUBTITLE_SCALES[settings.subtitle_scale.get()]))
         .and_then(|()| player.set_ass_override(settings.ass_override.get()))
-        .and_then(|()| player.set_picture(PictureAdjust::PRESETS[settings.picture.get()]));
+        .and_then(|()| player.set_picture(PictureAdjust::PRESETS[settings.picture.get()]))
+        .and_then(|()| settings.apply_generation(player));
     if let Err(error) = applied {
         tracing::warn!(%error, "the kept player settings were not applied");
     }
@@ -2310,6 +2348,8 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
             all.player.subtitle_scale = settings.subtitle_scale.get();
             all.player.ass_override = settings.ass_override.get();
             all.player.picture = settings.picture.get();
+            all.player.frame_rate = settings.frame_rate.get();
+            all.player.rife_model = settings.rife_model.get();
             prefs.set(all);
             all.save();
         })
@@ -2697,6 +2737,30 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 
     let chosen = Rc::clone(settings);
     let keep_now = Rc::clone(&keep);
+    window.on_set_frame_rate(move |index| {
+        let index = (index.max(0) as usize).min(TargetRate::ALL.len());
+        chosen.frame_rate.set(index);
+        keep_now();
+        if let Err(error) = chosen.apply_generation(player) {
+            tracing::warn!(%error, index, "frame generation change failed");
+        }
+    });
+
+    let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
+    window.on_set_rife_model(move |index| {
+        let index = (index.max(0) as usize).min(RifeModel::ALL.len() - 1);
+        chosen.rife_model.set(index);
+        keep_now();
+        if chosen.frame_rate.get() > 0
+            && let Err(error) = chosen.apply_generation(player)
+        {
+            tracing::warn!(%error, index, "RIFE model change failed");
+        }
+    });
+
+    let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
     window.on_set_picture(move |index| {
         let index = (index.max(0) as usize).min(PictureAdjust::PRESETS.len() - 1);
         if let Err(error) = player.set_picture(PictureAdjust::PRESETS[index]) {
@@ -2969,8 +3033,9 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             // Say what is being produced, not just what arrived: with
             // upscaling on, the picture leaving the renderer is larger than
             // the source, and reporting the source would understate it.
+            let generated = generated_fps(player, &settings);
             window.set_quality_label(
-                quality_label(player.video_size(), bridge.rendered_size()).into(),
+                quality_label(player.video_size(), bridge.rendered_size(), generated).into(),
             );
 
             let playback = player.state();
@@ -3012,6 +3077,9 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             window.set_subtitle_scale(settings.subtitle_scale.get() as i32);
             window.set_ass_override(settings.ass_override.get());
             window.set_picture(settings.picture.get() as i32);
+            window.set_frame_rate(settings.frame_rate.get() as i32);
+            window.set_rife_model(settings.rife_model.get() as i32);
+            window.set_frames_available(settings.rife.is_some());
             window.set_upscale_quality(settings.upscale_quality.get() as i32);
             window.set_interpolation(settings.interpolation.get());
             window.set_quality(settings.quality.get() as i32);
@@ -3183,20 +3251,56 @@ fn fraction_of(position: Duration, duration: Option<Duration>) -> f32 {
 /// Describes the picture: the source resolution, and what it is being
 /// rendered at when that is larger.
 ///
-/// Resolution only — never a frame rate. Interpolation resamples timing, it
-/// does not synthesise frames, so advertising a higher fps would be a claim
-/// the player cannot back.
-fn quality_label(source: Option<(u32, u32)>, rendered: Option<(u32, u32)>) -> String {
+/// A frame rate only when frames are being generated and the rate leaving
+/// the filters shows it. Interpolation resamples timing without making
+/// frames, so advertising a higher fps for it would be a claim the player
+/// cannot back.
+fn quality_label(
+    source: Option<(u32, u32)>,
+    rendered: Option<(u32, u32)>,
+    generated_fps: Option<f64>,
+) -> String {
     let Some((_, source_h)) = source else {
         return "—".to_owned();
     };
 
-    match rendered {
+    let size = match rendered {
         Some((_, rendered_h)) if rendered_h > source_h => {
             format!("{source_h}p → {rendered_h}p")
         }
         _ => format!("{source_h}p"),
+    };
+    match generated_fps {
+        Some(fps) => format!("{size} · {fps:.0} fps"),
+        None => size,
     }
+}
+
+/// The rate frame generation is producing, when it is on and working.
+///
+/// mpv drops a failed filter and plays on, so "on" is not the same as
+/// "working": the rate leaving the filters says which. A few seconds after
+/// it was switched on, a rate no higher than the source's is a failure, and
+/// the note the script left is logged once.
+fn generated_fps(player: &Player, settings: &Settings) -> Option<f64> {
+    settings.frame_rate.get().checked_sub(1)?;
+    let source = player.source_fps()?;
+    let out = player.output_fps()?;
+    let working = out > source * 1.3;
+    if let Some(since) = settings.generation_since.get() {
+        if working {
+            tracing::info!(source, out, "frame generation is working");
+            settings.generation_since.set(None);
+        } else if since.elapsed() > std::time::Duration::from_secs(6) && player.is_playing() {
+            let note = anirust_player::frames::last_error().unwrap_or_else(|| {
+                "no note from the script: is VapourSynth installed, and does this libmpv have                  its filter?"
+                    .to_owned()
+            });
+            tracing::warn!(source, out, %note, "frame generation did not start");
+            settings.generation_since.set(None);
+        }
+    }
+    working.then_some(out)
 }
 
 /// What the quality menu calls a rendition.
@@ -3329,27 +3433,38 @@ mod tests {
     #[test]
     fn upscaling_is_reported_as_a_transformation() {
         assert_eq!(
-            quality_label(Some((1280, 720)), Some((2560, 1440))),
+            quality_label(Some((1280, 720)), Some((2560, 1440)), None),
             "720p → 1440p"
         );
     }
 
     #[test]
     fn rendering_at_the_source_size_reports_one_number() {
-        assert_eq!(quality_label(Some((1280, 720)), Some((1280, 720))), "720p");
+        assert_eq!(
+            quality_label(Some((1280, 720)), Some((1280, 720)), None),
+            "720p"
+        );
     }
 
     #[test]
     fn a_smaller_render_never_reads_as_an_upgrade() {
         assert_eq!(
-            quality_label(Some((1920, 1080)), Some((1280, 720))),
+            quality_label(Some((1920, 1080)), Some((1280, 720)), None),
             "1080p"
         );
     }
 
     #[test]
+    fn generated_frames_add_their_rate() {
+        assert_eq!(
+            quality_label(Some((1280, 720)), Some((2560, 1440)), Some(59.94)),
+            "720p → 1440p · 60 fps"
+        );
+    }
+
+    #[test]
     fn nothing_loaded_shows_a_placeholder() {
-        assert_eq!(quality_label(None, None), "—");
+        assert_eq!(quality_label(None, None, None), "—");
     }
 
     #[test]

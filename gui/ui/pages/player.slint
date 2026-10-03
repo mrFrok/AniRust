@@ -146,6 +146,14 @@ export component PlayerPage inherits Rectangle {
     /// Index into the colour presets: natural, brighter, vivid, soft, dark room.
     in property <int> picture: 0;
     callback set-picture(int);
+    /// Frame generation: 0 off, 1 ×2, 2 60, 3 the screen's rate.
+    in property <int> frame-rate: 0;
+    /// 0 the fast RIFE network, 1 the cleaner one.
+    in property <int> rife-model: 0;
+    /// Whether RIFE was found at all.
+    in property <bool> frames-available: false;
+    callback set-frame-rate(int);
+    callback set-rife-model(int);
     /// −1 earlier, +1 later, 0 back to none.
     callback step-audio-delay(int);
     callback step-subtitle-delay(int);
@@ -188,7 +196,7 @@ export component PlayerPage inherits Rectangle {
     /// Chrome stays put while a sheet is up, or the sheet would be orphaned.
     property <bool> chrome-pinned: root.sheet != "" || root.state != "playing";
     /// Anime4K counts as working only once something is actually applied.
-    property <bool> enhancing: root.upscale != 0 || root.interpolation;
+    property <bool> enhancing: root.upscale != 0 || root.interpolation || root.frame-rate != 0;
 
     video := Image {
         source: root.video-frame;
@@ -769,6 +777,44 @@ export component PlayerPage inherits Rectangle {
                                 label: name;
                                 selected: root.picture == index;
                                 clicked => { root.set-picture(index); }
+                            }
+                        }
+
+                        Text {
+                            text: Tr.frame-generation;
+                            color: #FFFFFF;
+                            font-size: Typography.title-small-size;
+                            font-weight: Typography.title-small-weight-em;
+                        }
+
+                        Text {
+                            text: root.frames-available ? Tr.frame-generation-hint : Tr.frame-generation-missing;
+                            color: #FFFFFF8C;
+                            font-size: Typography.body-medium-size;
+                            wrap: word-wrap;
+                        }
+
+                        if root.frames-available: HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            for name[index] in [Tr.off, "×2", "60", Tr.frame-rate-display]: SettingChip {
+                                label: name;
+                                selected: root.frame-rate == index;
+                                clicked => { root.set-frame-rate(index); }
+                            }
+                        }
+
+                        if root.frames-available && root.frame-rate != 0: HorizontalLayout {
+                            spacing: Spacing.small;
+                            alignment: start;
+
+                            for name[index] in [Tr.rife-fast, Tr.rife-quality]: SettingChip {
+                                label: name;
+                                recommended: index == 0;
+                                heavy: index == 1;
+                                selected: root.rife-model == index;
+                                clicked => { root.set-rife-model(index); }
                             }
                         }
 

@@ -16,7 +16,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 use anirust_api::{Client, EpisodeSort, ProfileList, SearchBy};
 use anirust_extract::{Registry, ResolvedStream, StreamKind, StreamVariant};
 use anirust_player::{
-    MediaSource, Player, PlayerConfig, UpscaleMode, UpscalePreset, UpscaleQuality,
+    FrameGeneration, MediaSource, Player, PlayerConfig, RifeInstall, RifeModel, TargetRate,
+    UpscaleMode, UpscalePreset, UpscaleQuality,
 };
 
 use crate::i18n::Lang;
@@ -171,6 +172,13 @@ enum Command {
         /// Enable temporal interpolation.
         #[arg(long)]
         interpolation: bool,
+        /// Generate frames with RIFE up to this rate. Needs a libmpv with the
+        /// VapourSynth filter, VapourSynth, and the plugin (ANIRUST_RIFE_DIR).
+        #[arg(long, value_enum)]
+        generate: Option<Generate>,
+        /// Which RIFE network generates them.
+        #[arg(long, value_enum, default_value_t = Rife::Fast)]
+        rife: Rife,
     },
     /// Walk the API chain to one episode and resolve it in one step.
     ///
@@ -248,6 +256,30 @@ impl From<Upscale> for UpscaleMode {
             Upscale::CA => Self::CA,
         }
     }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+enum Generate {
+    Double,
+    #[value(name = "60")]
+    Sixty,
+    Display,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+enum Rife {
+    Fast,
+    Quality,
+}
+
+/// How the probe plays an episode.
+struct PlayOptions<'a> {
+    seconds: u64,
+    speed: f64,
+    shader_dir: Option<&'a std::path::Path>,
+    upscale: UpscalePreset,
+    interpolation: bool,
+    generate: Option<FrameGeneration>,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
@@ -553,17 +585,34 @@ async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
             upscale,
             quality,
             interpolation,
+            generate,
+            rife,
         } => {
             let episode =
                 pick_episode(client, *release_id, *dubber, *source, *position, lang).await?;
             let stream = resolve_episode(&episode, lang).await?;
+            let generate = generate.map(|rate| FrameGeneration {
+                rate: match rate {
+                    Generate::Double => TargetRate::Double,
+                    Generate::Sixty => TargetRate::Sixty,
+                    Generate::Display => TargetRate::Display,
+                },
+                model: match rife {
+                    Rife::Fast => RifeModel::Fast,
+                    Rife::Quality => RifeModel::Quality,
+                },
+                ..FrameGeneration::default()
+            });
             play(
                 &stream,
-                *seconds,
-                *speed,
-                shader_dir.as_deref(),
-                UpscalePreset::new((*upscale).into(), (*quality).into()),
-                *interpolation,
+                &PlayOptions {
+                    seconds: *seconds,
+                    speed: *speed,
+                    shader_dir: shader_dir.as_deref(),
+                    upscale: UpscalePreset::new((*upscale).into(), (*quality).into()),
+                    interpolation: *interpolation,
+                    generate,
+                },
                 lang,
             )?;
         }
@@ -763,15 +812,15 @@ async fn resolve_episode(episode: &anirust_api::Episode, lang: Lang) -> Result<R
 ///
 /// This is how the player crate gets exercised before a window exists: it
 /// drives the same code path the GUI will, minus the rendering.
-fn play(
-    stream: &ResolvedStream,
-    seconds: u64,
-    speed: f64,
-    shader_dir: Option<&std::path::Path>,
-    upscale: UpscalePreset,
-    interpolation: bool,
-    lang: Lang,
-) -> Result<()> {
+fn play(stream: &ResolvedStream, options: &PlayOptions<'_>, lang: Lang) -> Result<()> {
+    let PlayOptions {
+        seconds,
+        speed,
+        shader_dir,
+        upscale,
+        interpolation,
+        generate,
+    } = *options;
     let best = stream.best().with_context(|| lang.err_nothing_resolved())?;
 
     // The player carries the shaders and writes them out on startup, so a
@@ -826,7 +875,23 @@ fn play(
     }
     println!("{}", lang.play_speed(player.speed()?));
 
+    if let Some(generation) = generate {
+        let install = RifeInstall::find()
+            .context("RIFE is not installed: set ANIRUST_RIFE_DIR to the plugin's folder")?;
+        player.set_frame_generation(Some((&install, generation)))?;
+    }
+
     std::thread::sleep(std::time::Duration::from_secs(seconds));
+    if generate.is_some() {
+        println!(
+            "frames: {:.2} fps in, {:.2} fps out",
+            player.source_fps().unwrap_or_default(),
+            player.output_fps().unwrap_or_default()
+        );
+        if let Some(error) = anirust_player::frames::last_error() {
+            println!("frame generation failed:\n{error}");
+        }
+    }
     if let Some(position) = player.position() {
         println!("{}", lang.play_position(position.as_secs_f64()));
     }

@@ -28,10 +28,12 @@ use std::time::Duration;
 
 use libmpv2::Mpv;
 
+pub mod frames;
 pub mod render;
 pub mod shaders;
 pub mod tracks;
 
+pub use frames::{FrameGeneration, RifeInstall, RifeModel, TargetRate};
 pub use render::{NativeDisplay, Renderer};
 pub use shaders::{UpscaleMode, UpscalePreset, UpscaleQuality};
 pub use tracks::{Track, TrackKind};
@@ -147,6 +149,11 @@ pub const DEFAULT_OPENING_SECS: u64 = 85;
 pub enum Error {
     #[error("mpv: {0}")]
     Mpv(#[from] libmpv2::Error),
+    #[error("{path}: {source}")]
+    Io {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -335,6 +342,10 @@ impl MediaSource {
 pub struct Player {
     mpv: Mpv,
     shader_dir: Option<std::path::PathBuf>,
+    /// The decoders asked for, kept so that frame generation can swap in
+    /// their copy-back forms and put them back afterwards.
+    hwdec: std::sync::Mutex<String>,
+    generating: std::sync::atomic::AtomicBool,
 }
 
 impl Player {
@@ -350,17 +361,28 @@ impl Player {
             if config.verbose_log {
                 init.set_property("msg-level", "all=v")?;
             }
-            init.set_property("osc", false)?;
             init.set_property("input-default-bindings", false)?;
+            // Likewise the config-file driven profile hooks: this is a library
+            // embedded in an application, not a user's mpv install.
+            init.set_property("config", false)?;
+            // The rest belong to mpv's Lua scripting, which a libmpv built
+            // without it — the one with the VapourSynth filter for frame
+            // generation, say — does not have at all. Off is what is wanted
+            // either way, so an option that does not exist is as good.
+            //
             // Every URL reaching mpv has already been resolved by the
             // extractors, so mpv's youtube-dl hook has nothing to add. Leaving
             // it on spawns a subprocess and waits on its timeouts before
             // playback can even start.
-            init.set_property("ytdl", false)?;
-            // Likewise the config-file driven profile hooks: this is a library
-            // embedded in an application, not a user's mpv install.
-            init.set_property("config", false)?;
-            init.set_property("load-scripts", false)?;
+            for option in ["osc", "ytdl", "load-scripts"] {
+                match init.set_property(option, false) {
+                    Ok(()) => {}
+                    Err(libmpv2::Error::Raw(code))
+                        if code == libmpv2::mpv_error::OptionNotFound
+                            || code == libmpv2::mpv_error::PropertyNotFound => {}
+                    Err(error) => return Err(error),
+                }
+            }
             Ok(())
         })?;
 
@@ -377,6 +399,8 @@ impl Player {
         let player = Self {
             mpv,
             shader_dir: Some(shader_dir),
+            hwdec: std::sync::Mutex::new(config.hwdec.to_string()),
+            generating: std::sync::atomic::AtomicBool::new(false),
         };
 
         player.set_network_timeout(config.network_timeout_secs)?;
@@ -837,8 +861,85 @@ impl Player {
     /// viewer troubleshooting a bad picture does not have to restart the
     /// episode. Takes any mpv `hwdec` value, including `"no"`.
     pub fn set_hwdec(&self, value: &str) -> Result<()> {
-        self.mpv.set_property("hwdec", value)?;
+        if let Ok(mut kept) = self.hwdec.lock() {
+            value.clone_into(&mut kept);
+        }
+        self.apply_hwdec()
+    }
+
+    /// The decoders asked for, in copy-back form while frames are generated.
+    fn apply_hwdec(&self) -> Result<()> {
+        let asked = self
+            .hwdec
+            .lock()
+            .map(|kept| kept.clone())
+            .unwrap_or_else(|_| DEFAULT_HWDEC.to_owned());
+        let value = if self.generating.load(std::sync::atomic::Ordering::Relaxed) {
+            frames::copy_back(&asked)
+        } else {
+            asked
+        };
+        self.mpv.set_property("hwdec", value.as_str())?;
         Ok(())
+    }
+
+    /// Generates frames between the source's with RIFE, or stops.
+    ///
+    /// The script is written fresh each time, and any note a previous one
+    /// left is cleared, so [`frames::last_error`] only ever speaks of this
+    /// attempt. A failure does not stop playback: mpv drops the filter and
+    /// plays the episode as it is, which [`Self::output_fps`] shows.
+    pub fn set_frame_generation(
+        &self,
+        generation: Option<(&RifeInstall, FrameGeneration)>,
+    ) -> Result<()> {
+        use std::sync::atomic::Ordering;
+
+        let Some((install, generation)) = generation else {
+            self.mpv.set_property("vf", "")?;
+            self.generating.store(false, Ordering::Relaxed);
+            return self.apply_hwdec();
+        };
+
+        let dir = frames::work_dir();
+        let script = dir.join("rife.vpy");
+        let error_file = dir.join("rife-error.txt");
+        let _ = std::fs::remove_file(&error_file);
+        std::fs::create_dir_all(&dir)
+            .and_then(|()| std::fs::write(&script, install.script(generation, &error_file)))
+            .map_err(|source| Error::Io {
+                path: script.clone(),
+                source,
+            })?;
+
+        self.generating.store(true, Ordering::Relaxed);
+        self.apply_hwdec()?;
+        let filter = format!(
+            "vapoursynth=file={}:buffered-frames=8:concurrent-frames=4",
+            frames::mpv_quoted(&script.to_string_lossy())
+        );
+        self.mpv.set_property("vf", filter.as_str())?;
+        tracing::info!(?generation, script = %script.display(), "frame generation on");
+        Ok(())
+    }
+
+    /// Frames a second leaving the filters: the source's rate, or the
+    /// generated one when frame generation is working.
+    #[must_use]
+    pub fn output_fps(&self) -> Option<f64> {
+        self.mpv
+            .get_property::<f64>("estimated-vf-fps")
+            .ok()
+            .filter(|fps| *fps > 0.0)
+    }
+
+    /// The source's own frame rate.
+    #[must_use]
+    pub fn source_fps(&self) -> Option<f64> {
+        self.mpv
+            .get_property::<f64>("container-fps")
+            .ok()
+            .filter(|fps| *fps > 0.0)
     }
 
     pub fn set_network_timeout(&self, secs: u32) -> Result<()> {
