@@ -66,6 +66,9 @@ export global Tr {
         : "Helps when the picture misbehaves, at a cost in CPU.";
     out property <string> lock-hint: lang == "ru"
         ? "Управление заблокировано" : "Controls locked";
+    out property <string> vote-refused: lang == "ru"
+        ? "Сервис не принял оценку: похоже, оценки постов он принимает только из официального приложения."
+        : "The service did not take the rating: it seems to accept post ratings only from the official app.";
     out property <string> repeat: lang == "ru" ? "Повтор серии" : "Repeat episode";
     out property <string> repeat-hint: lang == "ru"
         ? "Серия начнётся заново вместо перехода к следующей. Клавиша R."

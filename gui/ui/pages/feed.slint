@@ -291,6 +291,15 @@ component PostCard inherits Rectangle {
                 clicked => { root.report(); }
             }
         }
+
+        // Said where the arrow was pressed, so a rating that did not count
+        // does not look like a click that missed.
+        if root.post.vote-refused: Text {
+            text: Tr.vote-refused;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.label-medium-size;
+            wrap: word-wrap;
+        }
     }
 
     // The two measures the fold is decided by: the whole text, and the text

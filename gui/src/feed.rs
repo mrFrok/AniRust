@@ -703,6 +703,11 @@ pub fn vote_post(
                 Err(error) => {
                     tracing::warn!(%error, article_id, vote, "the rating was not counted");
                     set_vote(&state, at, before_vote, before_count);
+                    // A deliberate refusal, as opposed to a network failure,
+                    // is said under the post rather than undone silently.
+                    if matches!(error, anirust_api::Error::Api { .. }) {
+                        mark_refused(&state, at);
+                    }
                 }
             }
         },
@@ -719,6 +724,23 @@ fn recount(score: i64, before: i32, after: i32) -> i64 {
         _ => 0,
     };
     score - worth(before) + worth(after)
+}
+
+/// Says under a post that the service would not take the account's rating.
+///
+/// The official client sends headers that vouch for the app itself — a
+/// signature and an encrypted session value — and the service appears to ask
+/// for them before it counts a rating. This client sends its own name and
+/// nothing it would have to fake, so the service may refuse; the reader
+/// should know that rather than see the arrow quietly go dark again.
+fn mark_refused(state: &Rc<RefCell<FeedState>>, at: usize) {
+    let state = state.borrow();
+    if let Some(model) = state.posts.clone()
+        && let Some(mut post) = model.row_data(at)
+    {
+        post.vote_refused = true;
+        model.set_row_data(at, post);
+    }
 }
 
 fn set_vote(state: &Rc<RefCell<FeedState>>, at: usize, vote: i32, count_now: i64) {
@@ -845,6 +867,7 @@ fn post_for(article: &Article, now: i64, me: i64) -> FeedPost {
         comments: count(article.comment_count),
         votes: count(article.vote_count),
         my_vote: article.vote,
+        vote_refused: false,
         pinned: article.is_pinned,
         can_edit: own,
         can_delete: own || runs,

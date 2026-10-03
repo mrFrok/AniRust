@@ -157,6 +157,8 @@ export struct FeedPost {
     votes: int,
     /// This account's rating of it: 0 none, 1 down, 2 up.
     my-vote: int,
+    /// The service turned the account's rating down.
+    vote-refused: bool,
     pinned: bool,
     /// The account wrote it, and may change it.
     can-edit: bool,
