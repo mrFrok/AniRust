@@ -1,16 +1,18 @@
 #!/bin/sh
 # Builds the Linux archive, dist/anirust-<version>-linux-x86_64.tar.gz:
 #
-#   anirust, anirust-cli   the programs; they look in lib/ beside themselves
-#                          before the system's library directories
+#   anirust, anirust-cli   launchers (launcher.sh): they use lib/libmpv.so.2
+#                          when the system has its libraries, the system's
+#                          libmpv otherwise, and run bin/ of the same name
+#   bin/                   the programs
 #   lib/libmpv.so.2        libmpv with the VapourSynth filter (build-libmpv.sh)
 #   rife/                  the RIFE plugin and models (../fetch-rife.sh)
 #   anirust.svg, README.md, README.ru.md, LICENSE
 #
-# The rest of libmpv's dependencies (ffmpeg, libplacebo, libass, ...) come
-# from the system, as with any mpv, so the archive runs where this was built
-# and on distributions as recent. VapourSynth is optional: without it, frame
-# generation is unavailable and everything else works.
+# The archive's libmpv only matches distributions with the same ffmpeg and
+# libplacebo as the one it was built on; elsewhere the launchers fall back to
+# the system's libmpv, and everything but frame generation works the same.
+# VapourSynth is optional either way.
 
 set -eu
 
@@ -24,15 +26,15 @@ libmpv=${LIBMPV:-$root/target/libmpv/libmpv.so.2}
 rife=${RIFE_DIR:-$root/target/rife-linux}
 [ -f "$rife/librife.so" ] || packaging/fetch-rife.sh linux "$rife"
 
-# $ORIGIN reaches the linker as written: lib/ beside the executable.
-RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-rpath,\$ORIGIN/lib" \
-    cargo build --release --locked -p anirust-gui -p anirust-cli
+cargo build --release --locked -p anirust-gui -p anirust-cli
 
 name="anirust-$version-linux-x86_64"
 stage="$root/target/linux-stage/$name"
 rm -rf "$stage"
-mkdir -p "$stage/lib" "$root/dist"
-cp target/release/anirust target/release/anirust-cli "$stage/"
+mkdir -p "$stage/bin" "$stage/lib" "$root/dist"
+cp target/release/anirust target/release/anirust-cli "$stage/bin/"
+install -m755 packaging/linux/launcher.sh "$stage/anirust"
+install -m755 packaging/linux/launcher.sh "$stage/anirust-cli"
 cp "$libmpv" "$stage/lib/libmpv.so.2"
 cp -r "$rife" "$stage/rife"
 cp packaging/icons/anirust.svg README.md README.ru.md LICENSE "$stage/"

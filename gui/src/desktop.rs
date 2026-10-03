@@ -52,9 +52,14 @@ fn integrate() -> std::io::Result<()> {
     let Some(data) = dirs::data_dir() else {
         return Ok(());
     };
-    let exe = std::env::current_exe()?;
+    // The Linux archive starts the program through a launcher that picks the
+    // right libmpv; the entry should go through it too. Otherwise the entry
+    // runs this very file, wherever it was unpacked to.
+    let exe = std::env::var_os("ANIRUST_LAUNCHER")
+        .map(std::path::PathBuf::from)
+        .filter(|launcher| launcher.is_file())
+        .map_or_else(std::env::current_exe, Ok)?;
 
-    // The entry runs this very file, wherever it was unpacked to.
     let entry = DESKTOP_ENTRY.replace("Exec=anirust %u", &format!("Exec=\"{}\" %u", exe.display()));
     let entry_path = data.join("applications").join(format!("{APP_ID}.desktop"));
     let icon_path = data

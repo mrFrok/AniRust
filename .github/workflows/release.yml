@@ -18,19 +18,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get update && sudo apt-get install -y libmpv-dev libxkbcommon-dev libfontconfig-dev
+      # The first three for the program; the rest to build libmpv with the
+      # VapourSynth filter for the tarball (packaging/linux/build-libmpv.sh).
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev libxkbcommon-dev libfontconfig-dev \
+            meson ninja-build pkg-config \
+            libavcodec-dev libavformat-dev libavfilter-dev libavdevice-dev libavutil-dev \
+            libswscale-dev libswresample-dev libass-dev libplacebo-dev \
+            libva-dev libdrm-dev libegl-dev libgl-dev libgbm-dev \
+            libwayland-dev wayland-protocols libx11-dev libxext-dev libxpresent-dev \
+            libxrandr-dev libxss-dev libxv-dev libxkbcommon-dev \
+            libpulse-dev libasound2-dev libpipewire-0.3-dev \
+            liblcms2-dev libzimg-dev libuchardet-dev libjpeg-dev
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-deb --locked
       - run: cargo build --release -p anirust-gui -p anirust-cli
+      # The .deb plays through the system's libmpv, without frame generation:
+      # a libmpv of our own would tie it to one Ubuntu's ffmpeg sonames.
       - name: .deb
         run: cargo deb -p anirust-gui --no-build --output dist/
+      # The tarball carries libmpv with the filter and RIFE; its launchers
+      # fall back to the system's libmpv where this one's libraries are
+      # missing.
       - name: Tarball
-        run: |
-          name="anirust-${GITHUB_REF_NAME#v}-linux-x86_64"
-          mkdir -p "stage/$name"
-          cp target/release/anirust target/release/anirust-cli README.md README.ru.md LICENSE "stage/$name/"
-          cp -r packaging/linux packaging/icons "stage/$name/"
-          tar -C stage -czf "dist/$name.tar.gz" "$name"
+        run: packaging/linux/build-tarball.sh
       - uses: actions/upload-artifact@v4
         with:
           name: linux
@@ -45,7 +57,7 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
       - shell: pwsh
         run: ./packaging/windows/fetch-libmpv.ps1 -Destination mpv
-      - name: Build and pack
+      - name: Build and stage
         shell: pwsh
         run: |
           $env:MPV_SOURCE = "$PWD\mpv"
@@ -54,6 +66,15 @@ jobs:
           $name = "anirust-$($env:GITHUB_REF_NAME.TrimStart('v'))-windows-x86_64"
           New-Item -ItemType Directory -Force "stage\$name" | Out-Null
           Copy-Item target\release\anirust.exe, target\release\anirust-cli.exe, mpv\libmpv-2.dll, README.md, README.ru.md, LICENSE "stage\$name\"
+      # Frame generation: the RIFE plugin and models beside the program;
+      # VapourSynth itself the user installs (README).
+      - name: RIFE
+        shell: bash
+        run: packaging/fetch-rife.sh windows "stage/anirust-${GITHUB_REF_NAME#v}-windows-x86_64/rife"
+      - name: Pack
+        shell: pwsh
+        run: |
+          $name = "anirust-$($env:GITHUB_REF_NAME.TrimStart('v'))-windows-x86_64"
           New-Item -ItemType Directory -Force dist | Out-Null
           Compress-Archive -Path "stage\$name" -DestinationPath "dist\$name.zip"
       - uses: actions/upload-artifact@v4
