@@ -1177,8 +1177,10 @@ export component MainWindow inherits Window {
             }
 
             // ---- episodes ----
-            if (event.text == "p" && event.modifiers.shift) { root.previous-episode(); return accept; }
-            if (event.text == "n" && event.modifiers.shift) { root.next-episode(); return accept; }
+            // Shift may or may not upper-case the letter, depending on the
+            // platform's keyboard layer; either is the same key.
+            if ((event.text == "p" || event.text == "P") && event.modifiers.shift) { root.previous-episode(); return accept; }
+            if ((event.text == "n" || event.text == "N") && event.modifiers.shift) { root.next-episode(); return accept; }
 
             // ---- sound ----
             if (event.text == "m") { root.toggle-muted(); return accept; }
@@ -1206,12 +1208,12 @@ export component MainWindow inherits Window {
             if (event.text == "u") { root.set-upscale(Math.mod(root.upscale + 1, 7)); return accept; }
             if (event.text == "i") { root.toggle-interpolation(); return accept; }
             if (event.text == "r") { root.toggle-repeat(); return accept; }
+            if ((event.text == "p" || event.text == "P") && event.modifiers.control) { root.screenshot(false); return accept; }
             if (event.text == "p") { root.screenshot(true); return accept; }
+            if ((event.text == "z" || event.text == "Z") && event.modifiers.shift) { root.step-audio-delay(-1); return accept; }
+            if ((event.text == "x" || event.text == "X") && event.modifiers.shift) { root.step-audio-delay(1); return accept; }
             if (event.text == "z") { root.step-subtitle-delay(-1); return accept; }
             if (event.text == "x") { root.step-subtitle-delay(1); return accept; }
-            if (event.text == "Z") { root.step-audio-delay(-1); return accept; }
-            if (event.text == "X") { root.step-audio-delay(1); return accept; }
-            if (event.text == "P") { root.screenshot(false); return accept; }
             reject
         }
     }

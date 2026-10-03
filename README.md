@@ -11,9 +11,10 @@ real player built on mpv.
 ## Why
 
 The official client is Android-only, closed source and ad-supported. AniRust is
-a desktop client with a player of its own: playback speed, proper subtitle
-rendering, hardware decoding, Anime4K upscaling, resume across episodes, and
-progress synchronised with an Anixart account.
+a desktop client with a player of its own, built for what a desktop GPU can do:
+Anime4K's full set of networks up to its heaviest, RIFE frame generation,
+hardware decoding on every vendor's card, proper subtitle rendering, resume
+across episodes, and progress synchronised with an Anixart account.
 
 ## Status
 
@@ -30,8 +31,8 @@ Working:
   the history, collections — and from anywhere else finds releases, people
   and channels at once.
 - **Playback** — Kodik, AniLibria and Sibnet resolved to direct streams;
-  hardware decoding; quality, speed, subtitle and audio track selection;
-  Anime4K upscaling and frame interpolation; skip the opening.
+  hardware decoding; quality, speed, subtitle and audio track selection; skip
+  the opening; upscaling, frame generation and the rest of the player below.
 - **Continuing** — where an episode was left off is remembered, the list opens
   there, and an episode that ends is followed by the next one.
 - **A release, from the account's side** — its list, favourite and rating
@@ -74,11 +75,80 @@ The official client's interface declares 286 distinct endpoints; **all 286**
 are implemented, each checked against a local server by
 `api/tests/endpoints.rs`, and `api/tests/parity.rs` fails if one goes missing.
 
+## The player
+
+**Upscaling.** Anime4K's six modes — A, B, C, A+A, B+B, C+A, each for a kind of
+source — at four qualities: Fast (networks M then S), High (L, M), Max (VL, M,
+Anime4K's own choice for high-end cards) and Ultra (a VL restore, a UL upscale,
+then L). Every chain doubles twice around Anime4K's auto-downscale, so 720p
+reaches 4K through two network passes rather than one and a stretch. "Render at
+4K" upscales to 3840×2160 whatever the window. The shaders are embedded and
+need no setup. Two of Anime4K's UL networks are left out: they need more
+varying variables than OpenGL allows and fail to link on every GPU.
+
+**Frame generation.** RIFE draws frames between the real ones, to ×2, 60 or the
+screen's rate, with a fast network (RIFE 4.6) or a cleaner one (4.26). It runs
+through mpv's VapourSynth filter and a Vulkan plugin, so on any vendor's card.
+It is heavy: on an RTX 4070 Ti SUPER, RIFE 4.6 makes 74 frames a second at 720p
+and 46 at 1080p, so sources taller than 720 lines are brought down for it and
+the upscaling after it brings them back. It needs three things, none of them
+linked, so the program runs without them: a libmpv with the VapourSynth filter
+(the Windows one has it; on Linux, `packaging/linux/build-libmpv.sh`, which the
+Linux archive ships), VapourSynth itself, and the plugin with its models
+(`packaging/fetch-rife.sh`, shipped in both archives). When one is missing the
+menu says so, and if the filter fails, mpv plays on without it and the log says
+why.
+
+**Keeping up.** If frames start dropping — more than one a second over ten
+seconds of playback — the load comes down a step by itself: the RIFE network,
+then Anime4K's quality, then the generated rate, then each of them off, with a
+line saying what changed. The step is kept. It can be switched off.
+
+**The rest**, much of it after the official Android player:
+
+- hold the button on the picture to play at 2×; step a frame back or forward
+  from buttons that appear when paused; repeat an episode;
+- screenshots with or without subtitles, to Pictures/AniRust;
+- another dub or subtitles from a file; audio and subtitle delay in tenths of
+  a second; loudness evened out;
+- subtitle size, the player's own style over ASS styles, and a fonts folder for
+  the fonts fansubs name;
+- colour presets: natural, brighter, vivid, soft, dark room;
+- hardware decoding with the display handed to mpv, so VA-API works on AMD and
+  Intel under Wayland and X11, D3D11 on Windows, VideoToolbox on macOS;
+- the player's settings kept between runs, if wanted.
+
+| Key | Does |
+| --- | --- |
+| Space, K | play or pause |
+| ← → / J L | 5 s / 10 s back or forward |
+| ↑ ↓, M | volume, mute |
+| `<` `>` | slower, faster |
+| `,` `.` | a frame back or forward |
+| Shift+P, Shift+N | previous, next episode |
+| F, T | full screen, theatre |
+| C, S | subtitles on or off, skip the opening |
+| U, I | next upscaling mode, interpolation |
+| R | repeat the episode |
+| P, Ctrl+P | screenshot with subtitles, without |
+| Z X, Shift+Z X | subtitle delay, audio delay |
+
 ## Installing
 
 Tagged releases build a `.deb`, a Linux tarball, a Windows zip with libmpv
 beside the program, and a macOS disk image; Arch has a PKGBUILD in
 `packaging/arch/`.
+
+- **The Linux tarball** carries its own libmpv, with the VapourSynth filter, in
+  `lib/`, and the RIFE plugin in `rife/`; the rest of libmpv's libraries come
+  from the system, so it runs on distributions as recent as the one it was
+  built on. For frame generation, install VapourSynth (`vapoursynth` on Arch);
+  the first time it is switched on, the program runs `vapoursynth config`,
+  which VapourSynth needs once to find its Python.
+- **The Windows zip** carries libmpv and the RIFE plugin. For frame generation,
+  install VapourSynth from its
+  [releases](https://github.com/vapoursynth/vapoursynth/releases). Windows
+  builds have no console; the log goes to `%LOCALAPPDATA%\anirust\anirust.log`.
 
 ## Building
 
@@ -91,7 +161,9 @@ Needs Rust 1.90+ and, for the player, `libmpv` >= 2.
   for the build.
 - **Windows** — a libmpv build with an MSVC import library;
   `packaging/windows/fetch-libmpv.ps1` makes one from a Developer PowerShell,
-  and `libmpv-2.dll` goes next to `anirust.exe`.
+  and `libmpv-2.dll` goes next to `anirust.exe`. Or from Linux, with MinGW:
+  `packaging/windows/cross-build.sh` fetches libmpv and RIFE and writes the
+  zip to `dist/`.
 
 ```sh
 cargo build --release
@@ -100,7 +172,18 @@ cargo build --release
 ```
 
 Packages: `cargo deb -p anirust-gui` for Debian, `makepkg -si` in
-`packaging/arch/`, `packaging/macos/bundle.sh VERSION` for an app bundle.
+`packaging/arch/`, `packaging/macos/bundle.sh VERSION` for an app bundle,
+`packaging/linux/build-tarball.sh` for the Linux tarball (it builds libmpv with
+the VapourSynth filter and fetches RIFE first).
+
+For frame generation in a development build, point the program at a libmpv
+with the filter and at the plugin:
+
+```sh
+packaging/linux/build-libmpv.sh          # target/libmpv/libmpv.so.2
+packaging/fetch-rife.sh linux target/rife-linux
+LD_LIBRARY_PATH=target/libmpv ANIRUST_RIFE_DIR=target/rife-linux cargo run -p anirust-gui
+```
 
 ### Looking at the interface without a display
 
@@ -141,6 +224,10 @@ anirust-cli stream 307 1
 
 # A ready-to-run mpv command, headers and timeout already filled in
 $(anirust-cli stream 307 1 --mpv)
+
+# Play an episode headless through the real player: upscaling, frame generation
+anirust-cli play 307 1 --upscale a+a --quality max
+anirust-cli play 307 1 --generate 60      # prints the rate in and out
 
 # Hosts an extractor is implemented for
 anirust-cli hosts
@@ -205,7 +292,8 @@ deliberate constraint, and it is honoured literally:
    field name, enum value. Those are facts, not expression.
 3. Implementations are written against the live exchange, not someone's code.
 4. Test fixtures are captured HTTP responses, never third-party sources.
-5. mpv, ffmpeg and the Anime4K shaders come from upstream, not from the APK.
+5. mpv, ffmpeg, the Anime4K shaders and RIFE come from upstream, not from the
+   APK. The official player was a list of features to match, never a source.
 
 ## Licence
 
@@ -213,7 +301,11 @@ deliberate constraint, and it is honoured literally:
 
 Slint is used under its GPLv3 option, the one intended for open-source
 applications. mpv (`GPL-2.0-or-later AND LGPL-2.1-or-later`) is linked
-dynamically. The Anime4K shaders are MIT, taken from upstream. So is the
+dynamically; the libmpv the Linux tarball ships is built from mpv's release
+with the one patch in `packaging/linux/`, which opens VapourSynth at run time
+instead of linking it. The Anime4K shaders are MIT, taken from upstream. The
+RIFE plugin (VapourSynth-RIFE-ncnn-Vulkan) and the RIFE models are MIT,
+fetched from upstream at build time and shipped with their licences. So is the
 Material 3 component set in `gui/material-1.18.0/`, vendored from
 `ui-libraries/material` of slint-ui/slint at the tag matching the `slint`
 dependency — it has no crates.io package, and a UI that changes shape when

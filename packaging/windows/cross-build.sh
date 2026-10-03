@@ -1,7 +1,8 @@
 #!/bin/sh
 # Builds the Windows client from Linux with MinGW and packs it:
 # dist/anirust-<version>-windows-x86_64.zip with anirust.exe,
-# anirust-cli.exe, libmpv-2.dll, the READMEs and the licence.
+# anirust-cli.exe, libmpv-2.dll, the RIFE plugin and models in rife/, the
+# READMEs and the licence.
 #
 # Needs the Rust target (`rustup target add x86_64-pc-windows-gnu`), a
 # MinGW-w64 toolchain (`x86_64-w64-mingw32-gcc`), `7z`, `curl` and `zip`.
@@ -41,6 +42,12 @@ rm -rf "$stage"
 mkdir -p "$stage" "$root/dist"
 cp "target/$target/release/anirust.exe" "target/$target/release/anirust-cli.exe" \
     "$mpv/libmpv-2.dll" README.md README.ru.md LICENSE "$stage/"
+
+# Frame generation: the RIFE plugin and models, beside the program. VapourSynth
+# itself is installed separately (README); shinchiro's libmpv has the filter.
+rife=${RIFE_DIR:-$root/target/rife-windows}
+[ -f "$rife/librife.dll" ] || packaging/fetch-rife.sh windows "$rife"
+cp -r "$rife" "$stage/rife"
 
 rm -f "$root/dist/$name.zip"
 (cd "$stage/.." && zip -qr "$root/dist/$name.zip" "$name")
