@@ -3623,6 +3623,11 @@ fn generated_fps(player: &Player, settings: &Settings) -> Option<f64> {
     let out = player.output_fps()?;
     let working = out > source * 1.3;
     if let Some(since) = settings.generation_since.get() {
+        // mpv's estimate trails a change: right after one it still speaks
+        // of the filter before.
+        if since.elapsed() < std::time::Duration::from_secs(3) {
+            return working.then_some(out);
+        }
         if working {
             tracing::info!(source, out, "frame generation is working");
             settings.generation_since.set(None);
