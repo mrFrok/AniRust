@@ -25,6 +25,12 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      # The release builds through these; a typo in one should fail here, not
+      # on the tag.
+      - name: Packaging scripts
+        run: |
+          for f in packaging/*.sh packaging/*/*.sh; do sh -n "$f"; done
+          python3 -m py_compile packaging/mlrt/*.py
 
   macos:
     runs-on: macos-14

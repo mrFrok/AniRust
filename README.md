@@ -99,10 +99,30 @@ Linux archive ships), VapourSynth itself, and the plugin with its models
 menu says so, and if the filter fails, mpv plays on without it and the log says
 why.
 
+**Neural networks on the matrix units.** The same networks run two to three
+times faster on the units GPUs keep for them — NVIDIA's tensor cores, Intel's
+XMX engines, AMD's matrix cores — through
+[vs-mlrt](https://github.com/AmusementClub/vs-mlrt), whose plugins are ported
+to VapourSynth's current API by `packaging/mlrt/port-api4.py` and built by the
+release: TensorRT for NVIDIA RTX, OpenVINO for Intel, MIGraphX for AMD. Measured
+on an RTX 4070 Ti SUPER with TensorRT, RIFE 4.26 makes 150 frames a second at
+720p and 66 at 1080p — enough for 1080p at 60 and for 720p at 120 and more —
+and the menu offers **neural upscaling** too: Real-ESRGAN AnimeVideo v3 doubles
+the picture before the shaders (720p to 1440p at 43 frames a second). The
+engine that suits the machine's GPU is marked in the menu. The vendors' runtimes
+are not part of the program: TensorRT-RTX (NVIDIA's licence, about 90 MB) and
+OpenVINO (Apache 2.0, 55 to 110 MB) are fetched from their vendors by the
+player when asked, and MIGraphX comes with ROCm from the distribution
+(`migraphx` on Arch). Until the runtime is there, Vulkan runs the networks. The
+first time an engine meets a picture size it compiles the network for the card,
+which takes ten seconds or more once; the player says so meanwhile.
+
 **Keeping up.** If frames start dropping — more than one a second over ten
-seconds of playback — the load comes down a step by itself: the RIFE network,
-then Anime4K's quality, then the generated rate, then each of them off, with a
-line saying what changed. The step is kept. It can be switched off.
+seconds of playback — the load comes down a step by itself: neural upscaling
+first, then the RIFE network, Anime4K's quality, the generated rate (the
+screen's to half of it when that is still 60 or more, then 60, then ×2), and
+then each of them off, with a line saying what changed. The step is kept. It
+can be switched off.
 
 **The rest**, much of it after the official Android player:
 
@@ -139,16 +159,28 @@ Tagged releases build a `.deb`, a Linux tarball, a Windows zip with libmpv
 beside the program, and a macOS disk image; Arch has a PKGBUILD in
 `packaging/arch/`.
 
-- **The Linux tarball** carries its own libmpv, with the VapourSynth filter, in
-  `lib/`, and the RIFE plugin in `rife/`; the rest of libmpv's libraries come
-  from the system, so it runs on distributions as recent as the one it was
-  built on. For frame generation, install VapourSynth (`vapoursynth` on Arch);
-  the first time it is switched on, the program runs `vapoursynth config`,
-  which VapourSynth needs once to find its Python.
-- **The Windows zip** carries libmpv and the RIFE plugin. For frame generation,
-  install VapourSynth from its
-  [releases](https://github.com/vapoursynth/vapoursynth/releases). Windows
-  builds have no console; the log goes to `%LOCALAPPDATA%\anirust\anirust.log`.
+- **The Linux tarball** is built on Arch and carries its own libmpv, with the
+  VapourSynth filter, in `lib/`, the RIFE plugin in `rife/` and vs-mlrt in
+  `mlrt/`; the rest of libmpv's libraries come from the system, so it runs
+  whole on rolling distributions — Arch, CachyOS, Manjaro, openSUSE Tumbleweed.
+  Elsewhere its launcher falls back to the system's libmpv and everything but
+  frame generation works; the `.deb` is the better choice there. For frame
+  generation, install VapourSynth (`vapoursynth` on Arch); the first time it is
+  switched on, the program runs `vapoursynth config`, which VapourSynth needs
+  once to find its Python.
+- **The `.deb`** (Debian, Ubuntu) plays through the system's libmpv, which
+  those distributions build without the VapourSynth filter.
+- **The Windows zip** carries libmpv, the RIFE plugin and vs-mlrt for TensorRT
+  and OpenVINO. For frame generation, install VapourSynth from its
+  [releases](https://github.com/vapoursynth/vapoursynth/releases). AMD cards
+  run the networks through Vulkan on Windows: MIGraphX is Linux-only here.
+  Windows builds have no console; the log goes to
+  `%LOCALAPPDATA%\anirust\anirust.log`.
+
+Releases are built by GitHub Actions (`.github/workflows/release.yml`): a tag
+`v*` builds every package, each with a `.sha256`, and publishes the release;
+started by hand, the workflow is a dry run that builds everything and publishes
+nothing.
 
 ## Building
 
@@ -175,6 +207,14 @@ Packages: `cargo deb -p anirust-gui` for Debian, `makepkg -si` in
 `packaging/arch/`, `packaging/macos/bundle.sh VERSION` for an app bundle,
 `packaging/linux/build-tarball.sh` for the Linux tarball (it builds libmpv with
 the VapourSynth filter and fetches RIFE first).
+
+vs-mlrt's plugins build with `packaging/mlrt/build-vstrt.sh` (TensorRT),
+`build-vsov.sh` (OpenVINO) and `build-vsmigx.sh` (MIGraphX) — on Linux, and the
+first two on Windows from Git Bash in an MSVC environment — and the networks
+with `packaging/mlrt/prepare-models.py`, all into `target/mlrt`.
+`ANIRUST_MLRT_DIR` points the program at such a folder, and
+`ANIRUST_TRT_RTX_DIR`, `ANIRUST_OPENVINO_DIR` and `ROCM_PATH` at the vendors'
+runtimes.
 
 For frame generation in a development build, point the program at a libmpv
 with the filter and at the plugin:
@@ -305,7 +345,13 @@ dynamically; the libmpv the Linux tarball ships is built from mpv's release
 with the one patch in `packaging/linux/`, which opens VapourSynth at run time
 instead of linking it. The Anime4K shaders are MIT, taken from upstream. The
 RIFE plugin (VapourSynth-RIFE-ncnn-Vulkan) and the RIFE models are MIT,
-fetched from upstream at build time and shipped with their licences. So is the
+fetched from upstream at build time and shipped with their licences. vs-mlrt is
+GPL-3.0; its plugins are built from its sources with our port to VapourSynth's
+API 4, and ship with its licence, as do the networks: RIFE (MIT) and
+Real-ESRGAN (BSD-3-Clause). The vendors' runtimes are not shipped: TensorRT-RTX
+is NVIDIA's, under NVIDIA's licence, and is fetched from NVIDIA by the person
+using the program when they ask; OpenVINO (Apache 2.0) likewise from Intel;
+ROCm comes from the distribution. So is the
 Material 3 component set in `gui/material-1.18.0/`, vendored from
 `ui-libraries/material` of slint-ui/slint at the tag matching the `slint`
 dependency — it has no crates.io package, and a UI that changes shape when

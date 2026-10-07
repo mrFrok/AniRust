@@ -1,88 +1,136 @@
-# A tag `v*` builds the packages and drafts a release with them. Nothing is
-# published until the draft is looked at and published by hand.
+# A tag `v*` builds every package and publishes a release with them, each
+# with a .sha256 beside it. Started by hand (workflow_dispatch) it is a dry
+# run: everything is built and kept as workflow artifacts, nothing is
+# published.
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
 
-permissions:
-  contents: write
-
 jobs:
+  # The Linux archive, built on Arch: its own libmpv — the one with the
+  # VapourSynth filter frame generation needs — is linked against the ffmpeg
+  # and libplacebo of the system it is built on, so it is built on the one
+  # the archive is for. Rolling distributions (Arch, CachyOS, Manjaro,
+  # openSUSE Tumbleweed) run it whole; elsewhere its launcher falls back to
+  # the system's libmpv, and the .deb below is the better choice.
   linux:
+    name: Linux archive (Arch)
     runs-on: ubuntu-24.04
+    container: archlinux:base-devel
     steps:
+      - name: Tools and libraries
+        run: |
+          pacman -Syu --noconfirm --needed \
+            git rustup curl unzip 7zip python python-pip \
+            mpv vapoursynth meson ninja cmake \
+            wayland-protocols vulkan-headers libxkbcommon fontconfig
+          rustup default stable
+          pip install --break-system-packages onnx onnxconverter-common
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      # The first three for the program; the rest to build libmpv with the
-      # VapourSynth filter for the tarball (packaging/linux/build-libmpv.sh).
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y libmpv-dev libxkbcommon-dev libfontconfig-dev \
-            meson ninja-build pkg-config \
-            libavcodec-dev libavformat-dev libavfilter-dev libavdevice-dev libavutil-dev \
-            libswscale-dev libswresample-dev libass-dev libplacebo-dev \
-            libva-dev libdrm-dev libegl-dev libgl-dev libgbm-dev \
-            libwayland-dev wayland-protocols libx11-dev libxext-dev libxpresent-dev \
-            libxrandr-dev libxss-dev libxv-dev libxkbcommon-dev \
-            libpulse-dev libasound2-dev libpipewire-0.3-dev \
-            liblcms2-dev libzimg-dev libuchardet-dev libjpeg-dev
+      - name: Mark the checkout safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: Swatinem/rust-cache@v2
-      - run: cargo install cargo-deb --locked
-      - run: cargo build --release -p anirust-gui -p anirust-cli
-      # The .deb plays through the system's libmpv, without frame generation:
-      # a libmpv of our own would tie it to one Ubuntu's ffmpeg sonames.
-      - name: .deb
-        run: cargo deb -p anirust-gui --no-build --output dist/
-      # The tarball carries libmpv with the filter and RIFE; its launchers
-      # fall back to the system's libmpv where this one's libraries are
-      # missing.
+      # libmpv with the filter, RIFE, and vs-mlrt for TensorRT, OpenVINO and
+      # MIGraphX: packaging/linux/build-tarball.sh builds or fetches each.
       - name: Tarball
         run: packaging/linux/build-tarball.sh
+      # vs-mlrt on its own as well, for packages that build the program
+      # themselves (packaging/arch/PKGBUILD).
+      - name: vs-mlrt archive
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          tar -C target -czf "dist/anirust-$version-mlrt-linux-x86_64.tar.gz" mlrt
+      - name: Checksums
+        run: cd dist && for f in *.tar.gz; do sha256sum "$f" > "$f.sha256"; done
       - uses: actions/upload-artifact@v4
         with:
           name: linux
           path: dist/*
 
+  # The .deb plays through the system's libmpv: a libmpv of its own would tie
+  # it to one Ubuntu's ffmpeg sonames. Frame generation needs a libmpv with
+  # the VapourSynth filter, which Debian and Ubuntu do not build.
+  deb:
+    name: Debian package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libmpv-dev libxkbcommon-dev libfontconfig-dev
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-deb --locked
+      - run: cargo build --release --locked -p anirust-gui -p anirust-cli
+      - run: cargo deb -p anirust-gui --no-build --output dist/
+      - name: Checksums
+        run: cd dist && for f in *.deb; do sha256sum "$f" > "$f.sha256"; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: dist/*
+
   windows:
+    name: Windows zip
     runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: ilammy/msvc-dev-cmd@v1
-      - shell: pwsh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python and build tools
+        run: pip install onnx onnxconverter-common ninja
+      - name: libmpv
+        shell: pwsh
         run: ./packaging/windows/fetch-libmpv.ps1 -Destination mpv
       - name: Build and stage
         shell: pwsh
         run: |
           $env:MPV_SOURCE = "$PWD\mpv"
           $env:LIB = "$PWD\mpv;$env:LIB"
-          cargo build --release -p anirust-gui -p anirust-cli
-          $name = "anirust-$($env:GITHUB_REF_NAME.TrimStart('v'))-windows-x86_64"
+          cargo build --release --locked -p anirust-gui -p anirust-cli
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"').Matches[0].Groups[1].Value
+          $name = "anirust-$version-windows-x86_64"
           New-Item -ItemType Directory -Force "stage\$name" | Out-Null
           Copy-Item target\release\anirust.exe, target\release\anirust-cli.exe, mpv\libmpv-2.dll, README.md, README.ru.md, LICENSE "stage\$name\"
-      # Frame generation: the RIFE plugin and models beside the program;
-      # VapourSynth itself the user installs (README).
+          "name=$name" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      # Frame generation on any GPU: the RIFE plugin and models. VapourSynth
+      # itself the user installs (README).
       - name: RIFE
-        shell: bash
-        run: packaging/fetch-rife.sh windows "stage/anirust-${GITHUB_REF_NAME#v}-windows-x86_64/rife"
+        run: packaging/fetch-rife.sh windows "stage/$name/rife"
+      # The GPUs' matrix units: vs-mlrt for TensorRT and OpenVINO, built with
+      # MSVC, and the networks. The vendors' runtimes are fetched by the
+      # player when asked.
+      - name: vs-mlrt
+        run: |
+          out="$(pwd)/stage/$name/mlrt"
+          OUT_DIR="$out" WORK_DIR="$(pwd)/target/mlrt-build" packaging/mlrt/build-vstrt.sh
+          OUT_DIR="$out" WORK_DIR="$(pwd)/target/mlrt-build" packaging/mlrt/build-vsov.sh
+          python packaging/mlrt/prepare-models.py "$out"
       - name: Pack
         shell: pwsh
         run: |
-          $name = "anirust-$($env:GITHUB_REF_NAME.TrimStart('v'))-windows-x86_64"
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path "stage\$name" -DestinationPath "dist\$name.zip"
+          Compress-Archive -Path "stage\$env:name" -DestinationPath "dist\$env:name.zip"
+          $hash = (Get-FileHash "dist\$env:name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $env:name.zip" | Out-File -FilePath "dist\$env:name.zip.sha256" -Encoding ascii -NoNewline
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: dist/*
 
   macos:
+    name: macOS disk image
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -92,16 +140,23 @@ jobs:
       - name: Build and pack
         run: |
           export LIBRARY_PATH="$(brew --prefix)/lib:$LIBRARY_PATH"
-          cargo build --release -p anirust-gui -p anirust-cli
-          ./packaging/macos/bundle.sh "${GITHUB_REF_NAME#v}"
+          cargo build --release --locked -p anirust-gui -p anirust-cli
+          packaging/fetch-rife.sh macos-arm64 target/rife-macos
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          RIFE_DIR=target/rife-macos ./packaging/macos/bundle.sh "$version"
+          cd dist && for f in *.dmg; do shasum -a 256 "$f" > "$f.sha256"; done
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: dist/*
+          path: dist/*.dmg*
 
-  draft:
-    needs: [linux, windows, macos]
+  release:
+    name: Publish
+    needs: [linux, deb, windows, macos]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -109,5 +164,5 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          draft: true
           files: dist/*
+          generate_release_notes: true

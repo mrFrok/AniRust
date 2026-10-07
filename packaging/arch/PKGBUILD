@@ -10,11 +10,15 @@
 # needs it. Being built here, it always matches the system's ffmpeg and
 # libplacebo; rebuild the package when those move to a new soname, as with
 # anything else linked against them. On x86_64 the RIFE plugin and its two
-# models go into /usr/lib/anirust/rife; with the vapoursynth package
-# installed, frame generation then works.
+# models go into /usr/lib/anirust/rife, and vs-mlrt — the plugins that run
+# the networks on NVIDIA's, Intel's and AMD's matrix units, built by the
+# release from vs-mlrt's sources, and the networks — into
+# /usr/lib/anirust/mlrt; with the vapoursynth package installed, frame
+# generation then works. The vendors' runtimes are fetched by the player
+# when asked (TensorRT-RTX, OpenVINO) or come from ROCm (MIGraphX).
 
 pkgname=anirust
-pkgver=0.1.0
+pkgver=1.0.0
 pkgrel=1
 _mpv=0.41.0
 _nvh=n13.0.19.0
@@ -29,7 +33,8 @@ license=('GPL-3.0-or-later')
 depends=('mpv' 'gcc-libs' 'glibc' 'fontconfig' 'freetype2' 'libxkbcommon' 'wayland' 'libx11' 'libglvnd')
 optdepends=('xdg-desktop-portal: file chooser for pictures and bookmarks'
             'gnome-keyring: a place for the session token (or any Secret Service)'
-            'vapoursynth: frame generation with RIFE')
+            'vapoursynth: frame generation with RIFE'
+            'migraphx: the neural networks on AMD GPUs')
 makedepends=('cargo' 'git' 'meson' 'ninja' 'vapoursynth')
 options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
@@ -41,9 +46,10 @@ source_x86_64=("librife-$_rife.so::$_riferepo/releases/download/$_rife/librife_l
                "rife-v4.26.param::$_riferepo/raw/master/models/rife-v4.26_ensembleFalse/flownet.param"
                "rife-v4.26.bin::$_riferepo/raw/master/models/rife-v4.26_ensembleFalse/flownet.bin"
                "LICENSE-RIFE-plugin::$_riferepo/raw/master/LICENSE"
-               "LICENSE-RIFE::https://github.com/hzwer/Practical-RIFE/raw/main/LICENSE")
+               "LICENSE-RIFE::https://github.com/hzwer/Practical-RIFE/raw/main/LICENSE"
+               "anirust-$pkgver-mlrt.tar.gz::$url/releases/download/v$pkgver/anirust-$pkgver-mlrt-linux-x86_64.tar.gz")
 sha256sums=('SKIP' 'SKIP' 'SKIP')
-sha256sums_x86_64=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+sha256sums_x86_64=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 prepare() {
   cd "AniRust-$pkgver"
@@ -82,6 +88,12 @@ package() {
     install -Dm644 rife-v4.26.bin "$rife/models/rife-v4.26_ensembleFalse/flownet.bin"
     install -Dm644 LICENSE-RIFE-plugin "$pkgdir/usr/share/licenses/$pkgname/LICENSE-RIFE-plugin"
     install -Dm644 LICENSE-RIFE "$pkgdir/usr/share/licenses/$pkgname/LICENSE-RIFE"
+
+    cp -r "$srcdir/mlrt" "$pkgdir/usr/lib/anirust/mlrt"
+    chmod -R u=rwX,go=rX "$pkgdir/usr/lib/anirust/mlrt"
+    for license in "$srcdir"/mlrt/LICENSE-*; do
+      install -Dm644 "$license" "$pkgdir/usr/share/licenses/$pkgname/$(basename "$license")"
+    done
   fi
 
   cd "AniRust-$pkgver"

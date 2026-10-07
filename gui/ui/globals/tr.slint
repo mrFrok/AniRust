@@ -84,8 +84,8 @@ export global Tr {
     out property <string> engine-openvino: lang == "ru" ? "OpenVINO · Intel" : "OpenVINO · Intel";
     out property <string> engine-migraphx: lang == "ru" ? "MIGraphX · AMD" : "MIGraphX · AMD";
     out property <string> openvino-needed: lang == "ru"
-        ? "На блоках XMX видеокарт Intel Arc нейросети работают через OpenVINO. Нужна его среда выполнения, около 55 МБ: она скачивается с сайта Intel (лицензия Apache 2.0). Пока её нет, работает Vulkan."
-        : "On Intel Arc's XMX engines the networks run through OpenVINO. It takes OpenVINO's runtime, about 55 MB, fetched from Intel (Apache 2.0 licence). Until then, Vulkan runs them.";
+        ? "На блоках XMX видеокарт Intel Arc нейросети работают через OpenVINO. Нужна его среда выполнения, 55–110 МБ: она скачивается с сайта Intel (лицензия Apache 2.0). Пока её нет, работает Vulkan."
+        : "On Intel Arc's XMX engines the networks run through OpenVINO. It takes OpenVINO's runtime, 55 to 110 MB, fetched from Intel (Apache 2.0 licence). Until then, Vulkan runs them.";
     out property <string> openvino-fetch: lang == "ru" ? "Скачать у Intel" : "Fetch from Intel";
     out property <string> migraphx-needed: lang == "ru"
         ? "На видеокартах AMD нейросети работают через MIGraphX из ROCm. Его ставят из дистрибутива — в Arch это пакет migraphx — и программа найдёт его в /opt/rocm сама. Пока его нет, работает Vulkan."

@@ -22,3 +22,6 @@ jadx-*/
 # CLI probe can be driven by an env file.
 .env
 .env.local
+
+# Python bytecode from checking the packaging scripts.
+__pycache__/

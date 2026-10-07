@@ -2,7 +2,7 @@
 # Wraps the release build in AniRust.app with libmpv and everything it
 # links copied inside, and puts it in a disk image under dist/.
 #
-#   packaging/macos/bundle.sh 0.1.0
+#   packaging/macos/bundle.sh 1.0.0
 #
 # Needs `dylibbundler` (Homebrew) and the tools macOS ships: sips, iconutil,
 # hdiutil, rsvg-convert from librsvg for the icon.
@@ -44,6 +44,13 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+
+# Frame generation's RIFE plugin and models, where the player looks for them
+# (rife/ beside the executable), when the caller fetched them
+# (packaging/fetch-rife.sh macos-arm64 DIR; RIFE_DIR=DIR).
+if [ -n "${RIFE_DIR:-}" ]; then
+  cp -R "$RIFE_DIR" "$app/Contents/MacOS/rife"
+fi
 
 # libmpv and its dependencies, rewritten to load from inside the bundle.
 dylibbundler -od -b -x "$app/Contents/MacOS/anirust" \

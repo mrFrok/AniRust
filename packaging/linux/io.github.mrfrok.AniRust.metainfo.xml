@@ -13,9 +13,10 @@
     <p>
       AniRust is an unofficial desktop client for Anixart. It browses and
       searches the catalogue, plays episodes in an mpv-based player with
-      hardware decoding, subtitles, Anime4K upscaling and frame
-      interpolation, and keeps lists, history and progress in step with an
-      Anixart account.
+      hardware decoding on every vendor's GPU, subtitles, Anime4K upscaling,
+      and neural networks — RIFE frame generation and Real-ESRGAN upscaling
+      on NVIDIA, Intel and AMD matrix units — and keeps lists, history and
+      progress in step with an Anixart account.
     </p>
     <p>
       It also reads the feed and channels, comments, collections and
@@ -37,6 +38,7 @@
     <binary>anirust</binary>
   </provides>
   <releases>
+    <release version="1.0.0" date="2026-10-07"/>
     <release version="0.1.0" date="2026-10-02"/>
   </releases>
 </component>
