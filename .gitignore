@@ -25,3 +25,10 @@ jadx-*/
 
 # Python bytecode from checking the packaging scripts.
 __pycache__/
+
+# Archives fetched while working, never meant for the tree.
+/*.tar.gz
+/*.tgz
+/*.tar.xz
+/*.7z
+/*.zip
