@@ -36,6 +36,17 @@ jobs:
       - name: Mark the checkout safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: Swatinem/rust-cache@v2
+      # rust-cache brings back what cargo left in target/, but the rest of it
+      # — the packaging scripts' sources and builds — half-deleted. Those
+      # start from nothing instead.
+      - name: Only cargo's output in target
+        run: |
+          for entry in target/* target/.[!.]*; do
+            case "${entry#target/}" in
+              release | CACHEDIR.TAG | .rustc_info.json) ;;
+              *) rm -rf "$entry" ;;
+            esac
+          done
       # libmpv with the filter, RIFE, and vs-mlrt for TensorRT, OpenVINO and
       # MIGraphX: packaging/linux/build-tarball.sh builds or fetches each.
       - name: Tarball
@@ -98,6 +109,17 @@ jobs:
             libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1 libxcursor1 libxi6 libxrandr2
           pip install --break-system-packages onnx onnxconverter-common
       - uses: Swatinem/rust-cache@v2
+      # rust-cache brings back what cargo left in target/, but the rest of it
+      # — the packaging scripts' sources and builds — half-deleted. Those
+      # start from nothing instead.
+      - name: Only cargo's output in target
+        run: |
+          for entry in target/* target/.[!.]*; do
+            case "${entry#target/}" in
+              release | CACHEDIR.TAG | .rustc_info.json) ;;
+              *) rm -rf "$entry" ;;
+            esac
+          done
       - name: AppImage
         run: packaging/linux/build-appimage.sh
       - name: Checksums
@@ -130,11 +152,16 @@ jobs:
             "org.freedesktop.Platform//$runtime" "org.freedesktop.Sdk//$runtime" \
             "org.freedesktop.Sdk.Extension.rust-stable//$runtime"
           python3 packaging/mlrt/prepare-models.py target/mlrt
-      - uses: actions/cache@v4
+      # flatpak-builder keeps each finished module in .flatpak-builder: saved
+      # even when the build fails, the next run starts at the module that
+      # stopped it, not at ffmpeg.
+      - uses: actions/cache/restore@v4
         with:
           path: .flatpak-builder
-          key: flatpak-builder-${{ hashFiles('packaging/flatpak/*.yml') }}
-          restore-keys: flatpak-builder-
+          key: flatpak-builder-${{ hashFiles('packaging/flatpak/*.yml') }}-${{ github.run_id }}
+          restore-keys: |
+            flatpak-builder-${{ hashFiles('packaging/flatpak/*.yml') }}-
+            flatpak-builder-
       - name: Bundle
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
@@ -145,6 +172,11 @@ jobs:
           flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
             repo "dist/$name" "$APP_ID"
           cd dist && sha256sum "$name" > "$name.sha256"
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .flatpak-builder
+          key: flatpak-builder-${{ hashFiles('packaging/flatpak/*.yml') }}-${{ github.run_id }}
       - uses: actions/upload-artifact@v4
         with:
           name: flatpak
@@ -168,6 +200,8 @@ jobs:
         run: pip install onnx onnxconverter-common ninja
       - name: libmpv
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: ./packaging/windows/fetch-libmpv.ps1 -Destination mpv
       - name: Build and stage
         shell: pwsh
@@ -186,12 +220,13 @@ jobs:
         run: packaging/fetch-rife.sh windows "stage/$name/rife"
       # The GPUs' matrix units: vs-mlrt for TensorRT and OpenVINO, built with
       # MSVC, and the networks. The vendors' runtimes are fetched by the
-      # player when asked.
+      # player when asked. Built outside target/, which rust-cache prunes.
       - name: vs-mlrt
         run: |
           out="$(pwd)/stage/$name/mlrt"
-          OUT_DIR="$out" WORK_DIR="$(pwd)/target/mlrt-build" packaging/mlrt/build-vstrt.sh
-          OUT_DIR="$out" WORK_DIR="$(pwd)/target/mlrt-build" packaging/mlrt/build-vsov.sh
+          work="$(cygpath -u "$RUNNER_TEMP")/mlrt-build"
+          OUT_DIR="$out" WORK_DIR="$work" packaging/mlrt/build-vstrt.sh
+          OUT_DIR="$out" WORK_DIR="$work" packaging/mlrt/build-vsov.sh
           python packaging/mlrt/prepare-models.py "$out"
       - name: Pack
         shell: pwsh

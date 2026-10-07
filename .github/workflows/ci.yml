@@ -54,6 +54,8 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
       - name: libmpv
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: ./packaging/windows/fetch-libmpv.ps1 -Destination mpv
       - name: Build
         shell: pwsh

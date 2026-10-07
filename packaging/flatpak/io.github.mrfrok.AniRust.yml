@@ -76,9 +76,8 @@ modules:
       - --disable-static
     sources:
       - type: archive
-        archive-type: tar
-        url: https://api.github.com/repos/sekrit-twc/zimg/tarball/release-3.0.6
-        sha256: 15140e491c4ce9db5f02a038d8a1eb53e9151b55eeed06a2899425a6ebfef367
+        url: https://github.com/sekrit-twc/zimg/archive/refs/tags/release-3.0.6.tar.gz
+        sha256: be89390f13a5c9b2388ce0f44a5e89364a20c1c57ce46d382b1fcc3967057577
 
   # Decoding only, which is all the player asks of it; the command-line
   # ffmpeg stays, because episode downloads remux through it.
@@ -107,13 +106,15 @@ modules:
       - --with-python-prefix=${FLATPAK_DEST}
     sources:
       - type: archive
-        dest-filename: vapoursynth.tar.gz
-        url: https://api.github.com/repos/vapoursynth/vapoursynth/tarball/R73
-        sha256: 9c02a68b29eb446b2d0b1be3d831420fdc2bd703aacccc468faef9f94e3bf85f
+        url: https://github.com/vapoursynth/vapoursynth/archive/refs/tags/R73.tar.gz
+        sha256: 1bb8ffe31348eaf46d8f541b138f0136d10edaef0c130c1e5a13aa4a4b057280
 
+  # Meson picks lib64 under /app on its own, where neither pkg-config nor the
+  # loader looks: the meson modules are told lib, like the rest.
   - name: libplacebo
     buildsystem: meson
     config-opts:
+      - --libdir=lib
       - -Dvulkan=enabled
       - -Dshaderc=enabled
       - -Ddemos=false
@@ -129,6 +130,7 @@ modules:
   - name: mpv
     buildsystem: meson
     config-opts:
+      - --libdir=lib
       - -Dlibmpv=true
       - -Dcplayer=false
       - -Dvapoursynth=enabled

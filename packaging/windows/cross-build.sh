@@ -22,7 +22,9 @@ mpv=${MPV_DIR:-$root/target/windows-mpv}
 
 if [ ! -f "$mpv/libmpv.dll.a" ]; then
     echo "fetching libmpv for Windows"
-    url=$(curl -fsSL https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest |
+    # With a token, if there is one: without, the API allows 60 requests an hour.
+    url=$(curl -fsSL ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} \
+        https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest |
         grep -o '"browser_download_url": *"[^"]*/mpv-dev-x86_64-[0-9]\{8\}-git-[0-9a-f]*\.7z"' |
         head -n 1 | sed 's/.*"\(https[^"]*\)"/\1/')
     [ -n "$url" ] || { echo "no mpv-dev-x86_64 archive in the latest release" >&2; exit 1; }

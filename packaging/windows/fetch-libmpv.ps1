@@ -11,7 +11,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$release = Invoke-RestMethod "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
+# Asked without a token, GitHub's API allows 60 requests an hour to an
+# address, and CI runners share theirs; with one (GITHUB_TOKEN, which CI
+# hands every job) the limit is the token's own.
+$headers = @{}
+if ($env:GITHUB_TOKEN) { $headers.Authorization = "Bearer $env:GITHUB_TOKEN" }
+$release = Invoke-RestMethod -Headers $headers "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
 $asset = $release.assets |
     Where-Object { $_.name -match '^mpv-dev-x86_64-\d{8}-git-[0-9a-f]+\.7z$' } |
     Select-Object -First 1
