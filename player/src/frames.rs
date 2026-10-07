@@ -408,8 +408,16 @@ impl Mlrt {
         ctypes.CDLL(os.path.join(runtime, "runtime", "lib", "intel64", "libopenvino.so"), mode=ctypes.RTLD_GLOBAL)
 "#
             .to_owned(),
-            // ROCm is the system's, on the library path already.
-            Backend::MigraphX => String::new(),
+            // ROCm is the system's. Arch puts its lib/ on the loader's path;
+            // loading the two libraries the plugin needs by their full path
+            // covers a ROCm elsewhere too.
+            Backend::MigraphX => r#"    if sys.platform != "win32":
+        for name in ("libamdhip64.so.7", "libmigraphx_c.so.3"):
+            path = os.path.join(runtime, "lib", name)
+            if os.path.exists(path):
+                ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
+"#
+            .to_owned(),
         };
         let (namespace, backend) = match self.backend {
             Backend::TensorRt => (

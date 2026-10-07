@@ -36,13 +36,16 @@ if [ ! -d vs-mlrt ]; then
     mv "vs-mlrt-$vs_mlrt" vs-mlrt
     (
         cd vs-mlrt
-        python3 "$root/packaging/mlrt/port-api4.py" vstrt
-        # vstrt's CMake names the build after `git describe`.
+        # vs-mlrt's CMake names the build after `git describe`.
         git init -q
         git add -A
         git -c user.name=anirust -c user.email=anirust@localhost commit -qm "vs-mlrt $vs_mlrt"
         git tag "vs-mlrt-$vs_mlrt"
     )
+fi
+if [ ! -f vs-mlrt/vstrt/.anirust-ported ]; then
+    python3 "$root/packaging/mlrt/port-api4.py" vs-mlrt/vstrt
+    touch vs-mlrt/vstrt/.anirust-ported
 fi
 
 if [ ! -d trt-rtx ]; then
@@ -70,11 +73,11 @@ if [ ! -d "vapoursynth-$vs_version" ]; then
     tar xzf vs.tar.gz
 fi
 
-cmake -S vs-mlrt/vstrt -B build -G Ninja \
+cmake -S vs-mlrt/vstrt -B build-vstrt -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DTENSORRT_HOME="$work/trt-rtx" \
     -DVAPOURSYNTH_INCLUDE_DIRECTORY="$work/vapoursynth-$vs_version/include" \
     -DCUDAToolkit_ROOT="$work/cuda"
-ninja -C build
-cp build/libvstrt_rtx.so "$out/libvstrt_rtx.so"
+ninja -C build-vstrt
+cp build-vstrt/libvstrt_rtx.so "$out/libvstrt_rtx.so"
 echo "$out/libvstrt_rtx.so"

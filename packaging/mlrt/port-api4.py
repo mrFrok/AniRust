@@ -220,10 +220,12 @@ def port(source: str) -> str:
 def main() -> None:
     plugin = pathlib.Path(sys.argv[1])
     for path in sorted(plugin.glob("*.cpp")) + sorted(plugin.glob("*.h")):
-        before = path.read_text()
+        # UTF-8 whatever the platform's own encoding: on Windows Python
+        # would read cp1252 and choke on vs-mlrt's sources.
+        before = path.read_text(encoding="utf-8")
         after = port(before)
         if after != before:
-            path.write_text(after)
+            path.write_text(after, encoding="utf-8", newline="\n")
             print(f"ported {path}")
 
 
