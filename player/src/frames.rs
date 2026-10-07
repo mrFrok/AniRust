@@ -216,6 +216,17 @@ pub enum Backend {
 impl Backend {
     pub const ALL: [Self; 3] = [Self::TensorRt, Self::OpenVino, Self::MigraphX];
 
+    /// The PCI vendor id of the GPUs this runtime runs on — and only on:
+    /// OpenVINO cannot see an NVIDIA card, nor TensorRT an AMD one.
+    #[must_use]
+    pub fn gpu_vendor(self) -> u32 {
+        match self {
+            Self::TensorRt => 0x10de,
+            Self::OpenVino => 0x8086,
+            Self::MigraphX => 0x1002,
+        }
+    }
+
     /// Our ported plugin for this runtime, as built for this platform.
     #[must_use]
     pub fn plugin(self) -> &'static str {

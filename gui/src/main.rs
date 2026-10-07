@@ -23,6 +23,7 @@ mod desktop;
 mod downloads;
 mod editor;
 mod feed;
+mod gpus;
 mod home;
 mod notifications;
 mod people;
@@ -2150,8 +2151,9 @@ struct Settings {
     engine: Cell<usize>,
     /// Real-ESRGAN doubling the picture first. vs-mlrt only.
     neural_upscale: Cell<bool>,
-    /// Which of the vs-mlrt plugins the program carries, by backend.
-    shipped: [bool; 3],
+    /// Which vs-mlrt backends the menu offers: those whose plugin the
+    /// program carries, for a GPU the machine has ([`offered_engines`]).
+    offered: [bool; 3],
     /// vs-mlrt on each backend whose vendor runtime is there too.
     mlrt: RefCell<[Option<Mlrt>; 3]>,
     /// What fetching a vendor runtime is doing, for the line on screen.
@@ -2189,7 +2191,7 @@ struct Settings {
 impl Settings {
     /// The player as the preferences open it.
     fn from_preferences(kept: preferences::PlayerPreferences) -> Self {
-        let shipped = Backend::ALL.map(Mlrt::ships);
+        let offered = offered_engines(Backend::ALL.map(Mlrt::ships), gpus::vendors());
         Self {
             speed: Cell::new(kept.speed),
             upscale_mode: Cell::new(kept.upscale_mode.min(UpscaleMode::ALL.len() - 1)),
@@ -2206,9 +2208,9 @@ impl Settings {
             frame_rate: Cell::new(kept.frame_rate.min(adapt::RATE_HALF_DISPLAY)),
             rife_model: Cell::new(kept.rife_model.min(RifeModel::ALL.len() - 1)),
             rife: RifeInstall::find(),
-            engine: Cell::new(engine_kept(kept.engine, &shipped)),
+            engine: Cell::new(engine_kept(kept.engine, &offered)),
             neural_upscale: Cell::new(kept.neural_upscale),
-            shipped,
+            offered,
             mlrt: RefCell::new(Backend::ALL.map(Mlrt::find)),
             runtime_fetch: RefCell::new(String::new()),
             generation_since: Cell::new(None),
@@ -2375,15 +2377,28 @@ fn subtitle_fonts_dir() -> Option<std::path::PathBuf> {
 }
 
 /// A line for fetching NVIDIA's runtime: how much has come, then unpacking.
-/// The kept engine, if this build still carries it; Vulkan otherwise — a
-/// choice made with another build, say, would leave a chip selected that the
-/// menu no longer shows.
-fn engine_kept(kept: usize, shipped: &[bool; 3]) -> usize {
+/// The kept engine, if the menu still offers it; Vulkan otherwise — a choice
+/// made with another build or another GPU would leave a chip selected that
+/// the menu no longer shows.
+fn engine_kept(kept: usize, offered: &[bool; 3]) -> usize {
     match kept {
         0 => 0,
-        engine if shipped.get(engine - 1).copied().unwrap_or(false) => engine,
+        engine if offered.get(engine - 1).copied().unwrap_or(false) => engine,
         _ => 0,
     }
+}
+
+/// The vs-mlrt backends the menu offers: each one this build carries, where
+/// the machine has a GPU of its maker. Where the GPUs cannot be told, every
+/// one this build carries — better a choice that may not run than none.
+fn offered_engines(shipped: [bool; 3], vendors: Option<&[u32]>) -> [bool; 3] {
+    let mut offered = shipped;
+    if let Some(vendors) = vendors {
+        for (at, backend) in Backend::ALL.into_iter().enumerate() {
+            offered[at] &= vendors.contains(&backend.gpu_vendor());
+        }
+    }
+    offered
 }
 
 /// A backend's name, for lines on screen.
@@ -2395,33 +2410,16 @@ fn backend_name(backend: Backend) -> &'static str {
     }
 }
 
-/// The engine that suits the GPU in this machine, by its vendor: TensorRT
-/// for NVIDIA, MIGraphX for AMD, OpenVINO for Intel, Vulkan when it cannot
-/// be told. Read from the kernel's view of the display devices on Linux.
-fn recommended_engine() -> usize {
-    use std::sync::OnceLock;
-    static VENDOR: OnceLock<usize> = OnceLock::new();
-    *VENDOR.get_or_init(|| {
-        let Ok(cards) = std::fs::read_dir("/sys/class/drm") else {
-            return 0;
-        };
-        let vendors: Vec<String> = cards
-            .flatten()
-            .filter_map(|card| std::fs::read_to_string(card.path().join("device/vendor")).ok())
-            .map(|vendor| vendor.trim().to_owned())
-            .collect();
-        // A discrete card over an integrated one: NVIDIA, then AMD, then Intel.
-        for (vendor, backend) in [
-            ("0x10de", Backend::TensorRt),
-            ("0x1002", Backend::MigraphX),
-            ("0x8086", Backend::OpenVino),
-        ] {
-            if vendors.iter().any(|found| found == vendor) {
-                return backend_index(backend) + 1;
-            }
-        }
-        0
-    })
+/// The engine that suits the GPU in this machine, by its maker: TensorRT
+/// for NVIDIA, MIGraphX for AMD, OpenVINO for Intel, Vulkan when none of
+/// them is there or the GPUs cannot be told.
+fn recommended_engine(vendors: Option<&[u32]>) -> usize {
+    let vendors = vendors.unwrap_or_default();
+    // A discrete card over an integrated one: NVIDIA, then AMD, then Intel.
+    [Backend::TensorRt, Backend::MigraphX, Backend::OpenVino]
+        .into_iter()
+        .find(|backend| vendors.contains(&backend.gpu_vendor()))
+        .map_or(0, |backend| backend_index(backend) + 1)
 }
 
 /// A backend's place in [`Backend::ALL`], and in the menus' engine list
@@ -3494,7 +3492,7 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             let choices: Vec<i32> = std::iter::once(0)
                 .chain(
                     (0..Backend::ALL.len())
-                        .filter(|&at| settings.shipped[at])
+                        .filter(|&at| settings.offered[at])
                         .map(|at| at as i32 + 1),
                 )
                 .collect();
@@ -3508,7 +3506,7 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
                     .is_some_and(|backend| backend.download_url().is_some()),
             );
             window.set_runtime_fetch(settings.runtime_fetch.borrow().as_str().into());
-            window.set_recommended_engine(recommended_engine() as i32);
+            window.set_recommended_engine(recommended_engine(gpus::vendors()) as i32);
             window.set_neural_upscale(settings.neural_upscale.get());
             window.set_adaptive(settings.adaptive.get());
             window.set_upscale_quality(settings.upscale_quality.get() as i32);
@@ -3887,7 +3885,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_kept_engine_this_build_lacks_falls_back_to_vulkan() {
+    fn engines_are_offered_for_the_gpus_the_machine_has() {
+        let all = [true; 3];
+        // NVIDIA alone: TensorRT, not OpenVINO or MIGraphX.
+        assert_eq!(offered_engines(all, Some(&[0x10de])), [true, false, false]);
+        // A laptop with Intel graphics and an NVIDIA card: both.
+        assert_eq!(
+            offered_engines(all, Some(&[0x8086, 0x10de])),
+            [true, true, false]
+        );
+        // Windows' software renderer counts for nothing.
+        assert_eq!(
+            offered_engines(all, Some(&[0x1414, 0x1002])),
+            [false, false, true]
+        );
+        // Only what this build carries, GPU or not.
+        assert_eq!(
+            offered_engines([true, true, false], Some(&[0x1002])),
+            [false; 3]
+        );
+        // GPUs unknown: everything carried.
+        assert_eq!(
+            offered_engines([true, true, false], None),
+            [true, true, false]
+        );
+    }
+
+    #[test]
+    fn the_recommended_engine_prefers_the_discrete_card() {
+        let tensorrt = backend_index(Backend::TensorRt) + 1;
+        let openvino = backend_index(Backend::OpenVino) + 1;
+        let migraphx = backend_index(Backend::MigraphX) + 1;
+        assert_eq!(recommended_engine(Some(&[0x8086, 0x10de])), tensorrt);
+        assert_eq!(recommended_engine(Some(&[0x8086, 0x1002])), migraphx);
+        assert_eq!(recommended_engine(Some(&[0x8086])), openvino);
+        assert_eq!(recommended_engine(Some(&[0x106b])), 0);
+        assert_eq!(recommended_engine(None), 0);
+    }
+
+    #[test]
+    fn a_kept_engine_the_menu_no_longer_offers_falls_back_to_vulkan() {
         assert_eq!(engine_kept(1, &[true, true, false]), 1);
         assert_eq!(engine_kept(3, &[true, true, false]), 0);
         assert_eq!(engine_kept(9, &[true, true, true]), 0);

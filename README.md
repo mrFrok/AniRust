@@ -113,10 +113,13 @@ XMX engines, AMD's matrix cores — through
 to VapourSynth's current API by `packaging/mlrt/port-api4.py` and built by the
 release: TensorRT for NVIDIA RTX, OpenVINO for Intel, MIGraphX for AMD. Measured
 on an RTX 4070 Ti SUPER with TensorRT, RIFE 4.26 makes 150 frames a second at
-720p and 66 at 1080p — enough for 1080p at 60 and for 720p at 120 and more —
-and the menu offers **neural upscaling** too: Real-ESRGAN AnimeVideo v3 doubles
-the picture before the shaders (720p to 1440p at 43 frames a second). The
-engine that suits the machine's GPU is marked in the menu. The vendors' runtimes
+720p and 66 at 1080p — enough for 1080p at 60 and for 720p at 120 and more.
+On any of the three, the menu offers **neural upscaling** too: Real-ESRGAN
+AnimeVideo v3 doubles the picture before the shaders (720p to 1440p at 43
+frames a second on that card). Each engine runs only on its maker's cards, so
+the menu offers the ones for the GPUs the machine has — read from the kernel
+on Linux and from DXGI on Windows — and marks the one that suits it best. The
+vendors' runtimes
 are not part of the program: TensorRT-RTX (NVIDIA's licence, about 90 MB) and
 OpenVINO (Apache 2.0, 55 to 110 MB) are fetched from their vendors by the
 player when asked, and MIGraphX comes with ROCm from the distribution

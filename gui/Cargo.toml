@@ -66,6 +66,12 @@ slint = { version = "1.18", default-features = false, features = [
 ] }
 raw-window-handle = "0.6"
 
+# The GPUs' makers on Windows, from DXGI's adapter list, so the menu offers
+# the neural engines the machine can run. The version Slint's accessibility
+# already brings in.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Graphics_Dxgi"] }
+
 # `cargo deb -p anirust-gui` — a .deb for Debian and Ubuntu.
 [package.metadata.deb]
 name = "anirust"
