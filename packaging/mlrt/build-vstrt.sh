@@ -59,7 +59,8 @@ unpack() { # archive directory — the archive's single top folder becomes it
     rm -rf unpack.tmp
     mkdir unpack.tmp
     case "$1" in
-        *.zip) unzip -q "$1" -d unpack.tmp ;;
+        # Git for Windows may lack unzip; the runners have 7-Zip.
+        *.zip) if command -v unzip >/dev/null; then unzip -q "$1" -d unpack.tmp; else 7z x -y -ounpack.tmp "$1" >/dev/null; fi ;;
         *.tar.xz) tar xJf "$1" -C unpack.tmp ;;
         *) tar xzf "$1" -C unpack.tmp ;;
     esac

@@ -2189,6 +2189,7 @@ struct Settings {
 impl Settings {
     /// The player as the preferences open it.
     fn from_preferences(kept: preferences::PlayerPreferences) -> Self {
+        let shipped = Backend::ALL.map(Mlrt::ships);
         Self {
             speed: Cell::new(kept.speed),
             upscale_mode: Cell::new(kept.upscale_mode.min(UpscaleMode::ALL.len() - 1)),
@@ -2205,9 +2206,9 @@ impl Settings {
             frame_rate: Cell::new(kept.frame_rate.min(adapt::RATE_HALF_DISPLAY)),
             rife_model: Cell::new(kept.rife_model.min(RifeModel::ALL.len() - 1)),
             rife: RifeInstall::find(),
-            engine: Cell::new(kept.engine.min(Backend::ALL.len())),
+            engine: Cell::new(engine_kept(kept.engine, &shipped)),
             neural_upscale: Cell::new(kept.neural_upscale),
-            shipped: Backend::ALL.map(Mlrt::ships),
+            shipped,
             mlrt: RefCell::new(Backend::ALL.map(Mlrt::find)),
             runtime_fetch: RefCell::new(String::new()),
             generation_since: Cell::new(None),
@@ -2374,6 +2375,17 @@ fn subtitle_fonts_dir() -> Option<std::path::PathBuf> {
 }
 
 /// A line for fetching NVIDIA's runtime: how much has come, then unpacking.
+/// The kept engine, if this build still carries it; Vulkan otherwise — a
+/// choice made with another build, say, would leave a chip selected that the
+/// menu no longer shows.
+fn engine_kept(kept: usize, shipped: &[bool; 3]) -> usize {
+    match kept {
+        0 => 0,
+        engine if shipped.get(engine - 1).copied().unwrap_or(false) => engine,
+        _ => 0,
+    }
+}
+
 /// A backend's name, for lines on screen.
 fn backend_name(backend: Backend) -> &'static str {
     match backend {
@@ -3873,6 +3885,14 @@ fn release_id_from_args() -> Result<Option<i64>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_kept_engine_this_build_lacks_falls_back_to_vulkan() {
+        assert_eq!(engine_kept(1, &[true, true, false]), 1);
+        assert_eq!(engine_kept(3, &[true, true, false]), 0);
+        assert_eq!(engine_kept(9, &[true, true, true]), 0);
+        assert_eq!(engine_kept(0, &[false, false, false]), 0);
+    }
 
     #[test]
     fn a_delay_reads_with_its_sign_and_the_locale_decimal() {
