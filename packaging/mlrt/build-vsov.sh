@@ -100,7 +100,10 @@ fi
 
 if [ ! -d protobuf/install ]; then
     checkout protocolbuffers/protobuf "$protobuf_ref" protobuf
-    cmake -S "$(native "$work/protobuf/cmake")" -B "$(native "$work/protobuf/build")" -G Ninja \
+    # From the top folder: the old cmake/ entry point starts the project
+    # before protobuf chooses MSVC's runtime, so the library would come out
+    # with the DLL runtime whatever is asked, and fail to link.
+    cmake -S "$(native "$work/protobuf")" -B "$(native "$work/protobuf/build")" -G Ninja \
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON "$runtime" \
         -Dprotobuf_BUILD_SHARED_LIBS=OFF -Dprotobuf_BUILD_TESTS=OFF \
         -Dprotobuf_MSVC_STATIC_RUNTIME=ON
