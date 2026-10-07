@@ -3,6 +3,12 @@
 A cross-platform desktop client for Anixart, written in Rust with Slint, and a
 real player built on mpv.
 
+[![Release](https://img.shields.io/github/v/release/mrFrok/AniRust)](https://github.com/mrFrok/AniRust/releases/latest)
+[![CI](https://github.com/mrFrok/AniRust/actions/workflows/ci.yml/badge.svg)](https://github.com/mrFrok/AniRust/actions/workflows/ci.yml)
+
+**[Download](https://github.com/mrFrok/AniRust/releases/latest)** for Windows,
+macOS or Linux — which file to take is under [Installing](#installing).
+
 *[Русская версия](README.ru.md)*
 
 > AniRust is an unofficial project and is **not affiliated** with the
@@ -18,9 +24,10 @@ across episodes, and progress synchronised with an Anixart account.
 
 ## Status
 
-Usable. Browse or search, open a release, pick a voice-over and an episode, and
-watch it — with the picture on the release screen rather than on a screen of its
-own, so choosing the next episode never means leaving what you are watching.
+Released: 1.0.0 is the first version for everyday use. Browse or search, open
+a release, pick a voice-over and an episode, and watch it — with the picture on
+the release screen rather than on a screen of its own, so choosing the next
+episode never means leaving what you are watching.
 
 Working:
 
@@ -92,12 +99,12 @@ through mpv's VapourSynth filter and a Vulkan plugin, so on any vendor's card.
 It is heavy: on an RTX 4070 Ti SUPER, RIFE 4.6 makes 74 frames a second at 720p
 and 46 at 1080p, so sources taller than 720 lines are brought down for it and
 the upscaling after it brings them back. It needs three things, none of them
-linked, so the program runs without them: a libmpv with the VapourSynth filter
-(the Windows one has it; on Linux, `packaging/linux/build-libmpv.sh`, which the
-Linux archive ships), VapourSynth itself, and the plugin with its models
-(`packaging/fetch-rife.sh`, shipped in both archives). When one is missing the
-menu says so, and if the filter fails, mpv plays on without it and the log says
-why.
+linked, so the program runs without them: a libmpv with the VapourSynth filter,
+VapourSynth itself, and the plugin with its models. Every package but the
+`.deb` carries the libmpv and the plugin, and the Flatpak VapourSynth as well;
+elsewhere VapourSynth is installed once (see [Installing](#installing)). When
+one is missing the menu says so, and if the filter fails, mpv plays on without
+it and the log says why.
 
 **Neural networks on the matrix units.** The same networks run two to three
 times faster on the units GPUs keep for them — NVIDIA's tensor cores, Intel's
@@ -115,7 +122,10 @@ OpenVINO (Apache 2.0, 55 to 110 MB) are fetched from their vendors by the
 player when asked, and MIGraphX comes with ROCm from the distribution
 (`migraphx` on Arch). Until the runtime is there, Vulkan runs the networks. The
 first time an engine meets a picture size it compiles the network for the card,
-which takes ten seconds or more once; the player says so meanwhile.
+which takes ten seconds or more once; the player says so meanwhile. The
+figures above are TensorRT's, the only ones measured so far: OpenVINO and
+MIGraphX are built and load, but are yet to be timed on Intel and AMD cards.
+macOS has no engine of this kind yet.
 
 **Keeping up.** If frames start dropping — more than one a second over ten
 seconds of playback — the load comes down a step by itself: neural upscaling
@@ -155,50 +165,80 @@ can be switched off.
 
 ## Installing
 
-Tagged releases build a Flatpak, an AppImage, a Linux tarball, a `.deb`, a
-Windows zip with libmpv beside the program, and a macOS disk image; Arch has a
-PKGBUILD in `packaging/arch/`. Which Linux one to take:
+Every release is on the
+[releases page](https://github.com/mrFrok/AniRust/releases/latest), each file
+with a `.sha256` beside it (`sha256sum -c FILE.sha256`).
 
-| Distribution | Take |
+| System | Take |
 | --- | --- |
-| Arch, CachyOS, Manjaro, openSUSE Tumbleweed | the tarball, or the PKGBUILD |
-| Ubuntu 24.04+, Debian 13+, Fedora 40+ and other glibc systems that recent | the AppImage |
-| anything else — older glibc, or none at all (Alpine, Void musl, Chimera) | the Flatpak |
+| Windows 10 and 11 | `anirust-<version>-windows-x86_64.zip` |
+| macOS 14+ on Apple silicon | `anirust-<version>-macos-arm64.dmg` |
+| Arch, CachyOS, Manjaro, openSUSE Tumbleweed | `anirust-<version>-linux-x86_64.tar.gz`, or the PKGBUILD |
+| Ubuntu 24.04+, Debian 13+, Fedora 40+ and other glibc systems that recent | `AniRust-<version>-x86_64.AppImage` |
+| any other Linux — older glibc, or none at all (Alpine, Void musl, Chimera) | `anirust-<version>-x86_64.flatpak` |
 
+- **Windows** — unpack the zip anywhere and run `anirust.exe`. It carries
+  libmpv, the RIFE plugin and vs-mlrt for TensorRT and OpenVINO. For frame
+  generation, install VapourSynth from its
+  [releases](https://github.com/vapoursynth/vapoursynth/releases). AMD cards
+  run the networks through Vulkan on Windows: MIGraphX is Linux-only here. The
+  program is not signed, so SmartScreen may stop its first start: "More info",
+  then "Run anyway".
+- **macOS** — open the disk image and copy AniRust to Applications. It carries
+  libmpv and the RIFE plugin, which runs through Vulkan on Metal. Apple has not
+  notarised it, so macOS refuses the first start: allow it under System
+  Settings → Privacy & Security → "Open Anyway", or run
+  `xattr -dr com.apple.quarantine /Applications/AniRust.app`. Frame generation
+  has yet to be tried on a Mac.
+- **The Linux tarball** — unpack it and run `anirust` inside; the first start
+  adds it to the desktop's applications. It is built on Arch and carries its
+  own libmpv, with the VapourSynth filter, in `lib/`, the RIFE plugin in
+  `rife/` and vs-mlrt in `mlrt/`; the rest of libmpv's libraries come from the
+  system, so it runs whole on rolling distributions. Elsewhere its launcher
+  falls back to the system's libmpv and everything but frame generation works.
+  For frame generation, install VapourSynth (`vapoursynth` on Arch); the first
+  time it is switched on, the program runs `vapoursynth config`, which
+  VapourSynth needs once to find its Python.
+- **The PKGBUILD** in `packaging/arch/` builds the tagged release from source
+  with `makepkg -si`, libmpv with the filter included; the RIFE plugin comes
+  from upstream and vs-mlrt from the release
+  (`anirust-<version>-mlrt-linux-x86_64.tar.gz` is that vs-mlrt alone).
+- **The AppImage** — `chmod +x` it and run it; the first start adds it to the
+  desktop's applications. One file with its own libmpv (with the filter), RIFE
+  and vs-mlrt, built on Ubuntu 24.04. Frame generation uses the host's
+  VapourSynth when it has one.
 - **The Flatpak** carries the whole player in its own runtime — ffmpeg, mpv
   with the VapourSynth filter, VapourSynth, RIFE and vs-mlrt — so it runs on
-  any Linux and frame generation works out of the box. Install it with
-  `flatpak install --user anirust-<version>-x86_64.flatpak`; the runtime comes
-  from Flathub, and the GPU driver, NVIDIA's included, from Flatpak's GL
-  extension.
-- **The AppImage** is one file with its own libmpv (with the filter), RIFE and
-  vs-mlrt, built on Ubuntu 24.04. Frame generation uses the host's VapourSynth
-  when it has one.
-
-- **The Linux tarball** is built on Arch and carries its own libmpv, with the
-  VapourSynth filter, in `lib/`, the RIFE plugin in `rife/` and vs-mlrt in
-  `mlrt/`; the rest of libmpv's libraries come from the system, so it runs
-  whole on rolling distributions — Arch, CachyOS, Manjaro, openSUSE Tumbleweed.
-  Elsewhere its launcher falls back to the system's libmpv and everything but
-  frame generation works; the `.deb` is the better choice there. For frame
-  generation, install VapourSynth (`vapoursynth` on Arch); the first time it is
-  switched on, the program runs `vapoursynth config`, which VapourSynth needs
-  once to find its Python.
-- **The `.deb`** (Debian, Ubuntu) plays through the system's libmpv, which
-  those distributions build without the VapourSynth filter.
-- **The Windows zip** carries libmpv, the RIFE plugin and vs-mlrt for TensorRT
-  and OpenVINO. For frame generation, install VapourSynth from its
-  [releases](https://github.com/vapoursynth/vapoursynth/releases). AMD cards
-  run the networks through Vulkan on Windows: MIGraphX is Linux-only here.
-  Windows builds have no console; the log goes to
-  `%LOCALAPPDATA%\anirust\anirust.log`.
+  any Linux and frame generation works out of the box.
+  `flatpak install --user anirust-<version>-x86_64.flatpak` installs it, and
+  `flatpak run io.github.mrfrok.AniRust` or the applications menu starts it;
+  the runtime comes from Flathub, and the GPU driver, NVIDIA's included, from
+  Flatpak's GL extension.
+- **The `.deb`** (`anirust_<version>-1_amd64.deb`, for Debian and Ubuntu,
+  `sudo apt install ./anirust_<version>-1_amd64.deb`) plays through the
+  system's libmpv, which those distributions build without the VapourSynth
+  filter: everything but frame generation.
 
 Releases are built by GitHub Actions (`.github/workflows/release.yml`): a tag
 `v*` builds every package, each with a `.sha256`, and publishes the release;
 started by hand, the workflow is a dry run that builds everything and publishes
 nothing.
 
+## Reporting problems
+
+In the [issues](https://github.com/mrFrok/AniRust/issues), with the log when
+something misbehaves. On Linux and macOS it goes to the terminal the program
+was started from, in more detail with `RUST_LOG=anirust=debug`; on Windows it
+is written to `%LOCALAPPDATA%\anirust\anirust.log`. Look it over before
+posting: it names the releases and episodes played, and in 1.0.0 a request that
+failed on the network shows the session token (`token=…`), which is to be cut
+out.
+
 ## Building
+
+```sh
+git clone https://github.com/mrFrok/AniRust
+```
 
 Needs Rust 1.90+ and, for the player, `libmpv` >= 2.
 
@@ -367,10 +407,9 @@ API 4, and ship with its licence, as do the networks: RIFE (MIT) and
 Real-ESRGAN (BSD-3-Clause). The vendors' runtimes are not shipped: TensorRT-RTX
 is NVIDIA's, under NVIDIA's licence, and is fetched from NVIDIA by the person
 using the program when they ask; OpenVINO (Apache 2.0) likewise from Intel;
-ROCm comes from the distribution. So is the
-Material 3 component set in `gui/material-1.18.0/`, vendored from
-`ui-libraries/material` of slint-ui/slint at the tag matching the `slint`
-dependency — it has no crates.io package, and a UI that changes shape when
+ROCm comes from the distribution. The Material 3 component set in
+`gui/material-1.18.0/` is MIT, vendored from `ui-libraries/material` of
+slint-ui/slint at the tag matching the `slint` dependency — it has no crates.io package, and a UI that changes shape when
 someone else tags a release is not a UI anyone can review. One change is
 ours, marked in place: the secondary tab bar gives every tab the same width,
 so its indicator stays under the tab it marks.
