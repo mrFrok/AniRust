@@ -391,9 +391,7 @@ impl Mlrt {
             // them by name.
             Backend::TensorRt => r#"    libs = [os.path.join(runtime, "lib"), os.path.join(runtime, "bin")]
     if sys.platform == "win32":
-        for d in libs:
-            if os.path.isdir(d):
-                os.add_dll_directory(d)
+        on_windows_path(libs)
     else:
         for name in ("libtensorrt_rtx.so.1", "libtensorrt_onnxparser_rtx.so.1"):
             ctypes.CDLL(os.path.join(libs[0], name), mode=ctypes.RTLD_GLOBAL)
@@ -401,9 +399,7 @@ impl Mlrt {
             .to_owned(),
             // OpenVINO likewise, with TBB under it, which it is built on.
             Backend::OpenVino => r#"    if sys.platform == "win32":
-        for d in (os.path.join(runtime, "runtime", "bin", "intel64", "Release"), os.path.join(runtime, "runtime", "3rdparty", "tbb", "bin")):
-            if os.path.isdir(d):
-                os.add_dll_directory(d)
+        on_windows_path([os.path.join(runtime, "runtime", "bin", "intel64", "Release"), os.path.join(runtime, "runtime", "3rdparty", "tbb", "bin")])
     else:
         tbb = os.path.join(runtime, "runtime", "3rdparty", "tbb", "lib")
         for name in sorted(os.listdir(tbb)):
@@ -420,13 +416,16 @@ impl Mlrt {
                 "trt_rtx",
                 format!(
                     r#"    vsmlrt.tensorrt_rtx_path = os.path.join(runtime, "bin", "tensorrt_rtx.exe" if sys.platform == "win32" else "tensorrt_rtx")
-    # vsmlrt starts the engine builder with nothing but what is given here.
+    # vsmlrt starts the engine builder with nothing but what is given here:
+    # the whole environment, with the runtime first on the library path.
     path_var = "PATH" if sys.platform == "win32" else "LD_LIBRARY_PATH"
+    builder_env = dict(os.environ)
+    builder_env[path_var] = os.pathsep.join(libs + [builder_env.get(path_var, "")])
     backend = vsmlrt.Backend.TRT_RTX(
         fp16=False,  # the networks are fp16 already; see prepare-models.py
         num_streams=4,
         engine_folder={engines},
-        custom_env={{path_var: os.pathsep.join(libs)}},
+        custom_env=builder_env,
     )
 "#,
                     engines = python_string(&engines_dir()),
@@ -620,6 +619,19 @@ import traceback
 import vapoursynth as vs
 
 core = vs.core
+
+
+def on_windows_path(dirs):
+    """Puts a vendor runtime where the plugins' delay-loading finds it.
+
+    vs-mlrt's plugins look for the runtime beside themselves first, then let
+    Windows search for it — and Windows searches the process's PATH, which
+    is read at the moment of loading. add_dll_directory is not enough: the
+    plain LoadLibrary the plugins fall back to does not consult it."""
+    dirs = [d for d in dirs if os.path.isdir(d)]
+    for d in dirs:
+        os.add_dll_directory(d)
+    os.environ["PATH"] = os.pathsep.join(dirs + [os.environ.get("PATH", "")])
 
 
 def mark_scene_changes(clip, threshold=0.12):

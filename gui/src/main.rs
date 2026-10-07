@@ -2233,7 +2233,7 @@ impl Settings {
             upscale_quality: self.upscale_quality.get(),
             frame_rate: self.frame_rate.get(),
             rife_model: self.rife_model.get(),
-            neural_upscale: self.on_tensorrt() && self.neural_upscale.get(),
+            neural_upscale: self.on_mlrt() && self.neural_upscale.get(),
             display_hz: self.display_fps.get().map_or(0, |fps| fps.round() as u32),
         }
     }
@@ -3477,7 +3477,7 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             window.set_picture(settings.picture.get() as i32);
             window.set_frame_rate(settings.frame_rate.get() as i32);
             window.set_rife_model(settings.rife_model.get() as i32);
-            window.set_frames_available(settings.rife.is_some() || settings.on_tensorrt());
+            window.set_frames_available(settings.rife.is_some() || settings.on_mlrt());
             window.set_neural_engine(settings.engine.get() as i32);
             let choices: Vec<i32> = std::iter::once(0)
                 .chain(
@@ -3724,9 +3724,9 @@ fn generated_fps(player: &Player, settings: &Settings) -> Option<f64> {
         if since.elapsed() < std::time::Duration::from_secs(3) {
             return working.then_some(out);
         }
-        // TensorRT compiles a network for the card the first time it meets a
-        // picture size, which holds the picture for ten seconds or so.
-        let grace = if settings.on_tensorrt() { 30 } else { 6 };
+        // vs-mlrt compiles a network for the card the first time it meets a
+        // picture size, which holds the picture for ten seconds or more.
+        let grace = if settings.on_mlrt() { 60 } else { 6 };
         if working {
             tracing::info!(source, out, "frame generation is working");
             settings.generation_since.set(None);
@@ -3743,14 +3743,14 @@ fn generated_fps(player: &Player, settings: &Settings) -> Option<f64> {
     working.then_some(out)
 }
 
-/// Says, once, that TensorRT is compiling a network for this card, when the
-/// picture has stood still for a few seconds after the filters changed —
+/// Says, once, that the engine is compiling a network for this card, when
+/// the picture has stood still for a few seconds after the filters changed —
 /// otherwise a frozen frame goes unexplained.
 fn explain_engine_build(window: &MainWindow, settings: &Settings) {
     let Some(since) = settings.generation_since.get() else {
         return;
     };
-    if !settings.on_tensorrt()
+    if !settings.on_mlrt()
         || settings.engine_build_said.get()
         || since.elapsed() < std::time::Duration::from_secs(3)
     {
@@ -3761,9 +3761,9 @@ fn explain_engine_build(window: &MainWindow, settings: &Settings) {
     show_hint(
         window,
         if ru {
-            "Собираю движок TensorRT под эту видеокарту: один раз, около 15 секунд"
+            "Готовлю нейросеть под эту видеокарту: один раз для каждого размера кадра"
         } else {
-            "Building a TensorRT engine for this card: once, about 15 seconds"
+            "Preparing the network for this GPU: once for each picture size"
         }
         .to_owned(),
     );
