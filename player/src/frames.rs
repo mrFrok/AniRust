@@ -149,9 +149,10 @@ const PLUGIN: &str = "librife.dylib";
 const PLUGIN: &str = "librife.so";
 
 /// Where a build puts a folder named `name`: `env` first, then beside the
-/// executable (the Windows zip, the macOS bundle), `../name` from it (the
-/// Linux archive, whose programs sit in bin/), `../lib/anirust/name` (system
-/// packages), then the user's data folder.
+/// executable (the Windows zip), `../name` from it (the Linux archive, whose
+/// programs sit in bin/), `../lib/anirust/name` (system packages, the
+/// AppImage, the Flatpak), `../Resources/name` (the macOS bundle), then the
+/// user's data folder.
 fn places(env: &str, name: &str) -> Vec<PathBuf> {
     let mut places: Vec<PathBuf> = Vec::new();
     if let Some(dir) = std::env::var_os(env) {
@@ -164,6 +165,8 @@ fn places(env: &str, name: &str) -> Vec<PathBuf> {
         places.push(exe_dir.join(name));
         places.push(exe_dir.join("..").join(name));
         places.push(exe_dir.join("../lib/anirust").join(name));
+        // The macOS bundle: Contents/MacOS holds only the executable.
+        places.push(exe_dir.join("../Resources").join(name));
     }
     if let Some(data) = dirs::data_dir() {
         places.push(data.join("anirust").join(name));

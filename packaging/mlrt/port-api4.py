@@ -124,6 +124,13 @@ def port(source: str) -> str:
     for old, new in RENAMES:
         source = source.replace(old, new)
     source = re.sub(r"(?<![:\w])int64ToIntS\(", "vsh::int64ToIntS(", source)
+    # Strides are ptrdiff_t now; vs-mlrt keeps them in ints, which MSVC
+    # refuses to narrow to inside a braced initialiser.
+    source = re.sub(
+        r"\.pitch = (vsapi->getStride\([^()]*\))",
+        r".pitch = static_cast<int>(\1)",
+        source,
+    )
     # A property's type is an enum now, not a character to print.
     source = source.replace('+ type + ")"', '+ std::to_string(type) + ")"')
 

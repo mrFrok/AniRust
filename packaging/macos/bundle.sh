@@ -45,11 +45,15 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Frame generation's RIFE plugin and models, where the player looks for them
-# (rife/ beside the executable), when the caller fetched them
-# (packaging/fetch-rife.sh macos-arm64 DIR; RIFE_DIR=DIR).
+# Frame generation's RIFE plugin and models, when the caller fetched them
+# (packaging/fetch-rife.sh macos-arm64 DIR; RIFE_DIR=DIR). In Resources, where
+# the player looks for them (../Resources/rife from the executable): folders
+# beside the executable read as nested bundles to codesign, and the models'
+# folders are not bundles. The plugin is code, so it is signed itself — on
+# Apple silicon an unsigned library does not load.
 if [ -n "${RIFE_DIR:-}" ]; then
-  cp -R "$RIFE_DIR" "$app/Contents/MacOS/rife"
+  cp -R "$RIFE_DIR" "$app/Contents/Resources/rife"
+  codesign --force --sign - "$app/Contents/Resources/rife/librife.dylib"
 fi
 
 # libmpv and its dependencies, rewritten to load from inside the bundle.

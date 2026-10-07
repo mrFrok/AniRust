@@ -36,11 +36,8 @@ cargo build --release --locked -p anirust-gui -p anirust-cli
 
 appdir="$root/target/AppDir"
 rm -rf "$appdir"
-mkdir -p "$appdir/usr/bin" "$appdir/usr/lib/anirust/mlrt"
+mkdir -p "$appdir/usr/bin"
 cp target/release/anirust target/release/anirust-cli "$appdir/usr/bin/"
-# Where the program looks for them: ../lib/anirust from its own folder.
-cp -r "$rife" "$appdir/usr/lib/anirust/rife"
-cp -r "$mlrt/vsmlrt.py" "$mlrt/models" "$mlrt"/LICENSE-* "$mlrt"/lib*.so "$appdir/usr/lib/anirust/mlrt/"
 
 tools="$root/target/appimage-tools"
 mkdir -p "$tools"
@@ -94,8 +91,16 @@ linuxdeploy \
     "$@" \
     --desktop-file "$root/packaging/linux/io.github.mrfrok.AniRust.desktop" \
     --icon-file "$icons/io.github.mrfrok.AniRust.png" \
-    --icon-file "$icons/io.github.mrfrok.AniRust.svg" \
-    --output appimage
+    --icon-file "$icons/io.github.mrfrok.AniRust.svg"
+
+# The plugins go in after the libraries: they link to the vendors' runtimes
+# (TensorRT-RTX, OpenVINO, ROCm) and to Vulkan, which are the host's or
+# fetched by the player, never bundled, and linuxdeploy would stop on them.
+# Where the program looks for them: ../lib/anirust from its own folder.
+mkdir -p "$appdir/usr/lib/anirust/mlrt"
+cp -r "$rife" "$appdir/usr/lib/anirust/rife"
+cp -r "$mlrt/vsmlrt.py" "$mlrt/models" "$mlrt"/LICENSE-* "$mlrt"/lib*.so "$appdir/usr/lib/anirust/mlrt/"
+linuxdeploy-plugin-appimage --appdir "$appdir"
 
 mkdir -p "$root/dist"
 name="AniRust-$version-$arch.AppImage"
