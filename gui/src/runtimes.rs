@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Fetching NVIDIA's TensorRT-RTX for the TensorRT engine.
+//! Fetching a vendor's runtime for the vs-mlrt engine: NVIDIA's TensorRT-RTX
+//! or Intel's OpenVINO.
 //!
-//! The program ships its own part of that engine — the vstrt plugin, vsmlrt
-//! and the networks, all under open licences — but not TensorRT-RTX: that is
-//! NVIDIA's, licensed by NVIDIA, and the person watching fetches it from
-//! NVIDIA when they ask for it. This does the fetching: NVIDIA's archive for
-//! this platform, unpacked into the data folder ([`TensorRt::runtime_dir`]),
-//! the archive's own top folder dropped so `lib/` and `bin/` sit at the top.
+//! The program ships its own part of that engine — the ported plugins,
+//! vsmlrt and the networks, all under open licences — but not the vendors'
+//! runtimes: TensorRT-RTX is NVIDIA's and licensed by NVIDIA, and OpenVINO,
+//! though Apache-2.0, is large enough to be fetched only by those who want
+//! it. The person watching fetches either from its vendor when they ask. This
+//! does the fetching: the vendor's archive for this platform, unpacked into
+//! the data folder ([`Backend::runtime_dir`]), the archive's own top folder
+//! dropped, and only the parts the runtime needs kept.
 //!
 //! It is written to a folder beside the final one and moved into place only
 //! once whole, so an interrupted download never looks like an install.
@@ -15,7 +18,7 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use anirust_player::TensorRt;
+use anirust_player::Backend;
 use futures::StreamExt;
 
 /// How far a fetch has got, for the line on screen.
@@ -25,27 +28,36 @@ pub enum Progress {
     Unpacking,
 }
 
-/// Fetches and unpacks TensorRT-RTX, reporting along the way. Answers with
-/// the folder it is now in.
+/// Fetches and unpacks `backend`'s runtime, reporting along the way.
+/// Answers with the folder it is now in.
 pub async fn fetch(
     http: reqwest::Client,
+    backend: Backend,
     report: impl Fn(Progress) + Send + 'static,
 ) -> Result<PathBuf, String> {
-    let url = TensorRt::download_url().ok_or("TensorRT-RTX has no build for this platform")?;
-    let target = TensorRt::runtime_dir().ok_or("there is no data folder to put it in")?;
+    let url = backend
+        .download_url()
+        .ok_or("this runtime has no build to fetch for this platform")?;
+    let target = backend
+        .runtime_dir()
+        .ok_or("there is no data folder to put it in")?;
     let parent = target.parent().ok_or("the data folder has no parent")?;
     tokio::fs::create_dir_all(parent)
         .await
         .map_err(|e| e.to_string())?;
 
+    let name = target.file_name().map_or_else(
+        || "runtime".into(),
+        |name| name.to_string_lossy().into_owned(),
+    );
     let archive = parent.join(if url.ends_with(".zip") {
-        "tensorrt-rtx.zip"
+        format!("{name}.zip")
     } else {
-        "tensorrt-rtx.tar.gz"
+        format!("{name}.tar.gz")
     });
 
     // NVIDIA's link answers with a redirect to its download host; reqwest
-    // follows it. No timeout on the whole: it is a large file.
+    // follows it. No short timeout on the whole: it is a large file.
     let response = http
         .get(url)
         .timeout(std::time::Duration::from_secs(3600))
@@ -73,20 +85,21 @@ pub async fn fetch(
     drop(file);
 
     report(Progress::Unpacking);
-    let staging = parent.join("tensorrt-rtx.partial");
+    let staging = parent.join(format!("{name}.partial"));
     let unpacked = {
         let archive = archive.clone();
         let staging = staging.clone();
-        tokio::task::spawn_blocking(move || unpack(&archive, &staging))
+        let keep = backend.kept_parts();
+        tokio::task::spawn_blocking(move || unpack(&archive, &staging, keep))
             .await
             .map_err(|e| e.to_string())?
     };
     let _ = tokio::fs::remove_file(&archive).await;
     unpacked?;
 
-    if !TensorRt::is_runtime(&staging) {
+    if !backend.is_runtime(&staging) {
         let _ = tokio::fs::remove_dir_all(&staging).await;
-        return Err("the archive did not hold TensorRT-RTX as expected".to_owned());
+        return Err("the archive did not hold the runtime as expected".to_owned());
     }
     if tokio::fs::metadata(&target).await.is_ok() {
         tokio::fs::remove_dir_all(&target)
@@ -96,12 +109,14 @@ pub async fn fetch(
     tokio::fs::rename(&staging, &target)
         .await
         .map_err(|e| e.to_string())?;
-    tracing::info!(dir = %target.display(), "TensorRT-RTX installed");
+    tracing::info!(?backend, dir = %target.display(), "runtime installed");
     Ok(target)
 }
 
-/// Unpacks `archive` into `into`, without the archive's own top folder.
-fn unpack(archive: &Path, into: &Path) -> Result<(), String> {
+/// Unpacks `archive` into `into`, without the archive's own top folder, and
+/// only the top folders named in `keep`.
+fn unpack(archive: &Path, into: &Path, keep: &[&str]) -> Result<(), String> {
+    let kept = |relative: &Path| keep.iter().any(|part| relative.starts_with(part));
     if into.exists() {
         std::fs::remove_dir_all(into).map_err(|e| e.to_string())?;
     }
@@ -119,6 +134,9 @@ fn unpack(archive: &Path, into: &Path) -> Result<(), String> {
             let Some(relative) = without_top(&path) else {
                 continue;
             };
+            if !kept(&relative) {
+                continue;
+            }
             let out = into.join(relative);
             if entry.is_dir() {
                 std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
@@ -140,9 +158,9 @@ fn unpack(archive: &Path, into: &Path) -> Result<(), String> {
             let Some(relative) = without_top(&path) else {
                 continue;
             };
-            // Only what NVIDIA's runtime needs; the samples and the Python
-            // wheels in the archive are left behind.
-            if !(relative.starts_with("lib") || relative.starts_with("bin")) {
+            // Only what the runtime needs; the samples and the Python wheels
+            // in the archives are left behind.
+            if !kept(&relative) {
                 continue;
             }
             let out = into.join(&relative);
@@ -209,9 +227,9 @@ mod tests {
             builder.into_inner().expect("tar").finish().expect("gz");
         }
         let into = dir.join("out");
-        unpack(&archive, &into).expect("unpacked");
+        unpack(&archive, &into, Backend::TensorRt.kept_parts()).expect("unpacked");
         assert!(into.join("lib/libtensorrt_rtx.so.1").is_file());
-        assert!(TensorRt::is_runtime(&into));
+        assert!(Backend::TensorRt.is_runtime(&into));
         assert!(!into.join("samples").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }

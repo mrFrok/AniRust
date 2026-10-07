@@ -156,17 +156,22 @@ export component PlayerPage inherits Rectangle {
     in property <int> display-fps: 0;
     callback set-frame-rate(int);
     callback set-rife-model(int);
-    /// The engine for the networks: 0 Vulkan, 1 TensorRT.
+    /// The engine for the networks: 0 Vulkan, 1 TensorRT, 2 OpenVINO,
+    /// 3 MIGraphX.
     in property <int> neural-engine: 0;
-    /// Whether the program carries its part of the TensorRT engine, and
-    /// whether NVIDIA's runtime is there to go with it.
-    in property <bool> tensorrt-shipped: false;
-    in property <bool> tensorrt-ready: false;
-    /// What fetching NVIDIA's runtime is doing; empty when nothing.
-    in property <string> tensorrt-fetch;
+    /// The engines this build carries, Vulkan first.
+    in property <[int]> engine-choices: [0];
+    /// The one that suits this machine's GPU.
+    in property <int> recommended-engine: 0;
+    /// Whether the chosen engine's vendor runtime is there, and whether the
+    /// player can fetch it when it is not.
+    in property <bool> engine-ready: false;
+    in property <bool> engine-fetchable: false;
+    /// What fetching it is doing; empty when nothing.
+    in property <string> runtime-fetch;
     in property <bool> neural-upscale: false;
     callback set-neural-engine(int);
-    callback fetch-tensorrt();
+    callback fetch-runtime();
     callback toggle-neural-upscale();
     /// Lowering the load by itself when frames drop.
     in property <bool> adaptive: true;
@@ -798,48 +803,54 @@ export component PlayerPage inherits Rectangle {
                         }
 
                         // ---- the engine for the networks ----
-                        if root.tensorrt-shipped: Text {
+                        if root.engine-choices.length > 1: Text {
                             text: Tr.neural-engine;
                             color: #FFFFFF;
                             font-size: Typography.title-small-size;
                             font-weight: Typography.title-small-weight-em;
                         }
 
-                        if root.tensorrt-shipped: HorizontalLayout {
+                        if root.engine-choices.length > 1: HorizontalLayout {
                             spacing: Spacing.small;
                             alignment: start;
 
-                            for name[index] in [Tr.engine-vulkan, Tr.engine-tensorrt]: SettingChip {
-                                label: name;
-                                recommended: index == 1;
-                                selected: root.neural-engine == index;
-                                clicked => { root.set-neural-engine(index); }
+                            for id in root.engine-choices: SettingChip {
+                                label: id == 0 ? Tr.engine-vulkan
+                                    : id == 1 ? Tr.engine-tensorrt
+                                    : id == 2 ? Tr.engine-openvino
+                                    : Tr.engine-migraphx;
+                                recommended: id == root.recommended-engine;
+                                selected: root.neural-engine == id;
+                                clicked => { root.set-neural-engine(id); }
                             }
                         }
 
-                        // TensorRT-RTX is NVIDIA's: fetched from NVIDIA, on
-                        // the person's say-so, and said to be so.
-                        if root.tensorrt-shipped && root.neural-engine == 1 && !root.tensorrt-ready: VerticalLayout {
+                        // A vendor's runtime is the vendor's: fetched from the
+                        // vendor, on the person's say-so, and said to be so —
+                        // or, for ROCm, installed from the distribution.
+                        if root.neural-engine != 0 && !root.engine-ready: VerticalLayout {
                             spacing: Spacing.small;
 
                             Text {
-                                text: Tr.tensorrt-needed;
+                                text: root.neural-engine == 1 ? Tr.tensorrt-needed
+                                    : root.neural-engine == 2 ? Tr.openvino-needed
+                                    : Tr.migraphx-needed;
                                 color: #FFFFFF8C;
                                 font-size: Typography.body-medium-size;
                                 wrap: word-wrap;
                             }
 
-                            HorizontalLayout {
+                            if root.engine-fetchable: HorizontalLayout {
                                 spacing: Spacing.small;
                                 alignment: start;
 
-                                if root.tensorrt-fetch == "": SettingChip {
-                                    label: Tr.tensorrt-fetch;
-                                    clicked => { root.fetch-tensorrt(); }
+                                if root.runtime-fetch == "": SettingChip {
+                                    label: root.neural-engine == 1 ? Tr.tensorrt-fetch : Tr.openvino-fetch;
+                                    clicked => { root.fetch-runtime(); }
                                 }
 
-                                if root.tensorrt-fetch != "": Text {
-                                    text: root.tensorrt-fetch;
+                                if root.runtime-fetch != "": Text {
+                                    text: root.runtime-fetch;
                                     color: #FFFFFF;
                                     font-size: Typography.body-medium-size;
                                     vertical-alignment: center;
@@ -847,7 +858,7 @@ export component PlayerPage inherits Rectangle {
                             }
                         }
 
-                        if root.neural-engine == 1 && root.tensorrt-ready: SettingOption {
+                        if root.neural-engine != 0 && root.engine-ready: SettingOption {
                             label: Tr.neural-upscale;
                             description: Tr.neural-upscale-hint;
                             selected: root.neural-upscale;

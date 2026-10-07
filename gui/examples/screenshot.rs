@@ -685,7 +685,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_upscale_quality(2);
         ui.set_frames_available(true);
         ui.set_frame_rate(2);
-        ui.set_tensorrt_shipped(true);
+        ui.set_engine_choices(slint::ModelRc::new(slint::VecModel::from(vec![0, 1, 2, 3])));
+        ui.set_recommended_engine(1);
+        ui.set_engine_fetchable(true);
         ui.set_neural_engine(1);
         ui.set_player_sheet("anime4k".into());
     }

@@ -124,6 +124,8 @@ def port(source: str) -> str:
     for old, new in RENAMES:
         source = source.replace(old, new)
     source = re.sub(r"(?<![:\w])int64ToIntS\(", "vsh::int64ToIntS(", source)
+    # A property's type is an enum now, not a character to print.
+    source = source.replace('+ type + ")"', '+ std::to_string(type) + ")"')
 
     # Formats live inside the video info now, filled in by a query.
     source = re.sub(
@@ -145,6 +147,8 @@ def port(source: str) -> str:
     source = rewrite_calls(source, "vsapi->callFunc", call_function)
 
     def log_message(args):
+        if len(args) >= 3:  # ported already
+            return "vsapi->logMessage(" + ",".join(args) + ")"
         return "vsapi->logMessage(" + ",".join(args) + ", core)"
 
     source = rewrite_calls(source, "vsapi->logMessage", log_message)

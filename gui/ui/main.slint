@@ -354,12 +354,14 @@ export component MainWindow inherits Window {
     callback set-frame-rate(int);
     callback set-rife-model(int);
     in property <int> neural-engine: 0;
-    in property <bool> tensorrt-shipped: false;
-    in property <bool> tensorrt-ready: false;
-    in property <string> tensorrt-fetch;
+    in property <[int]> engine-choices: [0];
+    in property <int> recommended-engine: 0;
+    in property <bool> engine-ready: false;
+    in property <bool> engine-fetchable: false;
+    in property <string> runtime-fetch;
     in property <bool> neural-upscale: false;
     callback set-neural-engine(int);
-    callback fetch-tensorrt();
+    callback fetch-runtime();
     callback toggle-neural-upscale();
     in property <bool> adaptive: true;
     callback toggle-adaptive();
@@ -870,9 +872,11 @@ export component MainWindow inherits Window {
             rife-model: root.rife-model;
             frames-available: root.frames-available;
             neural-engine: root.neural-engine;
-            tensorrt-shipped: root.tensorrt-shipped;
-            tensorrt-ready: root.tensorrt-ready;
-            tensorrt-fetch: root.tensorrt-fetch;
+            engine-choices: root.engine-choices;
+            recommended-engine: root.recommended-engine;
+            engine-ready: root.engine-ready;
+            engine-fetchable: root.engine-fetchable;
+            runtime-fetch: root.runtime-fetch;
             neural-upscale: root.neural-upscale;
             display-fps: root.display-fps;
             adaptive: root.adaptive;
@@ -919,7 +923,7 @@ export component MainWindow inherits Window {
             set-frame-rate(i) => { root.set-frame-rate(i); }
             set-rife-model(i) => { root.set-rife-model(i); }
             set-neural-engine(i) => { root.set-neural-engine(i); }
-            fetch-tensorrt => { root.fetch-tensorrt(); }
+            fetch-runtime => { root.fetch-runtime(); }
             toggle-neural-upscale => { root.toggle-neural-upscale(); }
             toggle-adaptive => { root.toggle-adaptive(); }
             load-audio-file => { root.load-audio-file(); }

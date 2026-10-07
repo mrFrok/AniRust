@@ -81,6 +81,15 @@ export global Tr {
         ? "На тензорных ядрах RTX нейросети работают в 2–3 раза быстрее. Нужна библиотека NVIDIA TensorRT for RTX, около 90 МБ: она скачивается с сайта NVIDIA и используется на условиях NVIDIA. Пока её нет, работает Vulkan."
         : "On RTX tensor cores the networks run two to three times faster. It takes NVIDIA's TensorRT for RTX, about 90 MB, fetched from NVIDIA and used on NVIDIA's terms. Until then, Vulkan runs them.";
     out property <string> tensorrt-fetch: lang == "ru" ? "Скачать у NVIDIA" : "Fetch from NVIDIA";
+    out property <string> engine-openvino: lang == "ru" ? "OpenVINO · Intel" : "OpenVINO · Intel";
+    out property <string> engine-migraphx: lang == "ru" ? "MIGraphX · AMD" : "MIGraphX · AMD";
+    out property <string> openvino-needed: lang == "ru"
+        ? "На блоках XMX видеокарт Intel Arc нейросети работают через OpenVINO. Нужна его среда выполнения, около 55 МБ: она скачивается с сайта Intel (лицензия Apache 2.0). Пока её нет, работает Vulkan."
+        : "On Intel Arc's XMX engines the networks run through OpenVINO. It takes OpenVINO's runtime, about 55 MB, fetched from Intel (Apache 2.0 licence). Until then, Vulkan runs them.";
+    out property <string> openvino-fetch: lang == "ru" ? "Скачать у Intel" : "Fetch from Intel";
+    out property <string> migraphx-needed: lang == "ru"
+        ? "На видеокартах AMD нейросети работают через MIGraphX из ROCm. Его ставят из дистрибутива — в Arch это пакет migraphx — и программа найдёт его в /opt/rocm сама. Пока его нет, работает Vulkan."
+        : "On AMD GPUs the networks run through ROCm's MIGraphX. It is installed from the distribution — the migraphx package on Arch — and found in /opt/rocm. Until then, Vulkan runs them.";
     out property <string> neural-upscale: lang == "ru" ? "Нейросетевой апскейл ×2" : "Neural upscaling ×2";
     out property <string> neural-upscale-hint: lang == "ru"
         ? "Real-ESRGAN удваивает картинку до шейдеров. Для серий в 720p и ниже; 1080p и генерацию кадров вместе с ним не потянет почти никакая видеокарта."

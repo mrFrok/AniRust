@@ -34,7 +34,7 @@ pub mod shaders;
 pub mod tracks;
 
 pub use frames::{
-    Enhancement, FrameGeneration, Networks, RifeInstall, RifeModel, TargetRate, TensorRt,
+    Backend, Enhancement, FrameGeneration, Mlrt, Networks, RifeInstall, RifeModel, TargetRate,
 };
 pub use render::{NativeDisplay, Renderer};
 pub use shaders::{UpscaleMode, UpscalePreset, UpscaleQuality};
@@ -904,7 +904,7 @@ impl Player {
         // Upscaling alone on Vulkan has nothing to run: no filter at all.
         let enhancement = enhancement.filter(|(networks, enhancement)| {
             enhancement.frames.is_some()
-                || (enhancement.upscale && matches!(networks, frames::Networks::TensorRt(_)))
+                || (enhancement.upscale && matches!(networks, frames::Networks::Mlrt(_)))
         });
         let Some((networks, enhancement)) = enhancement else {
             self.mpv.set_property("vf", "")?;
@@ -917,6 +917,12 @@ impl Player {
         let error_file = dir.join("rife-error.txt");
         let _ = std::fs::remove_file(&error_file);
         let display_fps = self.display_fps.lock().ok().and_then(|kept| *kept);
+        if let frames::Networks::Mlrt(mlrt) = networks {
+            frames::copy_models(&mlrt.dir).map_err(|source| Error::Io {
+                path: frames::models_cache(),
+                source,
+            })?;
+        }
         std::fs::create_dir_all(&dir)
             .and_then(|()| std::fs::create_dir_all(frames::engines_dir()))
             .and_then(|()| {
@@ -939,7 +945,11 @@ impl Player {
         self.mpv.set_property("vf", filter.as_str())?;
         let engine = match networks {
             frames::Networks::Vulkan(_) => "vulkan",
-            frames::Networks::TensorRt(_) => "tensorrt",
+            frames::Networks::Mlrt(mlrt) => match mlrt.backend {
+                frames::Backend::TensorRt => "tensorrt",
+                frames::Backend::OpenVino => "openvino",
+                frames::Backend::MigraphX => "migraphx",
+            },
         };
         tracing::info!(engine, ?enhancement, script = %script.display(), "neural filters on");
         Ok(())

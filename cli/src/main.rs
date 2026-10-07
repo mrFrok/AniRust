@@ -16,8 +16,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 use anirust_api::{Client, EpisodeSort, ProfileList, SearchBy};
 use anirust_extract::{Registry, ResolvedStream, StreamKind, StreamVariant};
 use anirust_player::{
-    Enhancement, FrameGeneration, MediaSource, Networks, Player, PlayerConfig, RifeInstall,
-    RifeModel, TargetRate, TensorRt, UpscaleMode, UpscalePreset, UpscaleQuality,
+    Backend, Enhancement, FrameGeneration, MediaSource, Mlrt, Networks, Player, PlayerConfig,
+    RifeInstall, RifeModel, TargetRate, UpscaleMode, UpscalePreset, UpscaleQuality,
 };
 
 use crate::i18n::Lang;
@@ -179,11 +179,12 @@ enum Command {
         /// Which RIFE network generates them.
         #[arg(long, value_enum, default_value_t = Rife::Fast)]
         rife: Rife,
-        /// Run the networks on TensorRT (NVIDIA RTX; ANIRUST_MLRT_DIR and
-        /// ANIRUST_TRT_RTX_DIR) instead of Vulkan.
-        #[arg(long)]
-        tensorrt: bool,
-        /// Double the picture with Real-ESRGAN first. TensorRT only.
+        /// Run the networks on vs-mlrt instead of Vulkan: TensorRT (NVIDIA
+        /// RTX), OpenVINO (Intel) or MIGraphX (AMD). Needs ANIRUST_MLRT_DIR
+        /// and the vendor's runtime.
+        #[arg(long, value_enum)]
+        mlrt: Option<MlrtEngine>,
+        /// Double the picture with Real-ESRGAN first. vs-mlrt only.
         #[arg(long)]
         neural_upscale: bool,
     },
@@ -274,6 +275,23 @@ enum Generate {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+enum MlrtEngine {
+    Tensorrt,
+    Openvino,
+    Migraphx,
+}
+
+impl From<MlrtEngine> for Backend {
+    fn from(engine: MlrtEngine) -> Self {
+        match engine {
+            MlrtEngine::Tensorrt => Self::TensorRt,
+            MlrtEngine::Openvino => Self::OpenVino,
+            MlrtEngine::Migraphx => Self::MigraphX,
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
 enum Rife {
     Fast,
     Quality,
@@ -287,7 +305,7 @@ struct PlayOptions<'a> {
     upscale: UpscalePreset,
     interpolation: bool,
     generate: Option<FrameGeneration>,
-    tensorrt: bool,
+    mlrt: Option<Backend>,
     neural_upscale: bool,
 }
 
@@ -596,7 +614,7 @@ async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
             interpolation,
             generate,
             rife,
-            tensorrt,
+            mlrt,
             neural_upscale,
         } => {
             let episode =
@@ -623,7 +641,7 @@ async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
                     upscale: UpscalePreset::new((*upscale).into(), (*quality).into()),
                     interpolation: *interpolation,
                     generate,
-                    tensorrt: *tensorrt,
+                    mlrt: mlrt.map(Backend::from),
                     neural_upscale: *neural_upscale,
                 },
                 lang,
@@ -833,7 +851,7 @@ fn play(stream: &ResolvedStream, options: &PlayOptions<'_>, lang: Lang) -> Resul
         upscale,
         interpolation,
         generate,
-        tensorrt,
+        mlrt,
         neural_upscale,
     } = *options;
     let best = stream.best().with_context(|| lang.err_nothing_resolved())?;
@@ -896,10 +914,11 @@ fn play(stream: &ResolvedStream, options: &PlayOptions<'_>, lang: Lang) -> Resul
     };
     let enhanced = !enhancement.is_empty();
     if enhanced {
-        if tensorrt {
-            let trt = TensorRt::find()
-                .context("TensorRT is not there: set ANIRUST_MLRT_DIR and ANIRUST_TRT_RTX_DIR")?;
-            player.set_enhancement(Some((Networks::TensorRt(&trt), enhancement)))?;
+        if let Some(backend) = mlrt {
+            let mlrt = Mlrt::find(backend).context(
+                "vs-mlrt is not there for that engine: set ANIRUST_MLRT_DIR and the runtime's folder",
+            )?;
+            player.set_enhancement(Some((Networks::Mlrt(&mlrt), enhancement)))?;
         } else {
             let install = RifeInstall::find()
                 .context("RIFE is not installed: set ANIRUST_RIFE_DIR to the plugin's folder")?;

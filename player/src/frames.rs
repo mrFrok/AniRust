@@ -10,12 +10,14 @@
 //!   <https://github.com/styler00dollar/VapourSynth-RIFE-ncnn-Vulkan>, MIT —
 //!   every vendor's card. Measured on an RTX 4070 Ti SUPER, RIFE 4.6 makes 74
 //!   frames a second at 720p and 46 at 1080p.
-//! - **TensorRT**: vs-mlrt, <https://github.com/AmusementClub/vs-mlrt>,
+//! - **vs-mlrt**, <https://github.com/AmusementClub/vs-mlrt>,
 //!   GPL-3.0, on NVIDIA's TensorRT-RTX — the tensor cores of RTX cards. On
 //!   the same card RIFE 4.26 makes 150 frames a second at 720p and 66 at
 //!   1080p, and Real-ESRGAN takes 720p to 1440p at 43. The plugin is vs-mlrt's
 //!   vstrt ported to VapourSynth's API 4 (`packaging/mlrt/`); TensorRT-RTX is
-//!   NVIDIA's, fetched by the user from NVIDIA ([`TensorRt::download_url`]).
+//!   NVIDIA's, fetched by the user from NVIDIA ([`Backend::download_url`]).
+//!   The same vs-mlrt runs on Intel's OpenVINO and AMD's MIGraphX, each
+//!   through its own ported plugin ([`Backend`]).
 //!
 //! Nothing here is linked. When a part is missing the filter fails and mpv
 //! plays the episode as it is — the script writes down why, and
@@ -125,8 +127,10 @@ impl Enhancement {
 /// The engine that runs the networks, with what it needs.
 #[derive(Debug, Clone, Copy)]
 pub enum Networks<'a> {
+    /// RIFE through ncnn and Vulkan, on any GPU.
     Vulkan(&'a RifeInstall),
-    TensorRt(&'a TensorRt),
+    /// vs-mlrt on the vendor's own runtime.
+    Mlrt(&'a Mlrt),
 }
 
 /// Where the Vulkan RIFE plugin and its models are.
@@ -195,89 +199,293 @@ impl RifeInstall {
     }
 }
 
-/// The TensorRT engine: our part — the vstrt plugin, vsmlrt.py and the
-/// networks — and NVIDIA's, the TensorRT-RTX runtime.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TensorRt {
-    /// vstrt_rtx, vsmlrt.py and `models/`, shipped with the program.
-    pub mlrt: PathBuf,
-    /// TensorRT-RTX as NVIDIA packs it: `lib/` and `bin/`.
-    pub runtime: PathBuf,
+/// Which vendor runtime vs-mlrt runs the networks on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Backend {
+    /// NVIDIA RTX tensor cores, through TensorRT-RTX.
+    TensorRt,
+    /// Intel GPUs' XMX engines (and any CPU), through OpenVINO.
+    OpenVino,
+    /// AMD GPUs, through ROCm's MIGraphX.
+    MigraphX,
 }
 
-#[cfg(target_os = "windows")]
-const VSTRT: &str = "vstrt_rtx.dll";
-#[cfg(not(target_os = "windows"))]
-const VSTRT: &str = "libvstrt_rtx.so";
+impl Backend {
+    pub const ALL: [Self; 3] = [Self::TensorRt, Self::OpenVino, Self::MigraphX];
 
-#[cfg(target_os = "windows")]
-const ENGINE_BUILDER: &str = "tensorrt_rtx.exe";
-#[cfg(not(target_os = "windows"))]
-const ENGINE_BUILDER: &str = "tensorrt_rtx";
+    /// Our ported plugin for this runtime, as built for this platform.
+    #[must_use]
+    pub fn plugin(self) -> &'static str {
+        match (self, cfg!(windows)) {
+            (Self::TensorRt, false) => "libvstrt_rtx.so",
+            (Self::TensorRt, true) => "vstrt_rtx.dll",
+            (Self::OpenVino, false) => "libvsov.so",
+            (Self::OpenVino, true) => "vsov.dll",
+            (Self::MigraphX, false) => "libvsmigx.so",
+            (Self::MigraphX, true) => "vsmigx.dll",
+        }
+    }
 
-/// The networks the TensorRT engine runs, under `models/`.
+    /// The variable that points at a runtime somewhere else.
+    fn runtime_env(self) -> &'static str {
+        match self {
+            Self::TensorRt => "ANIRUST_TRT_RTX_DIR",
+            Self::OpenVino => "ANIRUST_OPENVINO_DIR",
+            Self::MigraphX => "ROCM_PATH",
+        }
+    }
+
+    /// Where the runtime is: fetched into the data folder for TensorRT-RTX
+    /// and OpenVINO, the system's ROCm for MIGraphX.
+    #[must_use]
+    pub fn runtime_dir(self) -> Option<PathBuf> {
+        if let Some(dir) = std::env::var_os(self.runtime_env()) {
+            return Some(dir.into());
+        }
+        match self {
+            Self::TensorRt => {
+                dirs::data_dir().map(|data| data.join("anirust").join("tensorrt-rtx"))
+            }
+            Self::OpenVino => dirs::data_dir().map(|data| data.join("anirust").join("openvino")),
+            Self::MigraphX => Some(PathBuf::from("/opt/rocm")),
+        }
+    }
+
+    /// Whether `dir` holds this runtime, unpacked as its vendor packs it.
+    #[must_use]
+    pub fn is_runtime(self, dir: &Path) -> bool {
+        match self {
+            Self::TensorRt => dir
+                .join("bin")
+                .join(if cfg!(windows) {
+                    "tensorrt_rtx.exe"
+                } else {
+                    "tensorrt_rtx"
+                })
+                .is_file(),
+            Self::OpenVino => openvino_libs(dir).is_dir(),
+            Self::MigraphX => dir
+                .join("bin")
+                .join(if cfg!(windows) {
+                    "migraphx-driver.exe"
+                } else {
+                    "migraphx-driver"
+                })
+                .is_file(),
+        }
+    }
+
+    /// The vendor's archive of the runtime the plugin was built against, for
+    /// the player to fetch when asked; `None` where the runtime comes from the
+    /// system (ROCm) or has no build for this platform.
+    #[must_use]
+    pub fn download_url(self) -> Option<&'static str> {
+        match (self, cfg!(target_os = "linux"), cfg!(target_os = "windows")) {
+            (Self::TensorRt, true, _) => Some(
+                "https://developer.nvidia.com/downloads/trt/rtx_sdk/secure/1.3/TensorRT-RTX-1.3.0.35-Linux-x86_64-cuda-13.1-Release-external.tar.gz",
+            ),
+            (Self::TensorRt, _, true) => Some(
+                "https://developer.nvidia.com/downloads/trt/rtx_sdk/secure/1.6/TensorRT-RTX-1.6.1.120-Windows-amd64-cuda-13.4-Release-external.zip",
+            ),
+            (Self::OpenVino, true, _) => Some(
+                "https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.6/linux/l_openvino_toolkit_ubuntu24_2024.6.0.17404.4c0f47d2335_x86_64.tgz",
+            ),
+            (Self::OpenVino, _, true) => Some(
+                "https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.6/windows/w_openvino_toolkit_windows_2024.6.0.17404.4c0f47d2335_x86_64.zip",
+            ),
+            _ => None,
+        }
+    }
+
+    /// The parts of the vendor's archive the runtime needs, by top folder,
+    /// so the samples and wheels in it are left behind.
+    #[must_use]
+    pub fn kept_parts(self) -> &'static [&'static str] {
+        match self {
+            Self::TensorRt => &["lib", "bin"],
+            Self::OpenVino => &["runtime"],
+            Self::MigraphX => &[],
+        }
+    }
+}
+
+/// OpenVINO's libraries inside its archive.
+fn openvino_libs(dir: &Path) -> PathBuf {
+    if cfg!(windows) {
+        dir.join("runtime")
+            .join("bin")
+            .join("intel64")
+            .join("Release")
+    } else {
+        dir.join("runtime").join("lib").join("intel64")
+    }
+}
+
+/// The networks vs-mlrt runs, under `models/`.
 const MLRT_MODELS: [&str; 3] = [
     "rife/rife_v4.26.onnx",
     "rife/rife_v4.25_lite.onnx",
     "RealESRGANv2/RealESRGANv2-animevideo-xsx2.onnx",
 ];
 
-impl TensorRt {
-    /// Our part, where a build puts it (`ANIRUST_MLRT_DIR` first), if it is
-    /// complete. Only Linux and Windows have TensorRT-RTX.
+/// vs-mlrt on one runtime: our part — the plugin, vsmlrt.py and the networks
+/// — and the vendor's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mlrt {
+    pub backend: Backend,
+    /// vsmlrt.py, the plugins and `models/`, shipped with the program.
+    pub dir: PathBuf,
+    /// The vendor's runtime.
+    pub runtime: PathBuf,
+}
+
+impl Mlrt {
+    /// Our part, where a build puts it (`ANIRUST_MLRT_DIR` first), if
+    /// vsmlrt.py and every network are there. Only Linux and Windows.
     #[must_use]
-    pub fn find_mlrt() -> Option<PathBuf> {
+    pub fn shipped() -> Option<PathBuf> {
         if !cfg!(any(target_os = "linux", target_os = "windows")) {
             return None;
         }
         places("ANIRUST_MLRT_DIR", "mlrt").into_iter().find(|dir| {
-            dir.join(VSTRT).is_file()
-                && dir.join("vsmlrt.py").is_file()
+            dir.join("vsmlrt.py").is_file()
                 && MLRT_MODELS
                     .iter()
                     .all(|model| dir.join("models").join(model).is_file())
         })
     }
 
-    /// Where the runtime goes when the player fetches it.
+    /// Whether our part carries the plugin for `backend`.
     #[must_use]
-    pub fn runtime_dir() -> Option<PathBuf> {
-        dirs::data_dir().map(|data| data.join("anirust").join("tensorrt-rtx"))
+    pub fn ships(backend: Backend) -> bool {
+        Self::shipped().is_some_and(|dir| dir.join(backend.plugin()).is_file())
     }
 
-    /// Whether `dir` holds an unpacked TensorRT-RTX.
+    /// `backend` with both parts there, if they are.
     #[must_use]
-    pub fn is_runtime(dir: &Path) -> bool {
-        dir.join("bin").join(ENGINE_BUILDER).is_file()
+    pub fn find(backend: Backend) -> Option<Self> {
+        let dir = Self::shipped().filter(|dir| dir.join(backend.plugin()).is_file())?;
+        let runtime = backend
+            .runtime_dir()
+            .filter(|runtime| backend.is_runtime(runtime))?;
+        Some(Self {
+            backend,
+            dir,
+            runtime,
+        })
     }
 
-    /// Both parts, when both are there.
-    #[must_use]
-    pub fn find() -> Option<Self> {
-        let mlrt = Self::find_mlrt()?;
-        let runtime = std::env::var_os("ANIRUST_TRT_RTX_DIR")
-            .map(PathBuf::from)
-            .or_else(Self::runtime_dir)
-            .filter(|dir| Self::is_runtime(dir))?;
-        Some(Self { mlrt, runtime })
+    /// The script lines that load the runtime and the plugin, import
+    /// vsmlrt and set `backend` up.
+    fn setup(&self) -> String {
+        let common = format!(
+            "    mlrt = {mlrt}
+    runtime = {runtime}
+",
+            mlrt = python_string(&self.dir),
+            runtime = python_string(&self.runtime),
+        );
+        let load = match self.backend {
+            // TensorRT-RTX is where the user fetched it, not beside the
+            // plugin: its libraries are loaded first, so the plugin finds
+            // them by name.
+            Backend::TensorRt => r#"    libs = [os.path.join(runtime, "lib"), os.path.join(runtime, "bin")]
+    if sys.platform == "win32":
+        for d in libs:
+            if os.path.isdir(d):
+                os.add_dll_directory(d)
+    else:
+        for name in ("libtensorrt_rtx.so.1", "libtensorrt_onnxparser_rtx.so.1"):
+            ctypes.CDLL(os.path.join(libs[0], name), mode=ctypes.RTLD_GLOBAL)
+"#
+            .to_owned(),
+            // OpenVINO likewise, with TBB under it, which it is built on.
+            Backend::OpenVino => r#"    if sys.platform == "win32":
+        for d in (os.path.join(runtime, "runtime", "bin", "intel64", "Release"), os.path.join(runtime, "runtime", "3rdparty", "tbb", "bin")):
+            if os.path.isdir(d):
+                os.add_dll_directory(d)
+    else:
+        tbb = os.path.join(runtime, "runtime", "3rdparty", "tbb", "lib")
+        for name in sorted(os.listdir(tbb)):
+            if name.startswith(("libtbb.so.", "libtbbmalloc.so.")) and name.count(".") == 2:
+                ctypes.CDLL(os.path.join(tbb, name), mode=ctypes.RTLD_GLOBAL)
+        ctypes.CDLL(os.path.join(runtime, "runtime", "lib", "intel64", "libopenvino.so"), mode=ctypes.RTLD_GLOBAL)
+"#
+            .to_owned(),
+            // ROCm is the system's, on the library path already.
+            Backend::MigraphX => String::new(),
+        };
+        let (namespace, backend) = match self.backend {
+            Backend::TensorRt => (
+                "trt_rtx",
+                format!(
+                    r#"    vsmlrt.tensorrt_rtx_path = os.path.join(runtime, "bin", "tensorrt_rtx.exe" if sys.platform == "win32" else "tensorrt_rtx")
+    # vsmlrt starts the engine builder with nothing but what is given here.
+    path_var = "PATH" if sys.platform == "win32" else "LD_LIBRARY_PATH"
+    backend = vsmlrt.Backend.TRT_RTX(
+        fp16=False,  # the networks are fp16 already; see prepare-models.py
+        num_streams=4,
+        engine_folder={engines},
+        custom_env={{path_var: os.pathsep.join(libs)}},
+    )
+"#,
+                    engines = python_string(&engines_dir()),
+                ),
+            ),
+            Backend::OpenVino => (
+                "ov",
+                "    backend = vsmlrt.Backend.OV_GPU(fp16=False, num_streams=2)
+".to_owned(),
+            ),
+            Backend::MigraphX => (
+                "migx",
+                r#"    vsmlrt.migraphx_driver_path = os.path.join(runtime, "bin", "migraphx-driver")
+    backend = vsmlrt.Backend.MIGX(fp16=False, custom_env=dict(os.environ))
+"#
+                .to_owned(),
+            ),
+        };
+        format!(
+            r#"{common}{load}    if not hasattr(core, "{namespace}"):
+        core.std.LoadPlugin(os.path.join(mlrt, {plugin}))
+    if mlrt not in sys.path:
+        sys.path.insert(0, mlrt)
+    import vsmlrt
+    # The networks are read from a copy in the cache, where what the runtime
+    # compiles from them can be kept beside them; the program's own folder
+    # may not be writable.
+    vsmlrt.models_path = {models}
+{backend}"#,
+            plugin = python_string(Path::new(self.backend.plugin())),
+            models = python_string(&models_cache()),
+        )
     }
+}
 
-    /// NVIDIA's archive of the TensorRT-RTX build the plugin was made
-    /// against, for this platform: a .tar.gz on Linux, a .zip on Windows.
-    #[must_use]
-    pub fn download_url() -> Option<&'static str> {
-        if cfg!(target_os = "linux") {
-            Some(
-                "https://developer.nvidia.com/downloads/trt/rtx_sdk/secure/1.3/TensorRT-RTX-1.3.0.35-Linux-x86_64-cuda-13.1-Release-external.tar.gz",
-            )
-        } else if cfg!(target_os = "windows") {
-            Some(
-                "https://developer.nvidia.com/downloads/trt/rtx_sdk/secure/1.6/TensorRT-RTX-1.6.1.120-Windows-amd64-cuda-13.4-Release-external.zip",
-            )
-        } else {
-            None
+/// The cached copy of the networks: see [`copy_models`].
+#[must_use]
+pub fn models_cache() -> PathBuf {
+    work_dir().join("models")
+}
+
+/// Copies our networks into the cache, where vs-mlrt may write what it
+/// compiles from them beside them — MIGraphX does so with no say in where.
+/// Files already there at the same size are left alone.
+pub fn copy_models(shipped: &Path) -> std::io::Result<()> {
+    for model in MLRT_MODELS {
+        let from = shipped.join("models").join(model);
+        let to = models_cache().join(model);
+        let same = std::fs::metadata(&to)
+            .and_then(|to| std::fs::metadata(&from).map(|from| from.len() == to.len()))
+            .unwrap_or(false);
+        if !same {
+            if let Some(parent) = to.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::copy(&from, &to)?;
         }
     }
+    Ok(())
 }
 
 /// Where compiled TensorRT engines are kept: building one takes ten seconds
@@ -314,47 +522,11 @@ pub fn script(
                 python_string(&install.plugin)
             ));
         }
-        Networks::TensorRt(trt) => {
-            body.push_str(&format!(
-                r#"    runtime = {runtime}
-    mlrt = {mlrt}
-    libs = [os.path.join(runtime, "lib"), os.path.join(runtime, "bin")]
-    # TensorRT-RTX is where the user fetched it, not beside the plugin: its
-    # libraries are loaded first, so the plugin finds them by name.
-    if sys.platform == "win32":
-        for d in libs:
-            if os.path.isdir(d):
-                os.add_dll_directory(d)
-    else:
-        for name in ("libtensorrt_rtx.so.1", "libtensorrt_onnxparser_rtx.so.1"):
-            ctypes.CDLL(os.path.join(libs[0], name), mode=ctypes.RTLD_GLOBAL)
-    if not hasattr(core, "trt_rtx"):
-        core.std.LoadPlugin(os.path.join(mlrt, {vstrt}))
-    if mlrt not in sys.path:
-        sys.path.insert(0, mlrt)
-    import vsmlrt
-    vsmlrt.models_path = os.path.join(mlrt, "models")
-    vsmlrt.tensorrt_rtx_path = os.path.join(runtime, "bin", {builder})
-    # vsmlrt starts the engine builder with nothing but what is given here.
-    path_var = "PATH" if sys.platform == "win32" else "LD_LIBRARY_PATH"
-    backend = vsmlrt.Backend.TRT_RTX(
-        fp16=False,  # the networks are fp16 already; see prepare-models.py
-        num_streams=4,
-        engine_folder={engines},
-        custom_env={{path_var: os.pathsep.join(libs)}},
-    )
-"#,
-                runtime = python_string(&trt.runtime),
-                mlrt = python_string(&trt.mlrt),
-                vstrt = python_string(Path::new(VSTRT)),
-                builder = python_string(Path::new(ENGINE_BUILDER)),
-                engines = python_string(&engines_dir()),
-            ));
-        }
+        Networks::Mlrt(mlrt) => body.push_str(&mlrt.setup()),
     }
 
     // ---- the picture, in the networks' format ----
-    let upscale = enhancement.upscale && matches!(networks, Networks::TensorRt(_));
+    let upscale = enhancement.upscale && matches!(networks, Networks::Mlrt(_));
     let max_height = match enhancement.frames {
         // Upscaled first, the picture is meant to stay large.
         Some(generation) if !upscale => generation.max_height,
@@ -411,7 +583,7 @@ pub fn script(
 "#,
                 model = python_string(&install.models.join(generation.model.folder())),
             )),
-            Networks::TensorRt(_) => body.push_str(&format!(
+            Networks::Mlrt(_) => body.push_str(&format!(
                 r#"        multi = target / source
         # A whole multiple runs faster in vsmlrt; one within a percent is
         # taken, and mpv's display sync absorbs the difference.
@@ -587,9 +759,10 @@ mod tests {
         }
     }
 
-    fn tensorrt() -> TensorRt {
-        TensorRt {
-            mlrt: PathBuf::from("/opt/mlrt"),
+    fn tensorrt() -> Mlrt {
+        Mlrt {
+            backend: Backend::TensorRt,
+            dir: PathBuf::from("/opt/mlrt"),
             runtime: PathBuf::from("/home/u/.local/share/anirust/tensorrt-rtx"),
         }
     }
@@ -660,7 +833,7 @@ mod tests {
     fn the_tensorrt_script_loads_the_runtime_then_vsmlrt() {
         let trt = tensorrt();
         let script = script(
-            Networks::TensorRt(&trt),
+            Networks::Mlrt(&trt),
             generation(TargetRate::Sixty, RifeModel::Fast),
             None,
             Path::new("/tmp/err.txt"),
@@ -684,7 +857,7 @@ mod tests {
         let mut enhancement = generation(TargetRate::Sixty, RifeModel::Quality);
         enhancement.upscale = true;
         let script = script(
-            Networks::TensorRt(&trt),
+            Networks::Mlrt(&trt),
             enhancement,
             None,
             Path::new("/tmp/err.txt"),
@@ -711,8 +884,35 @@ mod tests {
     }
 
     #[test]
+    fn each_backend_loads_its_own_plugin_and_runtime() {
+        for (backend, namespace, marker) in [
+            (Backend::TensorRt, "trt_rtx", "Backend.TRT_RTX("),
+            (Backend::OpenVino, "ov", "Backend.OV_GPU("),
+            (Backend::MigraphX, "migx", "Backend.MIGX("),
+        ] {
+            let mlrt = Mlrt {
+                backend,
+                dir: PathBuf::from("/opt/mlrt"),
+                runtime: PathBuf::from("/opt/runtime"),
+            };
+            let script = script(
+                Networks::Mlrt(&mlrt),
+                generation(TargetRate::Sixty, RifeModel::Quality),
+                None,
+                Path::new("/tmp/err.txt"),
+            );
+            assert!(script.contains(&format!("hasattr(core, \"{namespace}\")")));
+            assert!(script.contains(backend.plugin()));
+            assert!(script.contains(marker));
+            assert!(script.contains("vsmlrt.models_path"));
+        }
+    }
+
+    #[test]
     fn an_incomplete_install_is_not_found() {
         assert!(RifeInstall::in_dir(Path::new("/nonexistent-rife")).is_none());
-        assert!(!TensorRt::is_runtime(Path::new("/nonexistent-trt")));
+        for backend in Backend::ALL {
+            assert!(!backend.is_runtime(Path::new("/nonexistent-runtime")));
+        }
     }
 }

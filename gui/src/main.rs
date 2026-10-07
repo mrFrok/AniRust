@@ -32,11 +32,11 @@ mod register;
 mod relay;
 mod release;
 mod reports;
+mod runtimes;
 mod session;
 mod settings;
 mod standing;
 mod tasks;
-mod tensorrt;
 mod video;
 
 use std::cell::{Cell, RefCell};
@@ -49,9 +49,9 @@ use slint::ComponentHandle;
 use anirust_api::{Client, EpisodeSort};
 use anirust_extract::{Registry, ResolvedStream};
 use anirust_player::{
-    Enhancement, FrameGeneration, MediaSource, Networks, PictureAdjust, PlaybackState, Player,
-    PlayerConfig, RifeInstall, RifeModel, TargetRate, TensorRt, Track, TrackKind, UpscaleMode,
-    UpscalePreset, UpscaleQuality,
+    Backend, Enhancement, FrameGeneration, MediaSource, Mlrt, Networks, PictureAdjust,
+    PlaybackState, Player, PlayerConfig, RifeInstall, RifeModel, TargetRate, Track, TrackKind,
+    UpscaleMode, UpscalePreset, UpscaleQuality,
 };
 
 use crate::home::HomeState;
@@ -2145,16 +2145,17 @@ struct Settings {
     rife_model: Cell<usize>,
     /// Where the Vulkan RIFE is, looked for once.
     rife: Option<RifeInstall>,
-    /// Which engine runs the networks: 0 Vulkan, 1 TensorRT.
+    /// Which engine runs the networks: 0 Vulkan, then vs-mlrt on each of
+    /// [`Backend::ALL`] — TensorRT, OpenVINO, MIGraphX.
     engine: Cell<usize>,
-    /// Real-ESRGAN doubling the picture first. TensorRT only.
+    /// Real-ESRGAN doubling the picture first. vs-mlrt only.
     neural_upscale: Cell<bool>,
-    /// Whether the program carries its own part of the TensorRT engine.
-    mlrt_shipped: bool,
-    /// The TensorRT engine, once NVIDIA's runtime is there too.
-    trt: RefCell<Option<TensorRt>>,
-    /// What fetching NVIDIA's runtime is doing, for the line on screen.
-    trt_fetch: RefCell<String>,
+    /// Which of the vs-mlrt plugins the program carries, by backend.
+    shipped: [bool; 3],
+    /// vs-mlrt on each backend whose vendor runtime is there too.
+    mlrt: RefCell<[Option<Mlrt>; 3]>,
+    /// What fetching a vendor runtime is doing, for the line on screen.
+    runtime_fetch: RefCell<String>,
     /// When frame generation was last switched on, until it has been seen
     /// working or failing.
     generation_since: Cell<Option<std::time::Instant>>,
@@ -2204,11 +2205,11 @@ impl Settings {
             frame_rate: Cell::new(kept.frame_rate.min(adapt::RATE_HALF_DISPLAY)),
             rife_model: Cell::new(kept.rife_model.min(RifeModel::ALL.len() - 1)),
             rife: RifeInstall::find(),
-            engine: Cell::new(kept.engine.min(1)),
+            engine: Cell::new(kept.engine.min(Backend::ALL.len())),
             neural_upscale: Cell::new(kept.neural_upscale),
-            mlrt_shipped: TensorRt::find_mlrt().is_some(),
-            trt: RefCell::new(TensorRt::find()),
-            trt_fetch: RefCell::new(String::new()),
+            shipped: Backend::ALL.map(Mlrt::ships),
+            mlrt: RefCell::new(Backend::ALL.map(Mlrt::find)),
+            runtime_fetch: RefCell::new(String::new()),
             generation_since: Cell::new(None),
             engine_build_said: Cell::new(false),
             display_fps: Cell::new(None),
@@ -2259,9 +2260,26 @@ impl Settings {
         }
     }
 
-    /// Whether the TensorRT engine is chosen and complete.
+    /// The vs-mlrt backend chosen, if one is.
+    fn backend(&self) -> Option<Backend> {
+        Backend::ALL.get(self.engine.get().checked_sub(1)?).copied()
+    }
+
+    /// Whether a vs-mlrt backend is chosen and complete.
+    fn on_mlrt(&self) -> bool {
+        self.backend()
+            .is_some_and(|backend| self.mlrt.borrow()[backend_index(backend)].is_some())
+    }
+
+    /// Whether TensorRT in particular is chosen and complete: it alone keeps
+    /// 1080p at its size, and builds engines the first time.
     fn on_tensorrt(&self) -> bool {
-        self.engine.get() == 1 && self.trt.borrow().is_some()
+        self.on_mlrt() && self.backend() == Some(Backend::TensorRt)
+    }
+
+    /// Looks for the vendor runtimes again, after one was fetched.
+    fn refresh_mlrt(&self) {
+        *self.mlrt.borrow_mut() = Backend::ALL.map(Mlrt::find);
     }
 
     /// What the menus ask the neural filters for.
@@ -2290,22 +2308,25 @@ impl Settings {
         });
         Enhancement {
             frames,
-            upscale: tensorrt && self.neural_upscale.get(),
+            upscale: self.on_mlrt() && self.neural_upscale.get(),
         }
     }
 
     /// Applies the menus' frame generation to the player.
     /// Applies the menus' neural filters to the player.
     ///
-    /// TensorRT when it is chosen and complete; Vulkan otherwise, which also
-    /// covers TensorRT chosen before NVIDIA's runtime has been fetched.
+    /// vs-mlrt when a backend is chosen and complete; Vulkan otherwise,
+    /// which also covers a backend chosen before its runtime is there.
     fn apply_generation(&self, player: &Player) -> anirust_player::Result<()> {
         let enhancement = self.enhancement();
-        let trt = self.trt.borrow();
-        let networks = match (self.engine.get(), trt.as_ref(), self.rife.as_ref()) {
-            (1, Some(trt), _) => Some(Networks::TensorRt(trt)),
-            (_, _, Some(rife)) => Some(Networks::Vulkan(rife)),
-            _ => None,
+        let mlrt = self.mlrt.borrow();
+        let chosen = self
+            .backend()
+            .and_then(|backend| mlrt[backend_index(backend)].as_ref());
+        let networks = match (chosen, self.rife.as_ref()) {
+            (Some(mlrt), _) => Some(Networks::Mlrt(mlrt)),
+            (None, Some(rife)) => Some(Networks::Vulkan(rife)),
+            (None, None) => None,
         };
         let wanted = networks.filter(|_| !enhancement.is_empty());
         if wanted.is_some() {
@@ -2353,11 +2374,58 @@ fn subtitle_fonts_dir() -> Option<std::path::PathBuf> {
 }
 
 /// A line for fetching NVIDIA's runtime: how much has come, then unpacking.
-fn describe_fetch(progress: tensorrt::Progress, ru: bool) -> String {
+/// A backend's name, for lines on screen.
+fn backend_name(backend: Backend) -> &'static str {
+    match backend {
+        Backend::TensorRt => "TensorRT",
+        Backend::OpenVino => "OpenVINO",
+        Backend::MigraphX => "MIGraphX",
+    }
+}
+
+/// The engine that suits the GPU in this machine, by its vendor: TensorRT
+/// for NVIDIA, MIGraphX for AMD, OpenVINO for Intel, Vulkan when it cannot
+/// be told. Read from the kernel's view of the display devices on Linux.
+fn recommended_engine() -> usize {
+    use std::sync::OnceLock;
+    static VENDOR: OnceLock<usize> = OnceLock::new();
+    *VENDOR.get_or_init(|| {
+        let Ok(cards) = std::fs::read_dir("/sys/class/drm") else {
+            return 0;
+        };
+        let vendors: Vec<String> = cards
+            .flatten()
+            .filter_map(|card| std::fs::read_to_string(card.path().join("device/vendor")).ok())
+            .map(|vendor| vendor.trim().to_owned())
+            .collect();
+        // A discrete card over an integrated one: NVIDIA, then AMD, then Intel.
+        for (vendor, backend) in [
+            ("0x10de", Backend::TensorRt),
+            ("0x1002", Backend::MigraphX),
+            ("0x8086", Backend::OpenVino),
+        ] {
+            if vendors.iter().any(|found| found == vendor) {
+                return backend_index(backend) + 1;
+            }
+        }
+        0
+    })
+}
+
+/// A backend's place in [`Backend::ALL`], and in the menus' engine list
+/// after Vulkan.
+fn backend_index(backend: Backend) -> usize {
+    Backend::ALL
+        .iter()
+        .position(|candidate| *candidate == backend)
+        .unwrap_or(0)
+}
+
+fn describe_fetch(progress: runtimes::Progress, ru: bool) -> String {
     const MB: u64 = 1024 * 1024;
     match (progress, ru) {
         (
-            tensorrt::Progress::Fetching {
+            runtimes::Progress::Fetching {
                 done,
                 total: Some(total),
             },
@@ -2366,7 +2434,7 @@ fn describe_fetch(progress: tensorrt::Progress, ru: bool) -> String {
             format!("Скачано {} из {} МБ", done / MB, total / MB)
         }
         (
-            tensorrt::Progress::Fetching {
+            runtimes::Progress::Fetching {
                 done,
                 total: Some(total),
             },
@@ -2374,12 +2442,12 @@ fn describe_fetch(progress: tensorrt::Progress, ru: bool) -> String {
         ) => {
             format!("{} of {} MB", done / MB, total / MB)
         }
-        (tensorrt::Progress::Fetching { done, total: None }, true) => {
+        (runtimes::Progress::Fetching { done, total: None }, true) => {
             format!("Скачано {} МБ", done / MB)
         }
-        (tensorrt::Progress::Fetching { done, total: None }, false) => format!("{} MB", done / MB),
-        (tensorrt::Progress::Unpacking, true) => "Распаковываю…".to_owned(),
-        (tensorrt::Progress::Unpacking, false) => "Unpacking…".to_owned(),
+        (runtimes::Progress::Fetching { done, total: None }, false) => format!("{} MB", done / MB),
+        (runtimes::Progress::Unpacking, true) => "Распаковываю…".to_owned(),
+        (runtimes::Progress::Unpacking, false) => "Unpacking…".to_owned(),
     }
 }
 
@@ -2888,7 +2956,9 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     let chosen = Rc::clone(settings);
     let keep_now = Rc::clone(&keep);
     window.on_set_neural_engine(move |index| {
-        chosen.engine.set(usize::from(index == 1));
+        chosen
+            .engine
+            .set((index.max(0) as usize).min(Backend::ALL.len()));
         keep_now();
         if let Err(error) = chosen.apply_generation(player) {
             tracing::warn!(%error, index, "engine change failed");
@@ -2905,65 +2975,68 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         }
     });
 
-    // NVIDIA's runtime, fetched from NVIDIA when asked. The line on screen
-    // follows the download; once it is in, the engine starts using it.
+    // A vendor's runtime, fetched from the vendor when asked. The line on
+    // screen follows the download; once it is in, the engine starts using it.
     let chosen = Rc::clone(settings);
     let http = app.http.clone();
     let weak = window.as_weak();
-    window.on_fetch_tensorrt(move || {
-        if !chosen.trt_fetch.borrow().is_empty() {
+    window.on_fetch_runtime(move || {
+        let Some(backend) = chosen.backend() else {
+            return;
+        };
+        if !chosen.runtime_fetch.borrow().is_empty() {
             return;
         }
         let Some(window) = weak.upgrade() else { return };
         let ru = window.get_lang() == "ru";
-        *chosen.trt_fetch.borrow_mut() = if ru {
+        *chosen.runtime_fetch.borrow_mut() = if ru {
             "Скачиваю…"
         } else {
             "Fetching…"
         }
         .to_owned();
 
-        let (send, mut receive) = tokio::sync::mpsc::unbounded_channel::<tensorrt::Progress>();
+        let (send, mut receive) = tokio::sync::mpsc::unbounded_channel::<runtimes::Progress>();
         let reporter = Rc::clone(&chosen);
         let _ = slint::spawn_local(async move {
             while let Some(progress) = receive.recv().await {
-                *reporter.trt_fetch.borrow_mut() = describe_fetch(progress, ru);
+                *reporter.runtime_fetch.borrow_mut() = describe_fetch(progress, ru);
             }
         });
 
         let chosen = Rc::clone(&chosen);
         let weak = weak.clone();
+        let name = backend_name(backend);
         tasks::spawn(
-            tensorrt::fetch(http.clone(), move |progress| {
+            runtimes::fetch(http.clone(), backend, move |progress| {
                 let _ = send.send(progress);
             }),
             move |result| {
-                chosen.trt_fetch.borrow_mut().clear();
+                chosen.runtime_fetch.borrow_mut().clear();
                 let Some(window) = weak.upgrade() else { return };
                 match result {
                     Ok(_) => {
-                        *chosen.trt.borrow_mut() = TensorRt::find();
+                        chosen.refresh_mlrt();
                         if let Err(error) = chosen.apply_generation(player) {
-                            tracing::warn!(%error, "the TensorRT engine did not start");
+                            tracing::warn!(%error, ?backend, "the engine did not start");
                         }
                         show_hint(
                             &window,
                             if ru {
-                                "TensorRT готов"
+                                format!("{name} готов")
                             } else {
-                                "TensorRT is ready"
-                            }
-                            .to_owned(),
+                                format!("{name} is ready")
+                            },
                         );
                     }
                     Err(error) => {
-                        tracing::warn!(%error, "TensorRT-RTX was not fetched");
+                        tracing::warn!(%error, ?backend, "the runtime was not fetched");
                         show_hint(
                             &window,
                             if ru {
-                                format!("TensorRT не скачался: {error}")
+                                format!("{name} не скачался: {error}")
                             } else {
-                                format!("TensorRT was not fetched: {error}")
+                                format!("{name} was not fetched: {error}")
                             },
                         );
                     }
@@ -3406,9 +3479,24 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             window.set_rife_model(settings.rife_model.get() as i32);
             window.set_frames_available(settings.rife.is_some() || settings.on_tensorrt());
             window.set_neural_engine(settings.engine.get() as i32);
-            window.set_tensorrt_shipped(settings.mlrt_shipped);
-            window.set_tensorrt_ready(settings.trt.borrow().is_some());
-            window.set_tensorrt_fetch(settings.trt_fetch.borrow().as_str().into());
+            let choices: Vec<i32> = std::iter::once(0)
+                .chain(
+                    (0..Backend::ALL.len())
+                        .filter(|&at| settings.shipped[at])
+                        .map(|at| at as i32 + 1),
+                )
+                .collect();
+            if slint::Model::row_count(&window.get_engine_choices()) != choices.len() {
+                window.set_engine_choices(slint::ModelRc::new(slint::VecModel::from(choices)));
+            }
+            window.set_engine_ready(settings.on_mlrt());
+            window.set_engine_fetchable(
+                settings
+                    .backend()
+                    .is_some_and(|backend| backend.download_url().is_some()),
+            );
+            window.set_runtime_fetch(settings.runtime_fetch.borrow().as_str().into());
+            window.set_recommended_engine(recommended_engine() as i32);
             window.set_neural_upscale(settings.neural_upscale.get());
             window.set_adaptive(settings.adaptive.get());
             window.set_upscale_quality(settings.upscale_quality.get() as i32);
