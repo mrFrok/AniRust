@@ -551,6 +551,11 @@ export global Tr {
     out property <string> appearance-dark: lang == "ru" ? "Тёмная" : "Dark";
     out property <string> appearance-amoled: lang == "ru" ? "AMOLED" : "AMOLED";
 
+    // Each language under its own name, which is how someone who cannot read
+    // the other one finds theirs.
+    out property <string> language: lang == "ru" ? "Язык" : "Language";
+    out property <string> language-system: lang == "ru" ? "Как в системе" : "System";
+
     // ---- account ---------------------------------------------------------
     out property <string> sign-in: lang == "ru" ? "Войти" : "Sign in";
     out property <string> sign-out: lang == "ru" ? "Выйти" : "Sign out";

@@ -86,11 +86,6 @@ fn main() -> Result<()> {
 
     desktop::identify();
     let window = MainWindow::new().context("creating the window")?;
-    window.set_lang(if is_russian_locale() {
-        "ru".into()
-    } else {
-        "en".into()
-    });
     window.set_app_version(env!("CARGO_PKG_VERSION").into());
     window.on_open_link(|url| release::open_in_browser(&url));
     let prefs = Rc::new(Cell::new(preferences::Preferences::load()));
@@ -293,11 +288,24 @@ fn wire_account(window: &MainWindow, app: &Rc<App>) {
 /// that row, so the two cannot drift apart.
 fn wire_preferences(window: &MainWindow, held: &Rc<Cell<preferences::Preferences>>) {
     let preferences = held.get();
+    show_language(window, preferences.language);
     show_appearance(window, preferences.appearance);
     show_accent(window, preferences.accent);
     window.set_translucent(preferences.translucent);
     window.set_remember_player(preferences.player.remember);
 
+    window.on_select_language({
+        let held = Rc::clone(held);
+        let weak = window.as_weak();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            let mut preferences = held.get();
+            preferences.language = preferences::Language::at(index);
+            held.set(preferences);
+            show_language(&window, preferences.language);
+            preferences.save();
+        }
+    });
     window.on_select_accent({
         let held = Rc::clone(held);
         let weak = window.as_weak();
@@ -366,6 +374,18 @@ fn show_accent(window: &MainWindow, chosen: preferences::Accent) {
         Kept::Rose => Accent::Rose,
     });
     window.set_accent_index(chosen.index());
+}
+
+/// The interface's strings follow `lang` at once; what Rust writes into the
+/// window reads it each time, so it follows from its next update.
+fn show_language(window: &MainWindow, chosen: preferences::Language) {
+    let russian = match chosen {
+        preferences::Language::System => system_is_russian(),
+        preferences::Language::Russian => true,
+        preferences::Language::English => false,
+    };
+    window.set_lang(if russian { "ru" } else { "en" }.into());
+    window.set_language_choice(chosen.index());
 }
 
 fn show_appearance(window: &MainWindow, chosen: preferences::Appearance) {
@@ -3809,12 +3829,12 @@ fn format_speed(speed: f64) -> String {
     }
 }
 
-/// Russian when the locale asks for it, matching the probe's behaviour.
-fn is_russian_locale() -> bool {
-    ["LC_ALL", "LC_MESSAGES", "LANG"]
-        .into_iter()
-        .find_map(|var| std::env::var(var).ok().filter(|v| !v.is_empty()))
-        .is_some_and(|locale| locale.to_ascii_lowercase().starts_with("ru"))
+/// Whether the system's language is Russian. Asked of the system itself:
+/// `LANG` and the rest are set in a Unix terminal, but not on Windows, nor
+/// for a program macOS starts from the Finder — there, they said English to
+/// a Russian desktop.
+fn system_is_russian() -> bool {
+    sys_locale::get_locale().is_some_and(|locale| locale.to_ascii_lowercase().starts_with("ru"))
 }
 
 pub fn format_time(value: Duration) -> String {

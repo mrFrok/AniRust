@@ -41,6 +41,8 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 libloading = "0.9"
 # Where playback positions are kept, and how the file is written.
 dirs.workspace = true
+# The system's language, which Windows and the Finder do not put in LANG.
+sys-locale = "0.3"
 # The session token belongs in the platform's secret store, not beside the
 # config in plain text.
 keyring.workspace = true

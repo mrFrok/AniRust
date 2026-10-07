@@ -62,7 +62,40 @@ impl Appearance {
     }
 }
 
-/// Everything this machine remembers about how the application should behave.
+/// The language of the interface.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Language {
+    /// The system's: Russian where it is Russian, English anywhere else.
+    #[default]
+    System,
+    Russian,
+    English,
+}
+
+impl Language {
+    /// The order the interface offers them in, a row of segments like
+    /// [`Appearance::ALL`].
+    pub const ALL: [Self; 3] = [Self::System, Self::Russian, Self::English];
+
+    #[must_use]
+    pub fn index(self) -> i32 {
+        Self::ALL
+            .iter()
+            .position(|&value| value == self)
+            .and_then(|at| i32::try_from(at).ok())
+            .unwrap_or(0)
+    }
+
+    #[must_use]
+    pub fn at(index: i32) -> Self {
+        usize::try_from(index)
+            .ok()
+            .and_then(|at| Self::ALL.get(at).copied())
+            .unwrap_or_default()
+    }
+}
+
 /// The accent colour, in the order its swatches are shown.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -106,9 +139,11 @@ impl Accent {
     }
 }
 
+/// Everything this machine remembers about how the application should behave.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
+    pub language: Language,
     pub appearance: Appearance,
     pub accent: Accent,
     /// The window's surfaces see-through.
@@ -279,6 +314,16 @@ mod tests {
 
         let read: Preferences = serde_json::from_str(&written).expect("preferences parse");
         assert_eq!(read.appearance, Appearance::Amoled);
+    }
+
+    #[test]
+    fn the_language_is_the_systems_until_one_is_chosen() {
+        assert_eq!(Preferences::default().language, Language::System);
+        for language in Language::ALL {
+            assert_eq!(Language::at(language.index()), language);
+        }
+        let read: Preferences = serde_json::from_str(r#"{"language":"english"}"#).unwrap();
+        assert_eq!(read.language, Language::English);
     }
 
     #[test]

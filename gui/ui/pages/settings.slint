@@ -20,12 +20,14 @@ export component SettingsPage inherits Rectangle {
     in property <string> version;
     /// The notification switches, in the order of the labels below.
     in property <[bool]> notify: [];
+    in property <int> language: 0;
     in property <int> appearance: 0;
     in property <int> accent: 0;
     in property <bool> translucent: false;
     in property <bool> remember-player: true;
 
     callback flip-notify(int);
+    callback select-language(int);
     callback select-appearance(int);
     callback select-accent(int);
     callback set-translucent(bool);
@@ -205,6 +207,37 @@ export component SettingsPage inherits Rectangle {
                             changed checked => {
                                 if (self.checked != root.remember-player) { root.set-remember-player(self.checked); }
                             }
+                        }
+                    }
+                }
+
+                // ---- the language -------------------------------------------------
+                VerticalLayout {
+                    spacing: Spacing.small;
+
+                    Text {
+                        text: Tr.language;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.title-medium-size;
+                        font-weight: Typography.title-medium-weight-em;
+                    }
+
+                    HorizontalLayout {
+                        alignment: start;
+
+                        SegmentedButton {
+                            items: [
+                                { text: Tr.language-system },
+                                { text: "Русский" },
+                                { text: "English" },
+                            ];
+
+                            // Pushed, not bound, as the appearance's below.
+                            property <int> wanted: root.language;
+                            init => { self.current-index = root.language; }
+                            changed wanted => { self.current-index = self.wanted; }
+
+                            index-changed(i) => { root.select-language(i); }
                         }
                     }
                 }

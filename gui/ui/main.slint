@@ -573,10 +573,13 @@ export component MainWindow inherits Window {
     /// Which appearance is chosen, as a position in the row the profile
     /// screen offers. Rust owns that order, and writes it to the settings.
     in property <int> appearance-choice: 0;
+    /// The language chosen, the same way: system, Russian, English.
+    in property <int> language-choice: 0;
     in property <string> app-version;
     /// Opens a web page in the desktop's browser.
     callback open-link(string);
     callback select-appearance(int);
+    callback select-language(int);
 
     browsing := HorizontalLayout {
         width: 100%;
@@ -647,11 +650,13 @@ export component MainWindow inherits Window {
             account-name: root.account-name;
             version: root.app-version;
             notify: root.notify-switches;
+            language: root.language-choice;
             appearance: root.appearance-choice;
             accent: root.accent-index;
             translucent: root.translucent;
             remember-player: root.remember-player;
             flip-notify(i) => { root.flip-notify(i); }
+            select-language(i) => { root.select-language(i); }
             select-appearance(i) => { root.select-appearance(i); }
             select-accent(i) => { root.select-accent(i); }
             set-translucent(on) => { root.set-translucent(on); }
