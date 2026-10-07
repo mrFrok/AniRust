@@ -34,6 +34,7 @@ depends=('mpv' 'gcc-libs' 'glibc' 'fontconfig' 'freetype2' 'libxkbcommon' 'wayla
 optdepends=('xdg-desktop-portal: file chooser for pictures and bookmarks'
             'gnome-keyring: a place for the session token (or any Secret Service)'
             'vapoursynth: frame generation with RIFE'
+            'intel-media-driver: hardware decoding on Intel GPUs'
             'migraphx: the neural networks on AMD GPUs')
 makedepends=('cargo' 'git' 'meson' 'ninja' 'vapoursynth')
 options=('!lto')
