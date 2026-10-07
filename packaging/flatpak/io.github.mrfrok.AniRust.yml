@@ -1,0 +1,224 @@
+# Flatpak build of AniRust: the whole player in its own runtime, so it runs
+# on any Linux — distributions with no glibc (Alpine, Void musl, Chimera)
+# included, where the archive and the AppImage cannot.
+#
+# Everything the player needs is built here, nothing comes from the host:
+# ffmpeg, libplacebo, libass and mpv with the VapourSynth filter (recipes
+# after Flathub's io.mpv.Mpv), VapourSynth itself, the RIFE plugin and its
+# models, vs-mlrt's plugins for TensorRT and OpenVINO, and the program.
+# The GPU driver comes from the runtime's GL extension, which Flatpak picks
+# for the host — NVIDIA's included, CUDA and all, which TensorRT needs.
+#
+# Built by the release (.github/workflows/release.yml), from the repository's
+# root:
+#
+#   python3 packaging/mlrt/prepare-models.py target/mlrt
+#   flatpak-builder --user --force-clean --repo=repo build packaging/flatpak/io.github.mrfrok.AniRust.yml
+#
+# The program, RIFE and vs-mlrt fetch their dependencies while building
+# (cargo crates, NVIDIA's and Intel's SDKs, the plugin), so their modules
+# have network access: this is a self-built bundle, not a Flathub build.
+
+app-id: io.github.mrfrok.AniRust
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: anirust
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  # The GPU, and for NVIDIA the CUDA devices TensorRT runs on, which
+  # --device=dri does not cover.
+  - --device=all
+  # The session token lives in the Secret Service.
+  - --talk-name=org.freedesktop.secrets
+  # Screenshots and downloads land where the program puts them outside.
+  - --filesystem=xdg-pictures/AniRust:create
+  - --filesystem=xdg-videos/AniRust:create
+
+cleanup:
+  - '*.la'
+  - '*.a'
+  - /include
+  - /lib/pkgconfig
+  - /share/man
+  - /share/doc
+
+modules:
+  - name: nv-codec-headers
+    buildsystem: simple
+    build-commands:
+      - make PREFIX=/app install
+    sources:
+      - type: archive
+        url: https://github.com/FFmpeg/nv-codec-headers/archive/refs/tags/n13.0.19.0.tar.gz
+        sha256: 86d15d1a7c0ac73a0eafdfc57bebfeba7da8264595bf531cf4d8db1c22940116
+
+  - name: uchardet
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_STATIC=0
+      - -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    cleanup:
+      - /bin
+    sources:
+      - type: archive
+        url: https://www.freedesktop.org/software/uchardet/releases/uchardet-0.0.8.tar.xz
+        sha256: e97a60cfc00a1c147a674b097bb1422abd9fa78a2d9ce3f3fdcc2e78a34ac5f0
+
+  - name: libass
+    config-opts:
+      - --disable-static
+      - --enable-asm
+      - --enable-harfbuzz
+      - --enable-fontconfig
+    sources:
+      - type: archive
+        url: https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz
+        sha256: 2dca25c0e0c837ddf00b52011b3f82cac1e4ddd3ad018227806b0c2288864acc
+
+  - name: zimg
+    config-opts:
+      - --disable-static
+    sources:
+      - type: archive
+        archive-type: tar
+        url: https://api.github.com/repos/sekrit-twc/zimg/tarball/release-3.0.6
+        sha256: 15140e491c4ce9db5f02a038d8a1eb53e9151b55eeed06a2899425a6ebfef367
+
+  # Decoding only, which is all the player asks of it; the command-line
+  # ffmpeg stays, because episode downloads remux through it.
+  - name: ffmpeg
+    config-opts:
+      - --disable-debug
+      - --disable-doc
+      - --disable-static
+      - --enable-shared
+      - --enable-gpl
+      - --enable-version3
+      - --enable-gnutls
+      - --enable-libdav1d
+      - --enable-libdrm
+      - --enable-vaapi
+      - --enable-vulkan
+    cleanup:
+      - /share/ffmpeg
+    sources:
+      - type: archive
+        url: https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz
+        sha256: cf38e0e28c7e5605942c4a77755349b0145804a397af37eb1fb4c77cb237f635
+
+  - name: vapoursynth
+    config-opts:
+      - --with-python-prefix=${FLATPAK_DEST}
+    sources:
+      - type: archive
+        dest-filename: vapoursynth.tar.gz
+        url: https://api.github.com/repos/vapoursynth/vapoursynth/tarball/R73
+        sha256: 9c02a68b29eb446b2d0b1be3d831420fdc2bd703aacccc468faef9f94e3bf85f
+
+  - name: libplacebo
+    buildsystem: meson
+    config-opts:
+      - -Dvulkan=enabled
+      - -Dshaderc=enabled
+      - -Ddemos=false
+      - -Dtests=false
+    sources:
+      - type: git
+        url: https://github.com/haasn/libplacebo.git
+        tag: v7.360.1
+        commit: cee9b076f2c63104ccfd497fa79c39a867293ec4
+
+  # mpv as it is released: inside the sandbox VapourSynth is always there,
+  # so the filter links it directly, without the Linux archive's patch.
+  - name: mpv
+    buildsystem: meson
+    config-opts:
+      - -Dlibmpv=true
+      - -Dcplayer=false
+      - -Dvapoursynth=enabled
+      - -Dlua=disabled
+      - -Djavascript=disabled
+      - -Dmanpage-build=disabled
+      - -Dhtml-build=disabled
+      - -Dpdf-build=disabled
+      - -Dbuild-date=false
+    sources:
+      - type: archive
+        url: https://github.com/mpv-player/mpv/archive/refs/tags/v0.41.0.tar.gz
+        sha256: ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209
+
+  # The RIFE plugin and models for frame generation on any GPU, through
+  # Vulkan, where the program looks: /app/lib/anirust/rife.
+  - name: rife
+    buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network
+    build-commands:
+      - sh packaging/fetch-rife.sh linux /app/lib/anirust/rife
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - target
+          - dist
+          - .git
+
+  # vs-mlrt for the GPUs' matrix units: our API 4 ports of its TensorRT and
+  # OpenVINO plugins, built here against this runtime, and the networks the
+  # release prepared (prepare-models.py) — they are the same everywhere. The
+  # vendors' runtimes are fetched by the player when asked.
+  - name: vs-mlrt
+    buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network
+    build-commands:
+      - OUT_DIR=/app/lib/anirust/mlrt WORK_DIR="$PWD/work" sh packaging/mlrt/build-vstrt.sh
+      - OUT_DIR=/app/lib/anirust/mlrt WORK_DIR="$PWD/work" sh packaging/mlrt/build-vsov.sh
+      - cp -r mlrt-data/vsmlrt.py mlrt-data/models /app/lib/anirust/mlrt/
+      - install -Dm644 -t /app/share/licenses/anirust mlrt-data/LICENSE-*
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - target
+          - dist
+          - .git
+      - type: dir
+        path: ../../target/mlrt
+        dest: mlrt-data
+
+  - name: anirust
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/anirust/cargo
+        # libmpv is in /app, where the linker does not look by itself.
+        LIBRARY_PATH: /app/lib
+      build-args:
+        - --share=network
+    build-commands:
+      - cargo build --release --locked -p anirust-gui -p anirust-cli
+      - install -Dm755 -t /app/bin target/release/anirust target/release/anirust-cli
+      - install -Dm644 packaging/linux/io.github.mrfrok.AniRust.desktop -t /app/share/applications
+      - install -Dm644 packaging/linux/io.github.mrfrok.AniRust.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 packaging/icons/anirust.svg /app/share/icons/hicolor/scalable/apps/io.github.mrfrok.AniRust.svg
+      - install -Dm644 -t /app/share/licenses/anirust LICENSE
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - target
+          - dist
+          - .git

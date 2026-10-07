@@ -74,6 +74,82 @@ jobs:
           name: deb
           path: dist/*
 
+  # One file for glibc distributions as old as Ubuntu 24.04, with its own
+  # libmpv, RIFE and vs-mlrt (packaging/linux/build-appimage.sh).
+  appimage:
+    name: AppImage
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build tools and libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev libxkbcommon-dev libfontconfig-dev \
+            meson ninja-build cmake pkg-config git curl unzip p7zip-full zstd \
+            python3-pip librsvg2-bin \
+            libavcodec-dev libavformat-dev libavfilter-dev libavdevice-dev libavutil-dev \
+            libswscale-dev libswresample-dev libass-dev libplacebo-dev \
+            libva-dev libdrm-dev libegl-dev libgl-dev libgbm-dev \
+            libwayland-dev wayland-protocols libx11-dev libxext-dev libxpresent-dev \
+            libxrandr-dev libxss-dev libxv-dev \
+            libpulse-dev libasound2-dev libpipewire-0.3-dev \
+            liblcms2-dev libzimg-dev libuchardet-dev libjpeg-dev \
+            libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1 libxcursor1 libxi6 libxrandr2
+          pip install --break-system-packages onnx onnxconverter-common
+      - uses: Swatinem/rust-cache@v2
+      - name: AppImage
+        run: packaging/linux/build-appimage.sh
+      - name: Checksums
+        run: cd dist && for f in *.AppImage; do sha256sum "$f" > "$f.sha256"; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/*
+
+  # The whole player in its own runtime: any Linux, those without glibc
+  # (Alpine, Void musl, Chimera) included (packaging/flatpak/).
+  flatpak:
+    name: Flatpak
+    runs-on: ubuntu-24.04
+    env:
+      APP_ID: io.github.mrfrok.AniRust
+    steps:
+      - uses: actions/checkout@v4
+      - name: Flatpak, the runtime and the networks
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder p7zip-full python3-pip
+          pip install --break-system-packages onnx onnxconverter-common
+          # The runtime version is read from the manifest, so the two
+          # cannot drift apart.
+          runtime=$(sed -n "s/^runtime-version: *'\([^']*\)'.*/\1/p" "packaging/flatpak/$APP_ID.yml")
+          [ -n "$runtime" ] || { echo "no runtime-version in the manifest"; exit 1; }
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub \
+            "org.freedesktop.Platform//$runtime" "org.freedesktop.Sdk//$runtime" \
+            "org.freedesktop.Sdk.Extension.rust-stable//$runtime"
+          python3 packaging/mlrt/prepare-models.py target/mlrt
+      - uses: actions/cache@v4
+        with:
+          path: .flatpak-builder
+          key: flatpak-builder-${{ hashFiles('packaging/flatpak/*.yml') }}
+          restore-keys: flatpak-builder-
+      - name: Bundle
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          flatpak-builder --user --disable-rofiles-fuse --force-clean \
+            --repo=repo build "packaging/flatpak/$APP_ID.yml"
+          mkdir -p dist
+          name="anirust-$version-x86_64.flatpak"
+          flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
+            repo "dist/$name" "$APP_ID"
+          cd dist && sha256sum "$name" > "$name.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: dist/*
+
   windows:
     name: Windows zip
     runs-on: windows-2022
@@ -152,7 +228,7 @@ jobs:
 
   release:
     name: Publish
-    needs: [linux, deb, windows, macos]
+    needs: [linux, deb, appimage, flatpak, windows, macos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:

@@ -46,18 +46,24 @@ fn integrate() -> std::io::Result<()> {
             .join(format!("{APP_ID}.desktop"))
             .exists()
     });
-    if installed {
+    // Flatpak installs its own entry, under the app's id, and the sandbox
+    // could not write the host's anyway.
+    if installed || std::env::var_os("FLATPAK_ID").is_some() {
         return Ok(());
     }
     let Some(data) = dirs::data_dir() else {
         return Ok(());
     };
-    // The Linux archive starts the program through a launcher that picks the
-    // right libmpv; the entry should go through it too. Otherwise the entry
+    // An AppImage runs from a mount that moves every start; the entry should
+    // run the AppImage file itself, which the runtime names in $APPIMAGE. The
+    // Linux archive starts the program through a launcher that picks the
+    // right libmpv; the entry should go through that. Otherwise the entry
     // runs this very file, wherever it was unpacked to.
-    let exe = std::env::var_os("ANIRUST_LAUNCHER")
+    let exe = ["APPIMAGE", "ANIRUST_LAUNCHER"]
+        .iter()
+        .filter_map(std::env::var_os)
         .map(std::path::PathBuf::from)
-        .filter(|launcher| launcher.is_file())
+        .find(|path| path.is_file())
         .map_or_else(std::env::current_exe, Ok)?;
 
     let entry = DESKTOP_ENTRY.replace("Exec=anirust %u", &format!("Exec=\"{}\" %u", exe.display()));

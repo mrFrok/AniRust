@@ -155,9 +155,25 @@ can be switched off.
 
 ## Installing
 
-Tagged releases build a `.deb`, a Linux tarball, a Windows zip with libmpv
-beside the program, and a macOS disk image; Arch has a PKGBUILD in
-`packaging/arch/`.
+Tagged releases build a Flatpak, an AppImage, a Linux tarball, a `.deb`, a
+Windows zip with libmpv beside the program, and a macOS disk image; Arch has a
+PKGBUILD in `packaging/arch/`. Which Linux one to take:
+
+| Distribution | Take |
+| --- | --- |
+| Arch, CachyOS, Manjaro, openSUSE Tumbleweed | the tarball, or the PKGBUILD |
+| Ubuntu 24.04+, Debian 13+, Fedora 40+ and other glibc systems that recent | the AppImage |
+| anything else — older glibc, or none at all (Alpine, Void musl, Chimera) | the Flatpak |
+
+- **The Flatpak** carries the whole player in its own runtime — ffmpeg, mpv
+  with the VapourSynth filter, VapourSynth, RIFE and vs-mlrt — so it runs on
+  any Linux and frame generation works out of the box. Install it with
+  `flatpak install --user anirust-<version>-x86_64.flatpak`; the runtime comes
+  from Flathub, and the GPU driver, NVIDIA's included, from Flatpak's GL
+  extension.
+- **The AppImage** is one file with its own libmpv (with the filter), RIFE and
+  vs-mlrt, built on Ubuntu 24.04. Frame generation uses the host's VapourSynth
+  when it has one.
 
 - **The Linux tarball** is built on Arch and carries its own libmpv, with the
   VapourSynth filter, in `lib/`, the RIFE plugin in `rife/` and vs-mlrt in

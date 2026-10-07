@@ -155,9 +155,25 @@ VapourSynth (в сборке для Windows он есть; на Linux —
 
 ## Установка
 
-Из тегов собираются `.deb`, tar-архив для Linux, zip для Windows с libmpv
-рядом с программой и образ диска для macOS; для Arch есть PKGBUILD в
-`packaging/arch/`.
+Из тегов собираются Flatpak, AppImage, tar-архив для Linux, `.deb`, zip для
+Windows с libmpv рядом с программой и образ диска для macOS; для Arch есть
+PKGBUILD в `packaging/arch/`. Какой взять на Linux:
+
+| Дистрибутив | Что взять |
+| --- | --- |
+| Arch, CachyOS, Manjaro, openSUSE Tumbleweed | tar-архив или PKGBUILD |
+| Ubuntu 24.04+, Debian 13+, Fedora 40+ и другие системы с не менее свежей glibc | AppImage |
+| всё остальное — со старой glibc или вовсе без неё (Alpine, Void musl, Chimera) | Flatpak |
+
+- **Flatpak** везёт весь плеер в собственной среде — ffmpeg, mpv с фильтром
+  VapourSynth, VapourSynth, RIFE и vs-mlrt, — поэтому работает на любом Linux, и
+  генерация кадров работает сразу. Установка:
+  `flatpak install --user anirust-<версия>-x86_64.flatpak`; среда выполнения
+  скачивается с Flathub, а драйвер видеокарты, включая NVIDIA, — из
+  GL-расширения Flatpak.
+- **AppImage** — один файл со своей libmpv (с фильтром), RIFE и vs-mlrt,
+  собранный на Ubuntu 24.04. Для генерации кадров используется VapourSynth
+  системы, если он есть.
 
 - **Архив для Linux** собирается на Arch и везёт свою libmpv с фильтром
   VapourSynth в `lib/`, плагин RIFE в `rife/` и vs-mlrt в `mlrt/`; остальные
