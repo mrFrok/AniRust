@@ -465,10 +465,14 @@ impl Player {
     pub fn open(&self, source: &MediaSource) -> Result<()> {
         self.apply_headers(&source.headers)?;
 
+        // `start` is applied by loadfile, so setting it first avoids a visible
+        // jump from 0 to the resume point. As text: it is a relative time,
+        // which mpv refuses as a number ("error accessing property"), and an
+        // episode with a saved position would then not open at all.
         match source.start_at {
-            // `start` is applied by loadfile, so setting it first avoids a
-            // visible jump from 0 to the resume point.
-            Some(at) => self.mpv.set_property("start", at.as_secs_f64())?,
+            Some(at) => self
+                .mpv
+                .set_property("start", format!("{:.3}", at.as_secs_f64()))?,
             None => self.mpv.set_property("start", "none")?,
         }
 
@@ -1128,6 +1132,24 @@ mod tests {
     #[test]
     fn headless_config_does_not_ask_for_a_window() {
         assert_eq!(PlayerConfig::headless().video_output, VideoOutput::Headless);
+    }
+
+    /// A real libmpv, no window and nothing played: mpv takes the request,
+    /// which is what failed for every episode with a saved position.
+    #[test]
+    fn an_episode_opens_at_a_saved_position() {
+        let player = Player::new(&PlayerConfig::headless()).expect("libmpv starts");
+        let source = MediaSource::new("av://lavfi:testsrc=duration=600")
+            .start_at(Duration::from_millis(83_500));
+        player.open(&source).expect("opening at a position");
+        assert_eq!(
+            player.mpv.get_property::<String>("start").ok().as_deref(),
+            Some("83.5")
+        );
+        player
+            .open(&MediaSource::new("av://lavfi:testsrc=duration=600"))
+            .expect("opening from the start");
+        player.stop().expect("stopping");
     }
 
     #[test]

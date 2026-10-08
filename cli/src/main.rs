@@ -157,6 +157,9 @@ enum Command {
         /// Seconds to keep decoding once playback starts.
         #[arg(long, default_value_t = 5)]
         seconds: u64,
+        /// Open the episode this many seconds in, as a saved position does.
+        #[arg(long)]
+        start: Option<f64>,
         /// Playback speed to exercise.
         #[arg(long, default_value_t = 1.0)]
         speed: f64,
@@ -300,6 +303,7 @@ enum Rife {
 /// How the probe plays an episode.
 struct PlayOptions<'a> {
     seconds: u64,
+    start: Option<std::time::Duration>,
     speed: f64,
     shader_dir: Option<&'a std::path::Path>,
     upscale: UpscalePreset,
@@ -607,6 +611,7 @@ async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
             dubber,
             source,
             seconds,
+            start,
             speed,
             shader_dir,
             upscale,
@@ -636,6 +641,9 @@ async fn run(client: &Client, cli: &Cli, lang: Lang) -> Result<()> {
                 &stream,
                 &PlayOptions {
                     seconds: *seconds,
+                    start: start
+                        .filter(|at| at.is_finite() && *at > 0.0)
+                        .map(std::time::Duration::from_secs_f64),
                     speed: *speed,
                     shader_dir: shader_dir.as_deref(),
                     upscale: UpscalePreset::new((*upscale).into(), (*quality).into()),
@@ -846,6 +854,7 @@ async fn resolve_episode(episode: &anirust_api::Episode, lang: Lang) -> Result<R
 fn play(stream: &ResolvedStream, options: &PlayOptions<'_>, lang: Lang) -> Result<()> {
     let PlayOptions {
         seconds,
+        start,
         speed,
         shader_dir,
         upscale,
@@ -880,10 +889,12 @@ fn play(stream: &ResolvedStream, options: &PlayOptions<'_>, lang: Lang) -> Resul
     })?;
 
     eprintln!("{}", lang.play_opening(&best.url));
-    player.open(
-        &MediaSource::new(&best.url)
-            .headers(stream.headers.iter().map(|(k, v)| (k.as_str(), v.as_str()))),
-    )?;
+    let mut source = MediaSource::new(&best.url)
+        .headers(stream.headers.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    if let Some(at) = start {
+        source = source.start_at(at);
+    }
+    player.open(&source)?;
     player.set_speed(speed)?;
 
     // Poll rather than subscribe to mpv events: the probe only needs to know
