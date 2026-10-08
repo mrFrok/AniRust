@@ -358,9 +358,12 @@ install_desktop_entry() { # exe
     fi
     fetch "$(raw_url packaging/icons/anirust.svg)" "$icons/$APP_ID.svg" 2>/dev/null || true
     rm -f "$tmp"
-    command -v update-desktop-database &>/dev/null && update-desktop-database "$apps" 2>/dev/null || true
-    command -v gtk-update-icon-cache &>/dev/null &&
+    if command -v update-desktop-database &>/dev/null; then
+        update-desktop-database "$apps" 2>/dev/null || true
+    fi
+    if command -v gtk-update-icon-cache &>/dev/null; then
         gtk-update-icon-cache -f -t "$DATA_HOME/icons/hicolor" 2>/dev/null || true
+    fi
     ok "Added to the applications menu"
 }
 
@@ -463,9 +466,9 @@ install_dmg() {
     xattr -dr com.apple.quarantine "$apps/AniRust.app" 2>/dev/null || true
     write_marker dmg
     ok "Installed to $apps/AniRust.app"
-    if command -v brew &>/dev/null && ! brew list vapoursynth &>/dev/null && $DEPS; then
-        ask "Frame generation needs VapourSynth. Install it with ${BOLD}brew install vapoursynth${NC}?" &&
-            brew install vapoursynth || true
+    if command -v brew &>/dev/null && ! brew list vapoursynth &>/dev/null && $DEPS &&
+        ask "Frame generation needs VapourSynth. Install it with ${BOLD}brew install vapoursynth${NC}?"; then
+        brew install vapoursynth || warn "VapourSynth did not install; frame generation stays off"
     fi
 }
 
