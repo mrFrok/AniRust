@@ -92,8 +92,8 @@ export global Tr {
         : "On AMD GPUs the networks run through ROCm's MIGraphX. It is installed from the distribution — the migraphx package on Arch — and found in /opt/rocm. Until then, Vulkan runs them.";
     out property <string> neural-upscale: lang == "ru" ? "Нейросетевой апскейл ×2" : "Neural upscaling ×2";
     out property <string> neural-upscale-hint: lang == "ru"
-        ? "Real-ESRGAN удваивает картинку до шейдеров. Для серий в 720p и ниже; 1080p и генерацию кадров вместе с ним не потянет почти никакая видеокарта."
-        : "Real-ESRGAN doubles the picture before the shaders. For 720p episodes and below; with 1080p or frame generation it is too much for almost any GPU.";
+        ? "Real-ESRGAN удваивает видео до 720p, перед шейдерами; что выше, увеличивают шейдеры. Вместе с генерацией кадров его не потянет почти никакая видеокарта."
+        : "Real-ESRGAN doubles video up to 720p, before the shaders; anything taller is left to them. Together with frame generation it is too much for almost any GPU.";
     out property <string> frame-generation: lang == "ru" ? "Генерация кадров" : "Frame generation";
     out property <string> frame-generation-hint: lang == "ru"
         ? "RIFE дорисовывает кадры между настоящими — движение становится плавным. Сильно нагружает видеокарту: вместе с ней лучше апскейл «Быстро»."

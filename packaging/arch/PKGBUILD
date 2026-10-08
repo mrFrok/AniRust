@@ -35,6 +35,7 @@ optdepends=('xdg-desktop-portal: file chooser for pictures and bookmarks'
             'gnome-keyring: a place for the session token (or any Secret Service)'
             'vapoursynth: frame generation with RIFE'
             'intel-media-driver: hardware decoding on Intel GPUs'
+            'intel-compute-runtime: the neural networks on Intel GPUs, through OpenVINO'
             'migraphx: the neural networks on AMD GPUs')
 makedepends=('cargo' 'git' 'meson' 'ninja' 'vapoursynth')
 options=('!lto')

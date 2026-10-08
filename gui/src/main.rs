@@ -2178,9 +2178,9 @@ struct Settings {
     mlrt: RefCell<[Option<Mlrt>; 3]>,
     /// What fetching a vendor runtime is doing, for the line on screen.
     runtime_fetch: RefCell<String>,
-    /// When frame generation was last switched on, until it has been seen
-    /// working or failing.
-    generation_since: Cell<Option<std::time::Instant>>,
+    /// When the neural filters were last switched on, until they have been
+    /// seen working or failing.
+    filters_since: Cell<Option<std::time::Instant>>,
     /// Whether the line about TensorRT building an engine has been shown
     /// since the filters were last applied.
     engine_build_said: Cell<bool>,
@@ -2233,7 +2233,7 @@ impl Settings {
             offered,
             mlrt: RefCell::new(Backend::ALL.map(Mlrt::find)),
             runtime_fetch: RefCell::new(String::new()),
-            generation_since: Cell::new(None),
+            filters_since: Cell::new(None),
             engine_build_said: Cell::new(false),
             display_fps: Cell::new(None),
             adaptive: Cell::new(kept.adaptive),
@@ -2355,8 +2355,8 @@ impl Settings {
         if wanted.is_some() {
             anirust_player::frames::prepare_vapoursynth();
         }
-        self.generation_since
-            .set((wanted.is_some() && enhancement.frames.is_some()).then(std::time::Instant::now));
+        self.filters_since
+            .set(wanted.is_some().then(std::time::Instant::now));
         self.engine_build_said.set(false);
         player.set_enhancement(wanted.map(|networks| (networks, enhancement)))
     }
@@ -3399,6 +3399,9 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
     // building one reads seven properties per track, and the answer is the same
     // for the whole episode.
     let known_tracks = Cell::new(usize::MAX);
+    // Whether the decoder has been looked at this run, for a VA-API driver
+    // the GPU lacks: said once, not each episode.
+    let decoder_judged = Cell::new(false);
 
     let timer = slint::Timer::default();
     timer.start(
@@ -3440,20 +3443,35 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
 
             // The decoder mpv actually engaged, which is not always the one
             // asked for — worth showing rather than hiding.
+            let hwdec = player.active_hwdec();
             window.set_decoder_label(
-                player
-                    .active_hwdec()
-                    .map_or_else(|| "SW".to_owned(), |name| name.to_uppercase())
+                hwdec
+                    .as_deref()
+                    .map_or_else(|| "SW".to_owned(), str::to_uppercase)
                     .into(),
             );
+            // Software decoding nobody chose: a missing driver is the usual
+            // reason, and the label alone does not say so. Judged once the
+            // episode has played a little, when mpv has settled on one.
+            if !decoder_judged.get() && position > Duration::from_secs(2) {
+                decoder_judged.set(true);
+                if hwdec.is_none()
+                    && DECODERS[settings.decoder.get()] != "no"
+                    && let Some(missing) = gpus::missing_vaapi_driver()
+                {
+                    show_hint(
+                        &window,
+                        missing.advice(window.get_lang() == "ru").to_owned(),
+                    );
+                }
+            }
 
             // Say what is being produced, not just what arrived: with
             // upscaling on, the picture leaving the renderer is larger than
             // the source, and reporting the source would understate it.
             let generated = generated_fps(player, &settings);
-            if generated.is_none() {
-                explain_engine_build(&window, &settings);
-            }
+            check_filters(&window, player, &settings, generated);
+            explain_engine_build(&window, &settings);
             window.set_quality_label(
                 quality_label(
                     player.video_size(),
@@ -3738,46 +3756,119 @@ fn quality_label(
 }
 
 /// The rate frame generation is producing, when it is on and working.
-///
-/// mpv drops a failed filter and plays on, so "on" is not the same as
-/// "working": the rate leaving the filters says which. A few seconds after
-/// it was switched on, a rate no higher than the source's is a failure, and
-/// the note the script left is logged once.
 fn generated_fps(player: &Player, settings: &Settings) -> Option<f64> {
     settings.frame_rate.get().checked_sub(1)?;
     let source = player.source_fps()?;
     let out = player.output_fps()?;
-    let working = out > source * 1.3;
-    if let Some(since) = settings.generation_since.get() {
-        // mpv's estimate trails a change: right after one it still speaks
-        // of the filter before.
-        if since.elapsed() < std::time::Duration::from_secs(3) {
-            return working.then_some(out);
+    (out > source * 1.3).then_some(out)
+}
+
+/// Judges, once, whether the neural filters switched on are doing their
+/// work, and says on screen when they are not.
+///
+/// mpv drops a failed filter and plays on, so "on" is not "working": the
+/// rate and the size leaving the filters say which. A failure the script
+/// wrote down is told at once; otherwise vs-mlrt may still be compiling a
+/// network for the card, which holds the picture for ten seconds or more,
+/// so silence counts as failure only after a minute.
+fn check_filters(
+    window: &MainWindow,
+    player: &Player,
+    settings: &Settings,
+    generated: Option<f64>,
+) {
+    let Some(since) = settings.filters_since.get() else {
+        return;
+    };
+    // mpv's figures trail a change: right after one they still speak of the
+    // filters before.
+    if since.elapsed() < std::time::Duration::from_secs(3) || !player.is_playing() {
+        return;
+    }
+    let Some((_, source_h)) = player.video_size() else {
+        return;
+    };
+    let ru = window.get_lang() == "ru";
+    let enhancement = settings.enhancement();
+    let upscale_fits = source_h <= anirust_player::frames::NEURAL_UPSCALE_MAX_HEIGHT;
+    let frames_work = enhancement.frames.is_none() || generated.is_some();
+    let upscale_works = !enhancement.upscale
+        || !upscale_fits
+        || player
+            .filtered_size()
+            .is_some_and(|(_, filtered_h)| filtered_h >= source_h * 3 / 2);
+
+    if frames_work && upscale_works {
+        tracing::info!(?generated, "the neural filters are working");
+        settings.filters_since.set(None);
+        if enhancement.upscale && !upscale_fits {
+            show_hint(window, upscale_too_tall(source_h, ru));
         }
-        // vs-mlrt compiles a network for the card the first time it meets a
-        // picture size, which holds the picture for ten seconds or more.
-        let grace = if settings.on_mlrt() { 60 } else { 6 };
-        if working {
-            tracing::info!(source, out, "frame generation is working");
-            settings.generation_since.set(None);
-        } else if since.elapsed() > std::time::Duration::from_secs(grace) && player.is_playing() {
-            let note = anirust_player::frames::last_error().unwrap_or_else(|| {
-                "no note from the script: is VapourSynth installed, and does this libmpv have \
-                 its filter?"
-                    .to_owned()
-            });
-            tracing::warn!(source, out, %note, "frame generation did not start");
-            settings.generation_since.set(None);
+        return;
+    }
+
+    let note = anirust_player::frames::last_error();
+    let grace = if settings.on_mlrt() { 60 } else { 6 };
+    if note.is_none() && since.elapsed() < std::time::Duration::from_secs(grace) {
+        return;
+    }
+    settings.filters_since.set(None);
+    tracing::warn!(
+        note = note.as_deref().unwrap_or("none"),
+        "the neural filters did not start"
+    );
+    show_hint(
+        window,
+        filters_failed(note.as_deref(), settings.backend(), ru),
+    );
+}
+
+/// Why neural upscaling leaves this source alone.
+fn upscale_too_tall(source_h: u32, ru: bool) -> String {
+    let limit = anirust_player::frames::NEURAL_UPSCALE_MAX_HEIGHT;
+    if ru {
+        format!("Нейросетевой апскейл — для видео до {limit}p; {source_h}p увеличивают шейдеры")
+    } else {
+        format!("Neural upscaling is for video up to {limit}p; {source_h}p is left to the shaders")
+    }
+}
+
+/// The line on screen for filters that did not start: what is missing when
+/// that is known, else the last line of the script's note — Python's own
+/// summary of the error — else the likely reason for there being none.
+fn filters_failed(note: Option<&str>, backend: Option<Backend>, ru: bool) -> String {
+    if backend == Some(Backend::OpenVino)
+        && let Some(missing) = gpus::missing_compute_runtime()
+    {
+        return missing.advice(ru).to_owned();
+    }
+    let reason = note
+        .and_then(|note| note.lines().rev().find(|line| !line.trim().is_empty()))
+        .map(|line| {
+            let line = line.trim();
+            match line.char_indices().nth(160) {
+                Some((at, _)) => format!("{}…", &line[..at]),
+                None => line.to_owned(),
+            }
+        });
+    match (reason, ru) {
+        (Some(reason), true) => format!("Нейросеть не запустилась: {reason}"),
+        (Some(reason), false) => format!("The neural filters did not start: {reason}"),
+        (None, true) => {
+            "Нейросеть не запустилась: нет VapourSynth или фильтра VapourSynth в libmpv".to_owned()
+        }
+        (None, false) => {
+            "The neural filters did not start: no VapourSynth, or no VapourSynth filter in libmpv"
+                .to_owned()
         }
     }
-    working.then_some(out)
 }
 
 /// Says, once, that the engine is compiling a network for this card, when
 /// the picture has stood still for a few seconds after the filters changed —
 /// otherwise a frozen frame goes unexplained.
 fn explain_engine_build(window: &MainWindow, settings: &Settings) {
-    let Some(since) = settings.generation_since.get() else {
+    let Some(since) = settings.filters_since.get() else {
         return;
     };
     if !settings.on_mlrt()
@@ -3903,6 +3994,23 @@ fn release_id_from_args() -> Result<Option<i64>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_filter_is_explained_by_the_last_line_of_its_note() {
+        let note = "Traceback (most recent call last):\n  File \"rife.vpy\", line 40\n\
+                    vapoursynth.Error: no GPU device\n\n";
+        assert_eq!(
+            filters_failed(Some(note), None, false),
+            "The neural filters did not start: vapoursynth.Error: no GPU device"
+        );
+        // A long one is cut, on a character, not a byte.
+        let long = "ж".repeat(300);
+        let line = filters_failed(Some(&long), None, true);
+        assert!(line.ends_with('…'));
+        assert!(line.chars().count() < 200, "{line}");
+        // No note at all: the filter itself is missing, most likely.
+        assert!(filters_failed(None, None, true).contains("VapourSynth"));
+    }
 
     #[test]
     fn engines_are_offered_for_the_gpus_the_machine_has() {

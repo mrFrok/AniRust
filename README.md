@@ -222,10 +222,13 @@ with a `.sha256` beside it (`sha256sum -c FILE.sha256`).
   system's libmpv, which those distributions build without the VapourSynth
   filter: everything but frame generation.
 
-Outside the Flatpak, hardware decoding on Intel and AMD cards goes through the
-system's VA-API driver: `intel-media-driver` for Intel (`intel-media-va-driver`
-on Debian and Ubuntu), Mesa's for AMD. Without it the player decodes on the
-CPU, and its decoder line reads SW.
+Outside the Flatpak, two things on Linux come from the system's drivers, and
+the player says on screen when one is missing. Hardware decoding on Intel and
+AMD cards goes through VA-API: `intel-media-driver` for Intel
+(`intel-media-va-driver` on Debian and Ubuntu), Mesa's for AMD; without it the
+player decodes on the CPU, and its decoder line reads SW. OpenVINO runs the
+networks on an Intel GPU through Intel's OpenCL: `intel-compute-runtime`
+(`intel-opencl-icd` on Debian and Ubuntu).
 
 Releases are built by GitHub Actions (`.github/workflows/release.yml`): a tag
 `v*` builds every package, each with a `.sha256`, and publishes the release;

@@ -222,10 +222,13 @@ VapourSynth ставится один раз (см. [«Установка»](#у
   libmpv, которую эти дистрибутивы собирают без фильтра VapourSynth: работает
   всё, кроме генерации кадров.
 
-Вне Flatpak аппаратное декодирование на видеокартах Intel и AMD идёт через
-драйвер VA-API системы: `intel-media-driver` для Intel (`intel-media-va-driver`
-в Debian и Ubuntu), драйвер Mesa для AMD. Без него плеер декодирует на
-процессоре, и в строке декодера написано SW.
+Вне Flatpak две вещи на Linux берутся из драйверов системы, и если чего-то
+нет, плеер пишет об этом на экране. Аппаратное декодирование на видеокартах
+Intel и AMD идёт через VA-API: `intel-media-driver` для Intel
+(`intel-media-va-driver` в Debian и Ubuntu), драйвер Mesa для AMD; без него
+плеер декодирует на процессоре, и в строке декодера написано SW. OpenVINO
+считает сети на видеокарте Intel через OpenCL от Intel:
+`intel-compute-runtime` (`intel-opencl-icd` в Debian и Ubuntu).
 
 Релизы собирает GitHub Actions (`.github/workflows/release.yml`): тег `v*`
 собирает все пакеты, к каждому — `.sha256`, и публикует релиз; запущенный

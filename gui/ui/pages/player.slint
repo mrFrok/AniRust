@@ -270,16 +270,20 @@ export component PlayerPage inherits Rectangle {
     }
 
     hint-linger := Timer {
-        interval: 1200ms;
+        // Long enough to read: a key's echo goes in a moment, a line saying
+        // what to install stays a while.
+        interval: max(1200ms, root.hint.character-count * 70ms);
         running: false;
         triggered => { root.hint-showing = false; self.running = false; }
     }
 
     hint-box := Rectangle {
+        // One line while it fits, wrapped to most of the picture after.
+        property <length> text-width: min(hint-text.preferred-width, root.width * 0.8);
         x: (parent.width - self.width) / 2;
         y: parent.height / 5;
-        width: hint-text.preferred-width + 2 * Spacing.comfortable;
-        height: 48px;
+        width: self.text-width + 2 * Spacing.comfortable;
+        height: max(48px, hint-text.preferred-height + 2 * Spacing.small);
         border-radius: Shape.medium;
         background: #000000B3;
         opacity: root.hint-showing ? 1.0 : 0.0;
@@ -292,7 +296,9 @@ export component PlayerPage inherits Rectangle {
             font-size: Typography.title-medium-size;
             horizontal-alignment: center;
             vertical-alignment: center;
-            width: 100%;
+            wrap: word-wrap;
+            x: Spacing.comfortable;
+            width: parent.text-width;
             height: 100%;
         }
     }

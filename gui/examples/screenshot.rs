@@ -32,7 +32,7 @@
 //! `admin-new`, `sign-out`, `app-settings`, `release-announced`,
 //! `release-note`, `franchise`, `profile-teal`,
 //! `profile-teal-glass`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
-//! `comments-signed-out`, `light` or `amoled`. Narrow is a width, not a state: pass
+//! `comments-signed-out`, `player-hint`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
 //! `ANIRUST_SHOT_POINTER=x,y` parks the pointer anywhere, for the states
@@ -664,8 +664,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || state == "upscale"
         || state == "paused"
         || state == "player-settings"
+        || state == "player-hint"
     {
         start_playing(&ui, state == "theatre");
+    }
+    // A line long enough to wrap: what the player says when a driver is
+    // missing.
+    if state == "player-hint" {
+        ui.set_hint(
+            "OpenVINO не видит видеокарту: нет OpenCL от Intel. Установите \
+             intel-compute-runtime (в Debian и Ubuntu — intel-opencl-icd)"
+                .into(),
+        );
     }
     // The settings sheet, with some sound and subtitle choices made.
     if state == "player-settings" {
