@@ -283,6 +283,8 @@ export component MainWindow inherits Window {
     in property <string> duration-text: "0:00";
     in property <float> progress: 0.0;
     in property <float> buffered: 0.0;
+    in property <int> volume: 100;
+    in property <bool> muted: false;
     in property <bool> paused: false;
     in property <string> state: "idle";
     in property <string> quality-label: "—";
@@ -377,6 +379,8 @@ export component MainWindow inherits Window {
     callback toggle-muted();
     /// Loudness, by a step up or down.
     callback adjust-volume(int);
+    /// Loudness set outright, from the player's bar.
+    callback set-volume(int);
     /// Playback rate, by one notch along the speed menu.
     callback adjust-speed(int);
     /// One frame forward or back, which pauses as a side effect.
@@ -855,6 +859,8 @@ export component MainWindow inherits Window {
             title: root.release-title;
             episode-label: root.episode-label;
             position-text: root.position-text;
+            volume: root.volume;
+            muted: root.muted;
             duration-text: root.duration-text;
             progress: root.progress;
             buffered: root.buffered;
@@ -901,6 +907,9 @@ export component MainWindow inherits Window {
 
             toggle-pause => { root.toggle-pause(); }
             seek-fraction(f) => { root.seek-fraction(f); }
+            set-volume(v) => { root.set-volume(v); }
+            adjust-volume(step) => { root.adjust-volume(step); }
+            toggle-muted => { root.toggle-muted(); }
             seek-relative(d) => { root.seek-relative(d); }
             skip-opening => { root.skip-opening(); }
             previous-episode => { root.previous-episode(); }

@@ -1627,6 +1627,7 @@ fn wire_release(window: &MainWindow, app: &Rc<App>) {
                 &app.release,
                 Rc::clone(&app.client),
                 index.max(0) as usize,
+                keep_playing(&window, &app),
             );
         }
     });
@@ -1641,6 +1642,7 @@ fn wire_release(window: &MainWindow, app: &Rc<App>) {
                 &app.release,
                 Rc::clone(&app.client),
                 index.max(0) as usize,
+                keep_playing(&window, &app),
             );
         }
     });
@@ -1835,19 +1837,61 @@ fn wire_release(window: &MainWindow, app: &Rc<App>) {
     });
 }
 
-/// Resolves an episode and hands it to the player.
+/// What to do once another voice-over's or source's episodes have arrived,
+/// when one of this release's episodes is playing: the same episode in it,
+/// from where the picture is now. Without this the old voice-over played on,
+/// and the list showed the new one's episodes beside it.
+fn keep_playing(window: &MainWindow, app: &Rc<App>) -> Option<release::Then> {
+    let position = window.get_current_episode();
+    if !window.get_playing() || position <= 0 {
+        return None;
+    }
+    let app = Rc::clone(app);
+    Some(Box::new(move |window: &MainWindow| {
+        // The viewer may have closed the player, or picked another episode,
+        // while the list was on its way.
+        if !window.get_playing() || window.get_current_episode() != position {
+            return;
+        }
+        let there = app.release.borrow().episode_at(position).is_some();
+        if there {
+            let at = app.bridge.player().position().filter(|at| !at.is_zero());
+            play_at(window, &app, position, at);
+        } else {
+            let line = if window.get_lang() == "ru" {
+                format!("Здесь нет серии {position}: играет прежняя озвучка")
+            } else {
+                format!("Episode {position} is not here: the previous voice-over plays on")
+            };
+            show_hint(window, line);
+        }
+    }))
+}
+
+/// Plays an episode from where it was left off, if it was.
+fn play(window: &MainWindow, app: &Rc<App>, position: i32) {
+    let resume = {
+        let state = app.release.borrow();
+        state
+            .episode_at(position)
+            .and_then(|episode| state.resume_of(episode))
+    };
+    play_at(window, app, position, resume);
+}
+
+/// Resolves an episode and hands it to the player, starting at `resume`.
 ///
 /// The selected source is tried first and the rest of the release after it.
 /// One host failing is routine rather than exceptional — Kodik answers `500`
 /// for stretches at a time and carries most of the catalogue — so giving up on
 /// the first failure would present a temporary outage as a broken client.
-fn play(window: &MainWindow, app: &Rc<App>, position: i32) {
-    let (attempt, dubber, resume, index) = {
+fn play_at(window: &MainWindow, app: &Rc<App>, position: i32, resume: Option<Duration>) {
+    let (attempt, dubber, index) = {
         let state = app.release.borrow();
-        let Some(episode) = state.episode_at(position) else {
+        if state.episode_at(position).is_none() {
             tracing::warn!(position, "no such episode in this source");
             return;
-        };
+        }
         let Some(attempt) = Attempt::for_episode(&state, position) else {
             tracing::warn!(position, "no voice-over selected");
             return;
@@ -1855,7 +1899,6 @@ fn play(window: &MainWindow, app: &Rc<App>, position: i32) {
         (
             attempt,
             state.selected_dubber().map(|d| d.name.clone()),
-            state.resume_of(episode),
             state.index_of(position).unwrap_or_default(),
         )
     };
@@ -2504,6 +2547,15 @@ fn step_delay(current: f64, direction: i32) -> f64 {
 /// step between.
 const SPEEDS: [f64; 7] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
+/// Sets the loudness, from a key, the wheel or the player's bar.
+type SetVolume = dyn Fn(&MainWindow, i64);
+
+/// The loudness and muting the player's bar and speaker show.
+fn show_volume(window: &MainWindow, player: &Player) {
+    window.set_volume(i32::try_from(player.volume()).unwrap_or(100));
+    window.set_muted(player.is_muted());
+}
+
 /// Puts a line on screen for a moment.
 ///
 /// The counter is not decoration: Slint hides this on a `changed` handler, so
@@ -2544,6 +2596,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 
     bridge.set_force_4k(kept.force_4k);
     window.set_force_4k(kept.force_4k);
+    show_volume(window, player);
 
     if let Some(fonts) = subtitle_fonts_dir() {
         let ready = std::fs::create_dir_all(&fonts)
@@ -2766,31 +2819,51 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     window.on_toggle_muted(move || {
         let Some(window) = weak.upgrade() else { return };
         match player.toggle_muted() {
-            Ok(muted) => show_hint(
-                &window,
-                if muted {
-                    "🔇".to_owned()
-                } else {
-                    format!("🔊 {}%", player.volume())
-                },
-            ),
+            Ok(muted) => {
+                show_volume(&window, player);
+                show_hint(
+                    &window,
+                    if muted {
+                        "🔇".to_owned()
+                    } else {
+                        format!("🔊 {}%", player.volume())
+                    },
+                );
+            }
             Err(error) => tracing::warn!(%error, "mute failed"),
         }
     });
 
+    // Loudness from a key or the wheel, by a step, or from the player's bar,
+    // outright: the same change either way, said on screen only for the
+    // first two — the bar shows its own level.
+    let set_volume: Rc<SetVolume> = {
+        let keep_now = Rc::clone(&keep);
+        Rc::new(move |window: &MainWindow, volume: i64| {
+            let volume = volume.clamp(0, 150);
+            if let Err(error) = player.set_volume(volume) {
+                tracing::warn!(%error, volume, "volume change failed");
+                return;
+            }
+            keep_now();
+            // Reaching for the volume means wanting to hear it.
+            let _ = player.set_muted(false);
+            show_volume(window, player);
+        })
+    };
+
     let weak = window.as_weak();
-    let keep_now = Rc::clone(&keep);
+    let stepped = Rc::clone(&set_volume);
     window.on_adjust_volume(move |step| {
         let Some(window) = weak.upgrade() else { return };
-        let volume = (player.volume() + i64::from(step)).clamp(0, 150);
-        if let Err(error) = player.set_volume(volume) {
-            tracing::warn!(%error, volume, "volume change failed");
-            return;
-        }
-        keep_now();
-        // Reaching for the volume means wanting to hear it.
-        let _ = player.set_muted(false);
-        show_hint(&window, format!("🔊 {volume}%"));
+        stepped(&window, player.volume() + i64::from(step));
+        show_hint(&window, format!("🔊 {}%", player.volume()));
+    });
+
+    let weak = window.as_weak();
+    window.on_set_volume(move |volume| {
+        let Some(window) = weak.upgrade() else { return };
+        set_volume(&window, i64::from(volume));
     });
 
     let chosen = Rc::clone(settings);

@@ -32,7 +32,7 @@
 //! `admin-new`, `sign-out`, `app-settings`, `release-announced`,
 //! `release-note`, `franchise`, `profile-teal`,
 //! `profile-teal-glass`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
-//! `comments-signed-out`, `player-hint`, `light` or `amoled`. Narrow is a width, not a state: pass
+//! `comments-signed-out`, `player-hint`, `player-volume`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
 //! `ANIRUST_SHOT_POINTER=x,y` parks the pointer anywhere, for the states
@@ -665,8 +665,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || state == "paused"
         || state == "player-settings"
         || state == "player-hint"
+        || state == "player-volume"
     {
         start_playing(&ui, state == "theatre");
+    }
+    // The loudness bar at a quiet level, with the controls up.
+    if state == "player-volume" {
+        ui.set_volume(35);
     }
     // A line long enough to wrap: what the player says when a driver is
     // missing.

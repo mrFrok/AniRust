@@ -68,6 +68,9 @@ export component PlayerPage inherits Rectangle {
     in property <string> duration-text: "0:00";
     in property <float> progress: 0.0;
     in property <float> buffered: 0.0;
+    /// Loudness in percent, 0 to 150 as mpv takes it, and whether muted.
+    in property <int> volume: 100;
+    in property <bool> muted: false;
     in property <bool> paused: false;
     /// One of: idle, loading, buffering, playing, paused, ended.
     in property <string> state: "idle";
@@ -116,6 +119,10 @@ export component PlayerPage inherits Rectangle {
     callback pointer-hidden(length, length);
     callback seek-fraction(float);
     callback seek-relative(float);
+    /// Loudness set outright, from the bar; by a step, from the wheel.
+    callback set-volume(int);
+    callback adjust-volume(int);
+    callback toggle-muted();
     callback skip-opening();
     callback previous-episode();
     callback next-episode();
@@ -349,6 +356,12 @@ export component PlayerPage inherits Rectangle {
             if (root.locked) { return; }
             if (root.sheet != "") { root.sheet = ""; } else { root.toggle-pause(); }
         }
+        // The wheel over the picture is loudness, as in desktop players.
+        scroll-event(event) => {
+            if (root.locked || root.sheet != "" || event.delta-y == 0) { return reject; }
+            root.adjust-volume(event.delta-y > 0 ? 5 : -5);
+            return accept;
+        }
     }
 
     linger := Timer {
@@ -560,6 +573,37 @@ export component PlayerPage inherits Rectangle {
                     icon: @image-url("../icons/speed.svg");
                     size: 22px;
                     clicked => { root.sheet = root.sheet == "speed" ? "" : "speed"; }
+                }
+
+                // Loudness: the speaker mutes, the bar beside it sets the
+                // level. The bar runs to 150 %, as far as mpv amplifies.
+                IconButton {
+                    icon: root.muted || root.volume == 0
+                        ? @image-url("../icons/volume-off.svg")
+                        : root.volume < 50
+                            ? @image-url("../icons/volume-low.svg")
+                            : @image-url("../icons/volume.svg");
+                    size: 22px;
+                    clicked => { root.toggle-muted(); }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+
+                    SeekBar {
+                        width: 96px;
+                        position: root.muted ? 0.0 : root.volume / 150;
+                        buffered: 100 / 150;
+                        seek(fraction) => { root.set-volume(round(fraction * 150)); }
+                    }
+                }
+
+                Text {
+                    text: root.muted ? "" : root.volume + "%";
+                    color: #FFFFFFB3;
+                    font-size: Typography.label-medium-size;
+                    vertical-alignment: center;
+                    min-width: 36px;
                 }
 
                 Rectangle { horizontal-stretch: 1; }

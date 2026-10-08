@@ -244,7 +244,7 @@ pub fn load(
                         .iter()
                         .position(|dubber| dubber.pinned)
                         .unwrap_or(0);
-                    select_dubber(&window, &state, client, first);
+                    select_dubber(&window, &state, client, first, None);
                 }
                 (Err(error), _) | (_, Err(error)) => {
                     tracing::error!(%error, release_id, "could not load the release");
@@ -255,12 +255,17 @@ pub fn load(
     );
 }
 
+/// What to do once a voice-over's or source's episodes are on screen.
+pub type Then = Box<dyn FnOnce(&MainWindow)>;
+
 /// Switches voice-over, which invalidates the sources and episodes below it.
+/// `then` runs once the new episodes are on screen, if they arrive.
 pub fn select_dubber(
     window: &MainWindow,
     state: &Rc<RefCell<ReleaseState>>,
     client: Rc<Client>,
     index: usize,
+    then: Option<Then>,
 ) {
     let (release_id, dubber_id, generation) = {
         let mut state = state.borrow_mut();
@@ -304,7 +309,7 @@ pub fn select_dubber(
                     state.borrow_mut().sources = sources;
                     state.borrow_mut().source = 0;
                     show_sources(&window, &state.borrow());
-                    select_source(&window, &state, client, 0);
+                    select_source(&window, &state, client, 0, then);
                 }
                 Err(error) => {
                     tracing::error!(%error, "could not load sources");
@@ -315,12 +320,14 @@ pub fn select_dubber(
     );
 }
 
-/// Switches source, which invalidates the episode list.
+/// Switches source, which invalidates the episode list. `then` runs once
+/// the new episodes are on screen, if they arrive.
 pub fn select_source(
     window: &MainWindow,
     state: &Rc<RefCell<ReleaseState>>,
     client: Rc<Client>,
     index: usize,
+    then: Option<Then>,
 ) {
     let (release_id, dubber_id, source_id, generation) = {
         let mut state = state.borrow_mut();
@@ -357,6 +364,11 @@ pub fn select_source(
                 Ok(episodes) => {
                     state.borrow_mut().episodes = episodes;
                     show_episodes(&window, &state.borrow());
+                    window.set_release_loading(false);
+                    if let Some(then) = then {
+                        then(&window);
+                    }
+                    return;
                 }
                 Err(error) => tracing::error!(%error, "could not load episodes"),
             }
