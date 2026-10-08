@@ -88,6 +88,12 @@ impl RifeModel {
     }
 }
 
+/// The tallest source Real-ESRGAN doubles. Doubled, 1080p is 4K, which an
+/// RTX 4070 Ti SUPER makes at about 19 frames a second against the 43 it
+/// makes from 720p — slower than the episode plays — while Anime4K's shaders
+/// take 1080p to 4K well on their own. Taller sources pass it by.
+pub const NEURAL_UPSCALE_MAX_HEIGHT: u32 = 720;
+
 /// What to make, and from how tall a picture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameGeneration {
@@ -548,11 +554,11 @@ pub fn script(
 
     // ---- the picture, in the networks' format ----
     let upscale = enhancement.upscale && matches!(networks, Networks::Mlrt(_));
-    let max_height = match enhancement.frames {
-        // Upscaled first, the picture is meant to stay large.
-        Some(generation) if !upscale => generation.max_height,
-        _ => 0,
-    };
+    let max_height = enhancement
+        .frames
+        .map_or(0, |generation| generation.max_height);
+    // A source Real-ESRGAN doubles stays at its size for RIFE after it: it is
+    // no taller than RIFE's limit, and doubled, it is meant to stay large.
     body.push_str(&format!(
         r#"    clip = video_in
     source = Fraction(container_fps).limit_denominator(1001) if container_fps > 0 else Fraction(24000, 1001)
@@ -560,18 +566,21 @@ pub fn script(
     rate = source
     original = clip.format.id
     matrix = "709" if clip.height >= 600 else "170m"
+    upscale = {upscale} and clip.height <= {limit}
     max_height = {max_height}
-    if max_height and clip.height > max_height:
+    if max_height and not upscale and clip.height > max_height:
         width = round(clip.width * max_height / clip.height / 2) * 2
         clip = core.resize.Bilinear(clip, width=width, height=max_height, format=vs.RGBS, matrix_in_s=matrix)
     else:
         clip = core.resize.Bilinear(clip, format=vs.RGBS, matrix_in_s=matrix)
-"#
+"#,
+        upscale = if upscale { "True" } else { "False" },
+        limit = NEURAL_UPSCALE_MAX_HEIGHT,
     ));
 
     if upscale {
         body.push_str(
-            "    clip = vsmlrt.RealESRGAN(clip, model=vsmlrt.RealESRGANv2Model.animevideo_xsx2, backend=backend)\n",
+            "    if upscale:\n        clip = vsmlrt.RealESRGAN(clip, model=vsmlrt.RealESRGANv2Model.animevideo_xsx2, backend=backend)\n",
         );
     }
 
@@ -899,7 +908,9 @@ mod tests {
         let upscale = script.find("vsmlrt.RealESRGAN(").expect("upscaling");
         let rife = script.find("vsmlrt.RIFE(").expect("frame generation");
         assert!(upscale < rife);
-        assert!(script.contains("max_height = 0"));
+        // Only sources it can double in time, which then keep their size.
+        assert!(script.contains("upscale = True and clip.height <= 720"));
+        assert!(script.contains("if max_height and not upscale and clip.height > max_height:"));
     }
 
     #[test]
