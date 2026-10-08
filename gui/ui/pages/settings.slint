@@ -25,6 +25,12 @@ export component SettingsPage inherits Rectangle {
     in property <int> accent: 0;
     in property <bool> translucent: false;
     in property <bool> remember-player: true;
+    /// The updater: whether it checks, and what it is doing (see Tr.update-status).
+    in property <bool> check-updates: true;
+    in property <string> update-state;
+    in property <string> update-version;
+    in property <string> update-error;
+    in property <string> update-how;
 
     callback flip-notify(int);
     callback select-language(int);
@@ -32,6 +38,9 @@ export component SettingsPage inherits Rectangle {
     callback select-accent(int);
     callback set-translucent(bool);
     callback set-remember-player(bool);
+    callback set-check-updates(bool);
+    callback check-for-updates();
+    callback install-update();
     callback open-account-settings();
     callback sign-in();
     callback sign-out();
@@ -413,6 +422,70 @@ export component SettingsPage inherits Rectangle {
                     TextButton {
                         text: Tr.source-code;
                         clicked => { root.open-link("https://github.com/mrfrok/AniRust"); }
+                    }
+                }
+
+                // ---- updates ------------------------------------------------
+                HorizontalLayout {
+                    spacing: Spacing.base;
+                    max-width: 560px;
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: Spacing.hair;
+
+                        Text {
+                            text: Tr.update-check;
+                            color: MaterialPalette.on-surface;
+                            font-size: Typography.body-large-size;
+                        }
+
+                        Text {
+                            text: Tr.update-check-why;
+                            color: MaterialPalette.on-surface-variant;
+                            font-size: Typography.body-medium-size;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+
+                        Switch {
+                            width: 52px;
+                            height: 32px;
+                            property <bool> wanted: root.check-updates;
+                            init => { self.checked = root.check-updates; }
+                            changed wanted => { self.checked = self.wanted; }
+                            changed checked => {
+                                if (self.checked != root.check-updates) { root.set-check-updates(self.checked); }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Spacing.small;
+                    alignment: start;
+
+                    OutlineButton {
+                        text: Tr.update-check-now;
+                        enabled: root.update-state != "checking" && root.update-state != "downloading" && root.update-state != "installing";
+                        clicked => { root.check-for-updates(); }
+                    }
+
+                    if root.update-state == "available" && root.update-how == "": FilledButton {
+                        text: Tr.update-install;
+                        clicked => { root.install-update(); }
+                    }
+
+                    Text {
+                        text: Tr.update-status(root.update-state, root.update-version, root.update-error, root.update-how);
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.body-medium-size;
+                        vertical-alignment: center;
+                        wrap: word-wrap;
+                        horizontal-stretch: 1;
                     }
                 }
             }

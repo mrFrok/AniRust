@@ -22,6 +22,7 @@ import { DeletionSheet } from "components/deletion.slint";
 import { PostEditor } from "components/post-editor.slint";
 import { ChannelAdmin } from "components/channel-admin.slint";
 import { ConfirmSheet } from "components/confirm.slint";
+import { UpdateBanner } from "components/update-banner.slint";
 import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem, CollectionItem, AccountSettings, VideoItem, EnforcementItem, DraftBlock, SuggestionItem, FranchiseItem } from "structs.slint";
 
 export component MainWindow inherits Window {
@@ -570,6 +571,24 @@ export component MainWindow inherits Window {
     /// The accent as its place in the row of swatches.
     in property <int> accent-index: 0;
     callback set-remember-player(bool);
+
+    // ---- updates (gui/src/update.rs) --------------------------------------
+    in property <bool> check-updates: true;
+    /// "", checking, latest, available, downloading, installing, failed,
+    /// check-failed.
+    in property <string> update-state;
+    in property <string> update-version;
+    in property <string> update-error;
+    /// Who updates this copy when it is not the program: flatpak, package,
+    /// hand; empty when the program does.
+    in property <string> update-how;
+    in property <float> update-progress;
+    /// The card put away; a newer release brings it back.
+    in-out property <bool> update-dismissed: false;
+    callback set-check-updates(bool);
+    callback check-for-updates();
+    callback install-update();
+    callback open-update-notes();
     /// Someone's profile was opened from another screen.
     in property <bool> profile-can-go-back: false;
     callback profile-go-back();
@@ -659,12 +678,20 @@ export component MainWindow inherits Window {
             accent: root.accent-index;
             translucent: root.translucent;
             remember-player: root.remember-player;
+            check-updates: root.check-updates;
+            update-state: root.update-state;
+            update-version: root.update-version;
+            update-error: root.update-error;
+            update-how: root.update-how;
             flip-notify(i) => { root.flip-notify(i); }
             select-language(i) => { root.select-language(i); }
             select-appearance(i) => { root.select-appearance(i); }
             select-accent(i) => { root.select-accent(i); }
             set-translucent(on) => { root.set-translucent(on); }
             set-remember-player(on) => { root.set-remember-player(on); }
+            set-check-updates(on) => { root.set-check-updates(on); }
+            check-for-updates => { root.check-for-updates(); }
+            install-update => { root.install-update(); }
             open-account-settings => { root.open-settings(); }
             sign-in => { root.sign-in-error = ""; root.show-sign-in = true; }
             sign-out => { root.confirm-sign-out = true; }
@@ -946,6 +973,21 @@ export component MainWindow inherits Window {
             toggle-theatre => { root.theatre = !root.theatre; }
             close => { root.theatre = false; root.close-player(); }
         }
+    }
+
+    // Over the pages, under the sheets: offered, never in the way of one.
+    if !root.update-dismissed && (root.update-state == "available" || root.update-state == "downloading"
+            || root.update-state == "installing" || root.update-state == "failed"): UpdateBanner {
+        x: parent.width - self.width - 24px;
+        y: parent.height - self.height - 24px;
+        state: root.update-state;
+        version: root.update-version;
+        error: root.update-error;
+        how: root.update-how;
+        progress: root.update-progress;
+        install => { root.install-update(); }
+        open-notes => { root.open-update-notes(); }
+        dismiss => { root.update-dismissed = true; }
     }
 
     if root.notifications-open: NotificationsSheet {

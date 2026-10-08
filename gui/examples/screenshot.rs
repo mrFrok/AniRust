@@ -32,7 +32,8 @@
 //! `admin-new`, `sign-out`, `app-settings`, `release-announced`,
 //! `release-note`, `franchise`, `profile-teal`,
 //! `profile-teal-glass`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
-//! `comments-signed-out`, `player-hint`, `player-volume`, `light` or `amoled`. Narrow is a width, not a state: pass
+//! `comments-signed-out`, `player-hint`, `player-volume`, `update-available`,
+//! `update-downloading`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
 //! `ANIRUST_SHOT_POINTER=x,y` parks the pointer anywhere, for the states
@@ -100,6 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || state == "sign-out"
             || state.starts_with("app-settings")
             || state.starts_with("deletion")
+            || state.starts_with("update-")
         {
             "home".into()
         } else {
@@ -668,6 +670,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || state == "player-volume"
     {
         start_playing(&ui, state == "theatre");
+    }
+    // A release out, the card in the corner over the catalogue, and the
+    // same during its download.
+    if state == "update-available" || state == "update-downloading" {
+        ui.set_update_version("1.1.0".into());
+        ui.set_update_state(
+            if state == "update-available" {
+                "available"
+            } else {
+                "downloading"
+            }
+            .into(),
+        );
+        ui.set_update_progress(0.42);
+    }
+    if state == "app-settings" {
+        ui.set_update_state("latest".into());
     }
     // The loudness bar at a quiet level, with the controls up.
     if state == "player-volume" {

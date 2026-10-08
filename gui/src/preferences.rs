@@ -140,7 +140,7 @@ impl Accent {
 }
 
 /// Everything this machine remembers about how the application should behave.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
     pub language: Language,
@@ -148,7 +148,22 @@ pub struct Preferences {
     pub accent: Accent,
     /// The window's surfaces see-through.
     pub translucent: bool,
+    /// Asking GitHub for a newer release on start and once a day.
+    pub check_updates: bool,
     pub player: PlayerPreferences,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            language: Language::default(),
+            appearance: Appearance::default(),
+            accent: Accent::default(),
+            translucent: false,
+            check_updates: true,
+            player: PlayerPreferences::default(),
+        }
+    }
 }
 
 /// The player as it was last set, to open the next run the same way.
@@ -314,6 +329,15 @@ mod tests {
 
         let read: Preferences = serde_json::from_str(&written).expect("preferences parse");
         assert_eq!(read.appearance, Appearance::Amoled);
+    }
+
+    #[test]
+    fn updates_are_checked_unless_switched_off() {
+        assert!(Preferences::default().check_updates);
+        let read: Preferences = serde_json::from_str(r#"{"appearance":"light"}"#).unwrap();
+        assert!(read.check_updates);
+        let read: Preferences = serde_json::from_str(r#"{"check_updates":false}"#).unwrap();
+        assert!(!read.check_updates);
     }
 
     #[test]

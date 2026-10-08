@@ -176,7 +176,7 @@ fn unpack(archive: &Path, into: &Path, keep: &[&str]) -> Result<(), String> {
 /// `path` without its first component, or `None` for the top folder itself
 /// and for anything that is not a plain path downwards — no `..`, no root —
 /// so nothing can be written outside the folder it is unpacked into.
-fn without_top(path: &Path) -> Option<PathBuf> {
+pub(crate) fn without_top(path: &Path) -> Option<PathBuf> {
     let mut components = path.components();
     components.next()?;
     let rest: PathBuf = components.collect();

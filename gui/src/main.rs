@@ -38,6 +38,7 @@ mod session;
 mod settings;
 mod standing;
 mod tasks;
+mod update;
 mod video;
 
 use std::cell::{Cell, RefCell};
@@ -170,6 +171,7 @@ fn main() -> Result<()> {
 
     // Held for as long as the window runs: dropping the timer stops it.
     let _bell = notifications::start_polling(&window, &app.client);
+    let _updates = update::wire(&window, app.http.clone(), &app.prefs);
 
     window.run().context("running the event loop")?;
     Ok(())

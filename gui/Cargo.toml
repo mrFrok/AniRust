@@ -24,6 +24,9 @@ reqwest.workspace = true
 flate2 = "1"
 tar = "0.4"
 zip = { version = "8", default-features = false, features = ["deflate"] }
+# Checking an update against the release key's signature before it is
+# installed (update.rs). No dependencies of its own.
+minisign-verify = "0.3"
 tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "time"] }
 futures.workspace = true
 tracing.workspace = true

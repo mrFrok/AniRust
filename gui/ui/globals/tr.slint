@@ -426,6 +426,42 @@ export global Tr {
     out property <string> faq: lang == "ru" ? "Вопросы и ответы" : "FAQ";
     out property <string> service-rules: lang == "ru" ? "Правила сервиса" : "Service rules";
     out property <string> source-code: lang == "ru" ? "Исходный код" : "Source code";
+
+    // ---- updates ---------------------------------------------------------
+    out property <string> update-check: lang == "ru" ? "Проверять обновления" : "Check for updates";
+    out property <string> update-check-why: lang == "ru"
+        ? "При запуске и раз в день. Обновление ставится, только когда вы нажмёте «Обновить»."
+        : "On start and once a day. An update is installed only when you press Update.";
+    out property <string> update-check-now: lang == "ru" ? "Проверить сейчас" : "Check now";
+    out property <string> update-install: lang == "ru" ? "Обновить" : "Update";
+    out property <string> update-notes: lang == "ru" ? "Что нового" : "What's new";
+    /// What the updater is doing, as one line. `how` names who updates this
+    /// copy when it is not the program itself.
+    public pure function update-status(state: string, version: string, error: string, how: string) -> string {
+        if state == "checking" { return lang == "ru" ? "Проверяю…" : "Checking…"; }
+        if state == "latest" { return lang == "ru" ? "Установлена последняя версия" : "This is the latest version"; }
+        if state == "available" && how == "flatpak" {
+            return lang == "ru"
+                ? "Вышла AniRust " + version + ". Для Flatpak скачайте новый пакет со страницы релиза."
+                : "AniRust " + version + " is out. For the Flatpak, take the new bundle from the release page.";
+        }
+        if state == "available" && how == "package" {
+            return lang == "ru"
+                ? "Вышла AniRust " + version + ". Обновите её менеджером пакетов."
+                : "AniRust " + version + " is out. Update it with the package manager.";
+        }
+        if state == "available" && how == "hand" {
+            return lang == "ru"
+                ? "Вышла AniRust " + version + ". Скачайте её со страницы релиза."
+                : "AniRust " + version + " is out. Download it from the release page.";
+        }
+        if state == "available" { return lang == "ru" ? "Доступна AniRust " + version : "AniRust " + version + " is available"; }
+        if state == "downloading" { return lang == "ru" ? "Скачиваю AniRust " + version + "…" : "Downloading AniRust " + version + "…"; }
+        if state == "installing" { return lang == "ru" ? "Проверяю подпись и устанавливаю…" : "Checking the signature and installing…"; }
+        if state == "failed" { return (lang == "ru" ? "Обновление не удалось: " : "The update failed: ") + error; }
+        if state == "check-failed" { return (lang == "ru" ? "Не удалось проверить обновления: " : "Could not check for updates: ") + error; }
+        return "";
+    }
     out property <string> edit-profile: lang == "ru" ? "Изменить профиль" : "Edit profile";
     out property <string> show-all: lang == "ru" ? "Показать все" : "Show all";
     out property <string> franchise-history: lang == "ru" ? "Хронология франшизы" : "The franchise in order";

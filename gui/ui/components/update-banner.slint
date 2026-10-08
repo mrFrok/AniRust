@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The card that says a new version is out, in the window's corner.
+//
+// It offers and never insists: the episode playing behind it goes on, the
+// update waits for the button, and the card can be put away until the next
+// release. While the update downloads, it shows how far it has got.
+
+import { MaterialPalette, FilledButton, TextButton } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+
+export component UpdateBanner inherits Rectangle {
+    in property <string> state;
+    in property <string> version;
+    in property <string> error;
+    /// Who updates this copy, when it is not the program: flatpak, package,
+    /// hand. Then there is nothing to press but the release page.
+    in property <string> how;
+    in property <float> progress;
+
+    callback install();
+    callback open-notes();
+    callback dismiss();
+
+    width: 380px;
+    height: layout.preferred-height;
+    border-radius: Shape.large;
+    background: MaterialPalette.surface-container-high;
+    drop-shadow-blur: 16px;
+    drop-shadow-color: #00000060;
+
+    layout := VerticalLayout {
+        padding: Spacing.base;
+        spacing: Spacing.small;
+
+        HorizontalLayout {
+            spacing: Spacing.small;
+
+            Text {
+                text: Tr.update-status(root.state, root.version, root.error, root.how);
+                color: MaterialPalette.on-surface;
+                font-size: Typography.body-large-size;
+                wrap: word-wrap;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            if root.state != "downloading" && root.state != "installing": TouchArea {
+                width: 28px;
+                height: 28px;
+                mouse-cursor: pointer;
+                clicked => { root.dismiss(); }
+
+                Image {
+                    source: @image-url("../icons/close.svg");
+                    colorize: MaterialPalette.on-surface-variant;
+                    width: 18px;
+                    height: 18px;
+                }
+            }
+        }
+
+        if root.state == "downloading" || root.state == "installing": Rectangle {
+            height: 4px;
+            border-radius: 2px;
+            background: MaterialPalette.surface-container-highest;
+
+            Rectangle {
+                x: 0;
+                width: parent.width * (root.state == "installing" ? 1.0 : clamp(root.progress, 0.0, 1.0));
+                height: 100%;
+                border-radius: 2px;
+                background: MaterialPalette.primary;
+            }
+        }
+
+        if root.state == "available" || root.state == "failed": HorizontalLayout {
+            spacing: Spacing.small;
+            alignment: end;
+
+            TextButton {
+                text: Tr.update-notes;
+                clicked => { root.open-notes(); }
+            }
+
+            if root.how == "": FilledButton {
+                text: Tr.update-install;
+                clicked => { root.install(); }
+            }
+        }
+    }
+}
