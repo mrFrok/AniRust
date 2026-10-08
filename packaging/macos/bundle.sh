@@ -2,7 +2,7 @@
 # Wraps the release build in AniRust.app with libmpv and everything it
 # links copied inside, and puts it in a disk image under dist/.
 #
-#   packaging/macos/bundle.sh 1.0.0
+#   packaging/macos/bundle.sh 1.0.1
 #
 # Needs `dylibbundler` (Homebrew) and the tools macOS ships: sips, iconutil,
 # hdiutil, rsvg-convert from librsvg for the icon.
@@ -26,6 +26,8 @@ done
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/AniRust.icns"
 rm -rf "$iconset"
 
+# The oldest macOS it runs on is the one the release builds on (macos-14):
+# Homebrew's libraries, bundled below, are built for that and no older.
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -39,7 +41,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>anirust</string>
   <key>CFBundleIconFile</key><string>AniRust</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>LSMinimumSystemVersion</key><string>12.0</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>

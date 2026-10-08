@@ -24,7 +24,7 @@ across episodes, and progress synchronised with an Anixart account.
 
 ## Status
 
-Released: 1.0.0 is the first version for everyday use. Browse or search, open
+Released: 1.0 is the first version for everyday use. Browse or search, open
 a release, pick a voice-over and an episode, and watch it — with the picture on
 the release screen rather than on a screen of its own, so choosing the next
 episode never means leaving what you are watching.
@@ -241,9 +241,9 @@ In the [issues](https://github.com/mrFrok/AniRust/issues), with the log when
 something misbehaves. On Linux and macOS it goes to the terminal the program
 was started from, in more detail with `RUST_LOG=anirust=debug`; on Windows it
 is written to `%LOCALAPPDATA%\anirust\anirust.log`. Look it over before
-posting: it names the releases and episodes played, and in 1.0.0 a request that
-failed on the network shows the session token (`token=…`), which is to be cut
-out.
+posting: it names the releases and episodes played. The session token never
+appears in it from 1.0.1 on; 1.0.0 showed it (`token=…`) on a request that
+failed on the network, and that is to be cut out.
 
 ## Building
 

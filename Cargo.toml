@@ -5,7 +5,7 @@ members = ["api", "extract", "player", "download", "cli", "gui"]
 resolver = "3"
 
 [workspace.package]
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 rust-version = "1.90"
 license = "GPL-3.0-or-later"
@@ -14,10 +14,10 @@ repository = "https://github.com/mrfrok/AniRust"
 homepage = "https://github.com/mrfrok/AniRust"
 
 [workspace.dependencies]
-anirust-api = { path = "api", version = "1.0.0" }
-anirust-extract = { path = "extract", version = "1.0.0" }
-anirust-player = { path = "player", version = "1.0.0" }
-anirust-download = { path = "download", version = "1.0.0" }
+anirust-api = { path = "api", version = "1.0.1" }
+anirust-extract = { path = "extract", version = "1.0.1" }
+anirust-player = { path = "player", version = "1.0.1" }
+anirust-download = { path = "download", version = "1.0.1" }
 
 # Async runtime
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
