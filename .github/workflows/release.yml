@@ -57,8 +57,11 @@ jobs:
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
           tar -C target -czf "dist/anirust-$version-mlrt-linux-x86_64.tar.gz" mlrt
+      # The installer goes with every release too, for a version pinned to it.
+      - name: install.sh
+        run: cp install.sh dist/
       - name: Checksums
-        run: cd dist && for f in *.tar.gz; do sha256sum "$f" > "$f.sha256"; done
+        run: cd dist && for f in *.tar.gz install.sh; do sha256sum "$f" > "$f.sha256"; done
       - uses: actions/upload-artifact@v4
         with:
           name: linux
@@ -236,8 +239,27 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Compress-Archive -Path "stage\$env:name" -DestinationPath "dist\$env:name.zip"
-          $hash = (Get-FileHash "dist\$env:name.zip" -Algorithm SHA256).Hash.ToLower()
-          "$hash  $env:name.zip" | Out-File -FilePath "dist\$env:name.zip.sha256" -Encoding ascii -NoNewline
+      # The same folder as an installer (packaging/windows/anirust.iss), made
+      # by a pinned Inno Setup, checked against its hash, not whichever the
+      # runner image happens to carry.
+      - name: Installer
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"').Matches[0].Groups[1].Value
+          $inno = Join-Path $env:RUNNER_TEMP "innosetup.exe"
+          Invoke-WebRequest "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe" -OutFile $inno
+          if ((Get-FileHash $inno -Algorithm SHA256).Hash -ne "9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732") { throw "Inno Setup does not match its hash" }
+          $dir = Join-Path $env:RUNNER_TEMP "inno"
+          Start-Process $inno -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir" -Wait
+          & "$dir\ISCC.exe" /Q "/DVersion=$version" "/DSource=$PWD\stage\$env:name" packaging\windows\anirust.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem dist -File | Where-Object { $_.Extension -in '.zip', '.exe' } | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)" | Out-File -FilePath "$($_.FullName).sha256" -Encoding ascii -NoNewline
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: windows
@@ -264,9 +286,45 @@ jobs:
           name: macos
           path: dist/*.dmg*
 
+  # Every file signed with the release key (minisign), which the program's
+  # updater checks before it installs anything: a .sha256 beside a file in the
+  # same release proves it arrived whole, not that it is ours. Runs in dry runs
+  # too, so a broken key shows before a tag.
+  sign:
+    name: Sign
+    needs: [linux, deb, appimage, flatpak, windows, macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Sign and check every file
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          [ -n "$MINISIGN_SECRET_KEY" ] || { echo "the MINISIGN_SECRET_KEY secret is not set"; exit 1; }
+          sudo apt-get update && sudo apt-get install -y minisign
+          key="$RUNNER_TEMP/minisign.key"
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
+          chmod 600 "$key"
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          cd dist
+          for f in *; do
+            case "$f" in *.sha256 | *.minisig) continue ;; esac
+            minisign -S -s "$key" -m "$f" -t "AniRust $version: $f"
+            minisign -V -p ../packaging/minisign.pub -m "$f" -q
+          done
+          rm -f "$key"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signatures
+          path: dist/*.minisig
+
   release:
     name: Publish
-    needs: [linux, deb, appimage, flatpak, windows, macos]
+    needs: [sign]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:

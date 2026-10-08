@@ -31,6 +31,12 @@ jobs:
         run: |
           for f in packaging/*.sh packaging/*/*.sh; do sh -n "$f"; done
           python3 -m py_compile packaging/mlrt/*.py
+      # The installer people pipe into bash: ShellCheck, which the runner
+      # image carries, at every severity.
+      - name: install.sh
+        run: |
+          bash -n install.sh
+          shellcheck install.sh
 
   macos:
     runs-on: macos-14
