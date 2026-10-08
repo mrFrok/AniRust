@@ -45,11 +45,12 @@ mkdir -p "$stage" "$root/dist"
 cp "target/$target/release/anirust.exe" "target/$target/release/anirust-cli.exe" \
     "$mpv/libmpv-2.dll" README.md README.ru.md LICENSE "$stage/"
 
-# Frame generation: the RIFE plugin and models, beside the program. VapourSynth
-# itself is installed separately (README); shinchiro's libmpv has the filter.
+# Frame generation: the RIFE plugin and models, and VapourSynth with its
+# Python, beside the program; shinchiro's libmpv has the filter.
 rife=${RIFE_DIR:-$root/target/rife-windows}
 [ -f "$rife/librife.dll" ] || packaging/fetch-rife.sh windows "$rife"
 cp -r "$rife" "$stage/rife"
+packaging/windows/fetch-vapoursynth.sh "$stage/vapoursynth"
 
 rm -f "$root/dist/$name.zip"
 (cd "$stage/.." && zip -qr "$root/dist/$name.zip" "$name")

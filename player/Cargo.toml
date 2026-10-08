@@ -13,3 +13,8 @@ libmpv2 = "6"
 thiserror.workspace = true
 dirs.workspace = true
 tracing.workspace = true
+
+# Loading the Python of the VapourSynth the Windows package carries, by its
+# path, before VapourSynth asks for it by name (frames.rs).
+[target.'cfg(windows)'.dependencies]
+libloading = "0.9"

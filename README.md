@@ -101,8 +101,9 @@ and 46 at 1080p, so sources taller than 720 lines are brought down for it and
 the upscaling after it brings them back. It needs three things, none of them
 linked, so the program runs without them: a libmpv with the VapourSynth filter,
 VapourSynth itself, and the plugin with its models. Every package but the
-`.deb` carries the libmpv and the plugin, and the Flatpak VapourSynth as well;
-elsewhere VapourSynth is installed once (see [Installing](#installing)). When
+`.deb` carries the libmpv and the plugin, and the Flatpak and the Windows zip
+VapourSynth as well; elsewhere VapourSynth is installed once (see
+[Installing](#installing)). When
 one is missing the menu says so, and if the filter fails, mpv plays on without
 it and the log says why.
 
@@ -181,10 +182,10 @@ with a `.sha256` beside it (`sha256sum -c FILE.sha256`).
 | any other Linux — older glibc, or none at all (Alpine, Void musl, Chimera) | `anirust-<version>-x86_64.flatpak` |
 
 - **Windows** — unpack the zip anywhere and run `anirust.exe`. It carries
-  libmpv, the RIFE plugin and vs-mlrt for TensorRT and OpenVINO. For frame
-  generation, install VapourSynth from its
-  [releases](https://github.com/vapoursynth/vapoursynth/releases). AMD cards
-  run the networks through Vulkan on Windows: MIGraphX is Linux-only here. The
+  libmpv, VapourSynth with the Python it runs on, the RIFE plugin and vs-mlrt
+  for TensorRT and OpenVINO, so frame generation and the networks need nothing
+  installed. AMD cards run the networks through Vulkan on Windows: MIGraphX is
+  Linux-only here. The
   program is not signed, so SmartScreen may stop its first start: "More info",
   then "Run anyway".
 - **macOS** — open the disk image and copy AniRust to Applications. It carries
@@ -410,7 +411,9 @@ Slint is used under its GPLv3 option, the one intended for open-source
 applications. mpv (`GPL-2.0-or-later AND LGPL-2.1-or-later`) is linked
 dynamically; the libmpv the Linux tarball ships is built from mpv's release
 with the one patch in `packaging/linux/`, which opens VapourSynth at run time
-instead of linking it. The Anime4K shaders are MIT, taken from upstream. The
+instead of linking it. The Windows zip carries VapourSynth R73's portable build
+(LGPL-2.1) and Python's embeddable one (PSF licence), as their makers publish
+them, with their licences. The Anime4K shaders are MIT, taken from upstream. The
 RIFE plugin (VapourSynth-RIFE-ncnn-Vulkan) and the RIFE models are MIT,
 fetched from upstream at build time and shipped with their licences. vs-mlrt is
 GPL-3.0; its plugins are built from its sources with our port to VapourSynth's

@@ -214,10 +214,13 @@ jobs:
           New-Item -ItemType Directory -Force "stage\$name" | Out-Null
           Copy-Item target\release\anirust.exe, target\release\anirust-cli.exe, mpv\libmpv-2.dll, README.md, README.ru.md, LICENSE "stage\$name\"
           "name=$name" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-      # Frame generation on any GPU: the RIFE plugin and models. VapourSynth
-      # itself the user installs (README).
+      # Frame generation on any GPU: the RIFE plugin and models.
       - name: RIFE
         run: packaging/fetch-rife.sh windows "stage/$name/rife"
+      # VapourSynth and the Python it runs on, which the program points
+      # libmpv at: nothing for the user to install.
+      - name: VapourSynth
+        run: packaging/windows/fetch-vapoursynth.sh "stage/$name/vapoursynth"
       # The GPUs' matrix units: vs-mlrt for TensorRT and OpenVINO, built with
       # MSVC, and the networks. The vendors' runtimes are fetched by the
       # player when asked. Built outside target/, which rust-cache prunes.

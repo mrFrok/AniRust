@@ -354,6 +354,9 @@ pub struct Player {
 
 impl Player {
     pub fn new(config: &PlayerConfig) -> Result<Self> {
+        // Before mpv exists: it reads the environment once, on its first look.
+        frames::point_at_bundled_vapoursynth();
+
         // Options that must be set before initialisation go through the
         // initializer; the rest are properties and can change later.
         let mpv = Mpv::with_initializer(|init| {

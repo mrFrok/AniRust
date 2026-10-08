@@ -724,15 +724,86 @@ pub fn last_error() -> Option<String> {
         .filter(|text| !text.trim().is_empty())
 }
 
+/// Points libmpv at the VapourSynth the Windows package carries
+/// (packaging/windows/fetch-vapoursynth.sh), in `vapoursynth` beside the
+/// program.
+///
+/// mpv on Windows looks for VSScript.dll in two places only: the path in
+/// `VSSCRIPT_PATH`, or the current folder — not where VapourSynth's installer
+/// puts it, nor anywhere on PATH. So without this, frame generation and the
+/// neural networks never start on Windows, VapourSynth installed or not. A
+/// `VSSCRIPT_PATH` that names a file is someone's choice and is left alone.
+///
+/// Its Python is loaded here too, by its full path. That Python is two
+/// libraries, python3.dll, which VapourSynth opens, forwarding every call to
+/// python313.dll; Windows looks for the second by name, beside the program
+/// and on the system's paths, never beside the first, and VapourSynth fails
+/// on its first call into Python. Already loaded, the second is found by
+/// name. The folder goes first on PATH as well, for the runtime libraries
+/// Python's own modules load.
+///
+/// mpv copies the environment the first time it reads it, so this must run
+/// before mpv is created.
+pub fn point_at_bundled_vapoursynth() {
+    #[cfg(windows)]
+    {
+        let chosen =
+            std::env::var_os("VSSCRIPT_PATH").is_some_and(|path| Path::new(&path).is_file());
+        if chosen {
+            return;
+        }
+        let Some(dir) = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|dir| dir.join("vapoursynth")))
+            .filter(|dir| dir.join("VSScript.dll").is_file())
+        else {
+            return;
+        };
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let path =
+            std::env::join_paths(std::iter::once(dir.clone()).chain(std::env::split_paths(&path)))
+                .ok();
+        // SAFETY: on Windows the environment is the system's, kept behind
+        // its own lock, so writing it while other threads may read it is
+        // sound; the unsafety std warns of is POSIX's getenv.
+        unsafe {
+            std::env::set_var("VSSCRIPT_PATH", dir.join("VSScript.dll"));
+            if let Some(path) = path {
+                std::env::set_var("PATH", path);
+            }
+        }
+        let python = std::fs::read_dir(&dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .find(|entry| {
+                let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+                name.starts_with("python3") && name.ends_with(".dll") && name != "python3.dll"
+            });
+        match python.map(|entry| entry.path()) {
+            // SAFETY: Python's library runs nothing when loaded but the C
+            // runtime's start-up; it stays loaded for the life of the process.
+            Some(python) => match unsafe { libloading::Library::new(&python) } {
+                Ok(library) => std::mem::forget(library),
+                Err(error) => {
+                    tracing::warn!(%error, path = %python.display(), "the package's Python did not load");
+                }
+            },
+            None => tracing::warn!(dir = %dir.display(), "no Python in the package's VapourSynth"),
+        }
+        tracing::info!(dir = %dir.display(), "VapourSynth from the package");
+    }
+}
+
 /// Makes sure VapourSynth can be started from inside another program.
 ///
 /// Since R73 VapourSynth needs to be told, once, which Python it belongs to:
 /// `vapoursynth config` writes that down in
 /// `~/.config/vapoursynth/vapoursynth.toml`, and without it every script
 /// fails. When the file is missing this runs that command, which is what
-/// VapourSynth's own instructions ask for. Windows keeps the same in the
-/// registry, which VapourSynth's installer fills in, so there is nothing to
-/// do there.
+/// VapourSynth's own instructions ask for. On Windows the package's own
+/// VapourSynth finds its Python beside itself ([`point_at_bundled_vapoursynth`]),
+/// so there is nothing to do there.
 pub fn prepare_vapoursynth() {
     if cfg!(windows) {
         return;
