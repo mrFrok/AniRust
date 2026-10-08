@@ -2,7 +2,7 @@
 # Wraps the release build in AniRust.app with libmpv and everything it
 # links copied inside, and puts it in a disk image under dist/.
 #
-#   packaging/macos/bundle.sh 1.0.1
+#   packaging/macos/bundle.sh 1.0.2
 #
 # Needs `dylibbundler` (Homebrew) and the tools macOS ships: sips, iconutil,
 # hdiutil, rsvg-convert from librsvg for the icon.

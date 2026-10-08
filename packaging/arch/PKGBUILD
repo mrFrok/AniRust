@@ -18,7 +18,7 @@
 # when asked (TensorRT-RTX, OpenVINO) or come from ROCm (MIGraphX).
 
 pkgname=anirust
-pkgver=1.0.1
+pkgver=1.0.2
 pkgrel=1
 _mpv=0.41.0
 _nvh=n13.0.19.0

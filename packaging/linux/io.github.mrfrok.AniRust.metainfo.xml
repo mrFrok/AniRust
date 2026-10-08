@@ -38,6 +38,7 @@
     <binary>anirust</binary>
   </provides>
   <releases>
+    <release version="1.0.2" date="2026-10-08"/>
     <release version="1.0.1" date="2026-10-08"/>
     <release version="1.0.0" date="2026-10-07"/>
     <release version="0.1.0" date="2026-10-02"/>
