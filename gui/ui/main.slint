@@ -631,6 +631,8 @@ export component MainWindow inherits Window {
     callback open-link(string);
     callback select-appearance(int);
     callback select-language(int);
+    in property <int> ui-scale-choice: 1;
+    callback select-ui-scale(int);
 
     browsing := HorizontalLayout {
         width: 100%;
@@ -706,6 +708,7 @@ export component MainWindow inherits Window {
             version: root.app-version;
             notify: root.notify-switches;
             language: root.language-choice;
+            ui-scale: root.ui-scale-choice;
             appearance: root.appearance-choice;
             accent: root.accent-index;
             translucent: root.translucent;
@@ -717,6 +720,7 @@ export component MainWindow inherits Window {
             update-how: root.update-how;
             flip-notify(i) => { root.flip-notify(i); }
             select-language(i) => { root.select-language(i); }
+            select-ui-scale(i) => { root.select-ui-scale(i); }
             select-appearance(i) => { root.select-appearance(i); }
             select-accent(i) => { root.select-accent(i); }
             set-translucent(on) => { root.set-translucent(on); }

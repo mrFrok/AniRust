@@ -154,7 +154,12 @@ pub struct Preferences {
     /// The machine test has been offered — taken, applied or turned down —
     /// so the next start does not offer it again.
     pub machine_tested: bool,
+    /// The interface's size, as a place in [`UI_SCALES`].
+    pub ui_scale: usize,
 }
+
+/// The interface's sizes, S to XL, as multiples of the screen's own scale.
+pub const UI_SCALES: [f32; 4] = [0.85, 1.0, 1.25, 1.5];
 
 impl Default for Preferences {
     fn default() -> Self {
@@ -166,6 +171,7 @@ impl Default for Preferences {
             check_updates: true,
             player: PlayerPreferences::default(),
             machine_tested: false,
+            ui_scale: 1,
         }
     }
 }

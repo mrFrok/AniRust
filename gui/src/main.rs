@@ -359,6 +359,47 @@ fn wire_preferences(window: &MainWindow, held: &Rc<Cell<preferences::Preferences
             preferences.save();
         }
     });
+    // The interface's size: the screen's own scale times the one chosen.
+    // The screen's is read once the window is up, before anything is
+    // changed, and every choice is made from it.
+    window.set_ui_scale_choice(preferences.ui_scale.min(preferences::UI_SCALES.len() - 1) as i32);
+    let screen_scale = Rc::new(Cell::new(0.0f32));
+    let rescale = {
+        let screen_scale = Rc::clone(&screen_scale);
+        let weak = window.as_weak();
+        move |index: usize| {
+            let Some(window) = weak.upgrade() else { return };
+            if screen_scale.get() <= 0.0 {
+                screen_scale.set(window.window().scale_factor());
+            }
+            let chosen = preferences::UI_SCALES[index.min(preferences::UI_SCALES.len() - 1)];
+            window
+                .window()
+                .dispatch_event(slint::platform::WindowEvent::ScaleFactorChanged {
+                    scale_factor: screen_scale.get() * chosen,
+                });
+        }
+    };
+    if preferences.ui_scale != 1 {
+        let rescale = rescale.clone();
+        let index = preferences.ui_scale;
+        slint::Timer::single_shot(std::time::Duration::ZERO, move || rescale(index));
+    }
+    window.on_select_ui_scale({
+        let held = Rc::clone(held);
+        let weak = window.as_weak();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            let index = (index.max(0) as usize).min(preferences::UI_SCALES.len() - 1);
+            let mut preferences = held.get();
+            preferences.ui_scale = index;
+            held.set(preferences);
+            window.set_ui_scale_choice(index as i32);
+            rescale(index);
+            preferences.save();
+        }
+    });
+
     window.on_select_accent({
         let held = Rc::clone(held);
         let weak = window.as_weak();

@@ -448,6 +448,22 @@ impl Player {
         player.mpv.set_property("keep-open", "yes")?;
         player.mpv.set_property("idle", "yes")?;
 
+        // Compiled shaders kept between runs. mpv keeps them by default, in
+        // its own cache folder — which, with its config switched off, it
+        // never finds, so Anime4K's large shaders were compiled afresh on
+        // every start. A folder of ours instead.
+        let shader_cache = frames::work_dir().join("gl-cache");
+        if std::fs::create_dir_all(&shader_cache).is_ok() {
+            let dir = shader_cache.to_string_lossy();
+            let _ = player.mpv.set_property("gpu-shader-cache", true);
+            if let Err(error) = player
+                .mpv
+                .set_property("gpu-shader-cache-dir", dir.as_ref())
+            {
+                tracing::warn!(%error, "mpv would not take a shader cache folder");
+            }
+        }
+
         if let Some(format) = &config.fbo_format {
             player.mpv.set_property("fbo-format", format.as_ref())?;
         }

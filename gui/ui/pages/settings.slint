@@ -22,6 +22,8 @@ export component SettingsPage inherits Rectangle {
     /// The notification switches, in the order of the labels below.
     in property <[bool]> notify: [];
     in property <int> language: 0;
+    /// The interface's size: S, M, L, XL.
+    in property <int> ui-scale: 1;
     in property <int> appearance: 0;
     in property <int> accent: 0;
     in property <bool> translucent: false;
@@ -35,6 +37,7 @@ export component SettingsPage inherits Rectangle {
 
     callback flip-notify(int);
     callback select-language(int);
+    callback select-ui-scale(int);
     callback select-appearance(int);
     callback select-accent(int);
     callback set-translucent(bool);
@@ -284,6 +287,29 @@ export component SettingsPage inherits Rectangle {
                             changed wanted => { self.current-index = self.wanted; }
 
                             index-changed(i) => { root.select-language(i); }
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: Spacing.small;
+
+                    Text {
+                        text: Tr.ui-scale;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.title-medium-size;
+                        font-weight: Typography.title-medium-weight-em;
+                    }
+
+                    HorizontalLayout {
+                        alignment: start;
+
+                        SegmentedButton {
+                            items: [{ text: "S" }, { text: "M" }, { text: "L" }, { text: "XL" }];
+                            property <int> wanted: root.ui-scale;
+                            init => { self.current-index = root.ui-scale; }
+                            changed wanted => { self.current-index = self.wanted; }
+                            index-changed(i) => { root.select-ui-scale(i); }
                         }
                     }
                 }
