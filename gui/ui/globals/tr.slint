@@ -50,20 +50,20 @@ export global Tr {
 
     out property <string> decoder: lang == "ru" ? "Декодер" : "Decoder";
     out property <string> decoder-hint: lang == "ru"
-        ? "Отвечает за обработку видео при воспроизведении."
-        : "Handles video processing during playback.";
+        ? "Отвечает за обработку видео при воспроизведении"
+        : "Handles video processing during playback";
     out property <string> decoder-auto: lang == "ru" ? "Автоматически" : "Automatic";
     out property <string> decoder-auto-hint: lang == "ru"
-        ? "Подбирает лучший доступный вариант."
-        : "Picks the best option available.";
+        ? "Подбирает лучший доступный вариант"
+        : "Picks the best option available";
     out property <string> decoder-hw: lang == "ru" ? "Аппаратный" : "Hardware";
     out property <string> decoder-hw-hint: lang == "ru"
-        ? "Рекомендуемый режим для большинства видео."
-        : "The recommended mode for most video.";
+        ? "Рекомендуемый режим для большинства видео"
+        : "The recommended mode for most video";
     out property <string> decoder-sw: lang == "ru" ? "Программный" : "Software";
     out property <string> decoder-sw-hint: lang == "ru"
-        ? "Помогает при проблемах с картинкой, но сильнее нагружает процессор."
-        : "Helps when the picture misbehaves, at a cost in CPU.";
+        ? "Помогает при проблемах с картинкой, но сильнее нагружает процессор"
+        : "Helps when the picture misbehaves, at a cost in CPU";
     out property <string> vote-refused: lang == "ru"
         ? "Сервис не принял оценку: похоже, оценки постов он принимает только из официального приложения."
         : "The service did not take the rating: it seems to accept post ratings only from the official app.";
@@ -108,13 +108,13 @@ export global Tr {
     out property <string> bench-keep: lang == "ru" ? "Оставить как есть" : "Keep as is";
     out property <string> bench-setting: lang == "ru" ? "Подобрать картинку под компьютер" : "Pick picture settings for this computer";
     out property <string> bench-setting-hint: lang == "ru"
-        ? "Короткая проверка видеокарты: чёткость и плавность, которые она тянет без пропуска кадров."
-        : "A short test of the graphics card: the sharpness and smoothness it runs without dropping frames.";
+        ? "Короткая проверка видеокарты: чёткость и плавность, которые она тянет без пропуска кадров"
+        : "A short test of the graphics card: the sharpness and smoothness it runs without dropping frames";
     public pure function bench-step(step: int) -> string {
         if step == 0 { return lang == "ru" ? "Проверяю плавность…" : "Testing smoothness…"; }
         lang == "ru"
-            ? "Проверяю нейросеть… В первый раз она собирается под видеокарту — это может занять несколько минут."
-            : "Testing the network… The first time it is built for the graphics card, which can take a few minutes."
+            ? "Проверяю нейросеть… В первый раз она собирается под видеокарту — это может занять несколько минут"
+            : "Testing the network… The first time it is built for the graphics card, which can take a few minutes"
     }
     public pure function bench-result(sharpness: int, neural: bool, rate: int) -> string {
         (lang == "ru" ? "Для этого компьютера: чёткость — " : "For this computer: sharpness ")
@@ -125,12 +125,11 @@ export global Tr {
             + (rate == 2 ? (lang == "ru" ? "60 кадров" : "60 frames")
                 : rate == 1 ? (lang == "ru" ? "×2 кадра" : "×2 frames")
                 : (lang == "ru" ? "выкл" : "off"))
-            + "."
     }
 
     public pure function sharpness-hint(neural: bool) -> string {
         neural
-            ? (lang == "ru" ? "Нейросеть удваивает картинку, затем шейдеры дорисовывают детали." : "A network doubles the picture, then shaders refine the detail.")
+            ? (lang == "ru" ? "Нейросеть удваивает картинку, затем шейдеры дорисовывают детали" : "A network doubles the picture, then shaders refine the detail")
             : (lang == "ru" ? "Шейдеры Anime4K. Нейросеть — в тонкой настройке." : "Anime4K shaders. The network is under fine-tune.")
     }
     out property <string> frame-generation-hint: lang == "ru"
@@ -142,8 +141,8 @@ export global Tr {
     out property <string> frame-rate-display: lang == "ru" ? "Как у монитора" : "Display rate";
     out property <string> adaptive: lang == "ru" ? "Подстраивать под видеокарту" : "Adapt to the GPU";
     out property <string> adaptive-hint: lang == "ru"
-        ? "Если кадры начнут пропадать, качество само снизится на ступень — и останется таким."
-        : "If frames start dropping, quality comes down a step by itself, and stays there.";
+        ? "Если кадры начнут пропадать, качество само снизится на ступень — и останется таким"
+        : "If frames start dropping, quality comes down a step by itself, and stays there";
     out property <string> rife-fast: lang == "ru" ? "Быстрая" : "Fast";
     out property <string> rife-quality: lang == "ru" ? "Качественная" : "Quality";
     out property <string> picture: lang == "ru" ? "Цвет" : "Colour";
@@ -159,15 +158,15 @@ export global Tr {
     out property <string> reset: lang == "ru" ? "Сбросить" : "Reset";
     out property <string> normalize: lang == "ru" ? "Выравнивать громкость" : "Even out loudness";
     out property <string> normalize-hint: lang == "ru"
-        ? "Тихие реплики громче, громкая музыка тише — не придётся крутить звук."
-        : "Quiet lines louder, loud music softer — no reaching for the volume.";
+        ? "Тихие реплики громче, громкая музыка тише — не придётся крутить звук"
+        : "Quiet lines louder, loud music softer — no reaching for the volume";
     out property <string> ass-override: lang == "ru" ? "Свой стиль поверх ASS" : "Own style over ASS";
     out property <string> ass-override-hint: lang == "ru"
         ? "Заменяет оформление ASS-субтитров простым шрифтом плеера. Помогает, когда фансаб нечитаем."
         : "Replaces the styling of ASS subtitles with the player's plain font. Helps when a fansub is hard to read.";
     out property <string> subtitle-fonts-hint: lang == "ru"
-        ? "Шрифты, которых нет в системе, положите в папку шрифтов субтитров."
-        : "Fonts the system lacks go in the subtitle fonts folder.";
+        ? "Шрифты, которых нет в системе, положите в папку шрифтов субтитров"
+        : "Fonts the system lacks go in the subtitle fonts folder";
     out property <string> open-folder: lang == "ru" ? "Открыть папку" : "Open folder";
     out property <string> screenshot: lang == "ru" ? "Снимок кадра" : "Screenshot";
     out property <string> screenshot-hint: lang == "ru"
@@ -194,16 +193,16 @@ export global Tr {
             ? "C — для 480p и чётких исходников: увеличивает и убирает шум, ничего не дорисовывая."
             : "C — for 480p and sharp sources: upscales and denoises without restoring.")
         : mode == 4 ? (lang == "ru"
-            ? "A+A — ещё резче, для очень размытых исходников."
-            : "A+A — sharper still, for very blurry sources.")
+            ? "A+A — ещё резче, для очень размытых исходников"
+            : "A+A — sharper still, for very blurry sources")
         : mode == 5 ? (lang == "ru"
-            ? "B+B — B со вторым мягким восстановлением."
-            : "B+B — B with a second soft restore.")
+            ? "B+B — B со вторым мягким восстановлением"
+            : "B+B — B with a second soft restore")
         : mode == 6 ? (lang == "ru"
-            ? "C+A — C с восстановлением после увеличения."
-            : "C+A — C with a restore after the upscale.")
+            ? "C+A — C с восстановлением после увеличения"
+            : "C+A — C with a restore after the upscale")
         : (lang == "ru"
-            ? "Шейдеры выключены, картинку масштабирует сам mpv."
+            ? "Шейдеры выключены, картинку масштабирует сам mpv"
             : "Shaders off; mpv scales the picture itself.")
     }
 
@@ -285,7 +284,7 @@ export global Tr {
     out property <string> edited-mark: lang == "ru" ? "изменён" : "edited";
     out property <string> deleted-comment: lang == "ru" ? "Комментарий удалён" : "Comment deleted";
     out property <string> load-more: lang == "ru" ? "Загрузить ещё" : "Load more";
-    out property <string> no-comments: lang == "ru" ? "Комментариев пока нет." : "No comments yet.";
+    out property <string> no-comments: lang == "ru" ? "Комментариев пока нет" : "No comments yet";
     out property <string> sign-in-to-comment: lang == "ru" ? "Войдите, чтобы комментировать" : "Sign in to comment";
     out property <string> replying-to: lang == "ru" ? "Ответ для" : "Replying to";
     out property <string> editing-comment: lang == "ru" ? "Изменение комментария" : "Editing a comment";
@@ -301,7 +300,7 @@ export global Tr {
     out property <string> mark-all-seen: lang == "ru" ? "Прочитать все" : "Mark all seen";
     out property <string> clear-all: lang == "ru" ? "Очистить" : "Clear";
     out property <string> clear-all-confirm: lang == "ru" ? "Точно очистить все?" : "Really clear all?";
-    out property <string> no-notifications: lang == "ru" ? "Уведомлений нет." : "No notifications.";
+    out property <string> no-notifications: lang == "ru" ? "Уведомлений нет" : "No notifications";
     out property <string> notification-settings: lang == "ru" ? "Что присылать" : "What to send";
     out property <string> nk-all: lang == "ru" ? "Все" : "All";
     out property <string> nk-episodes: lang == "ru" ? "Серии" : "Episodes";
@@ -338,7 +337,7 @@ export global Tr {
     out property <string> stat-episodes: lang == "ru" ? "Просмотрено серий" : "Episodes watched";
     out property <string> stat-time: lang == "ru" ? "Время просмотра" : "Time watching";
     out property <string> stat-dynamics: lang == "ru" ? "Динамика просмотра серий" : "Episodes per day";
-    out property <string> stats-hidden: lang == "ru" ? "Статистика скрыта настройками приватности." : "Statistics are hidden by privacy settings.";
+    out property <string> stats-hidden: lang == "ru" ? "Статистика скрыта настройками приватности" : "Statistics are hidden by privacy settings";
     /// Minutes as days and hours, the way the official client words it:
     /// "~ 35 дней 3 часа".
     public pure function duration(minutes: int) -> string {
@@ -363,7 +362,7 @@ export global Tr {
     out property <string> mute: lang == "ru" ? "Заглушить" : "Mute";
     out property <string> unmute: lang == "ru" ? "Включить" : "Unmute";
     out property <string> back-to-feed: lang == "ru" ? "К ленте" : "Back to feed";
-    out property <string> no-posts: lang == "ru" ? "Записей пока нет." : "No posts yet.";
+    out property <string> no-posts: lang == "ru" ? "Записей пока нет" : "No posts yet";
     public pure function subscribers-label(n: int) -> string {
         root.lang == "ru"
             ? n + " " + root.plural(n, "подписчик", "подписчика", "подписчиков")
@@ -399,7 +398,7 @@ export global Tr {
     out property <string> unpin-post: lang == "ru" ? "Открепить" : "Unpin";
     out property <string> delete-post-confirm: lang == "ru" ? "Удалить запись?" : "Delete the post?";
     out property <string> kept-block: lang == "ru"
-        ? "Картинка или встраивание — останется как было."
+        ? "Картинка или встраивание — останется как было"
         : "A picture or an embed: it stays as it was.";
     out property <string> create-blog: lang == "ru" ? "Завести блог" : "Start a blog";
     public pure function block-kind(kind: string) -> string {
@@ -411,8 +410,8 @@ export global Tr {
         : (lang == "ru" ? "Вложение" : "Attachment")
     }
     public pure function post-error(key: string) -> string {
-        key == "no-channel" ? (lang == "ru" ? "Выберите, куда писать." : "Choose where to post.")
-        : key == "empty" ? (lang == "ru" ? "В записи нет текста." : "The post has no text.")
+        key == "no-channel" ? (lang == "ru" ? "Выберите, куда писать" : "Choose where to post")
+        : key == "empty" ? (lang == "ru" ? "В записи нет текста" : "The post has no text")
         : key == "no-blog" ? (lang == "ru" ? "Блог пока не завести: сервису мало репутации аккаунта." : "No blog yet: the service wants more reputation first.")
         : (lang == "ru" ? "Не получилось. Попробуйте ещё раз." : "That did not work. Try again.")
     }
@@ -427,12 +426,12 @@ export global Tr {
     out property <string> allow-suggestions: lang == "ru" ? "Принимать предложенные записи" : "Take suggested posts";
     out property <string> delete-cover: lang == "ru" ? "Убрать обложку" : "Remove cover";
     out property <string> create: lang == "ru" ? "Создать" : "Create";
-    out property <string> no-suggestions: lang == "ru" ? "Предложенных записей нет." : "No suggested posts.";
+    out property <string> no-suggestions: lang == "ru" ? "Предложенных записей нет" : "No suggested posts";
     out property <string> reject: lang == "ru" ? "Отклонить" : "Reject";
     out property <string> publish-signed: lang == "ru" ? "С подписью автора" : "Signed by the author";
     out property <string> remove-admin: lang == "ru" ? "Снять" : "Remove";
     out property <string> make-admin: lang == "ru" ? "Назначить админом" : "Make admin";
-    out property <string> no-blocked: lang == "ru" ? "Никто не заблокирован." : "Nobody is blocked.";
+    out property <string> no-blocked: lang == "ru" ? "Никто не заблокирован" : "Nobody is blocked";
     out property <string> find-subscriber: lang == "ru" ? "Найти подписчика" : "Find a subscriber";
     out property <string> create-channel: lang == "ru" ? "Создать канал" : "Create a channel";
     public pure function sign-out-question(login: string) -> string {
@@ -443,8 +442,8 @@ export global Tr {
         : "Coming back will take the login and password. Watch progress on this computer stays.";
     out property <string> remember-player: lang == "ru" ? "Запоминать настройки плеера" : "Remember player settings";
     out property <string> remember-player-why: lang == "ru"
-        ? "Скорость, громкость, апскейл, интерполяция и декодер останутся такими же при следующем запуске."
-        : "Speed, volume, upscaling, interpolation and the decoder stay as they were at the next start.";
+        ? "Скорость, громкость, апскейл, интерполяция и декодер останутся такими же при следующем запуске"
+        : "Speed, volume, upscaling, interpolation and the decoder stay as they were at the next start";
     out property <string> translucent-window: lang == "ru" ? "Прозрачное окно" : "See-through window";
     out property <string> translucent-why: lang == "ru"
         ? "Фон окна становится полупрозрачным. Размытие под ним — дело оконного менеджера, если он это умеет."
@@ -456,8 +455,8 @@ export global Tr {
     out property <string> nav-settings: lang == "ru" ? "Настройки" : "Settings";
     out property <string> about: lang == "ru" ? "О приложении" : "About";
     out property <string> about-what: lang == "ru"
-        ? "Неофициальный клиент Anixart для компьютера со своим плеером."
-        : "An unofficial Anixart client for the desktop, with a player of its own.";
+        ? "Неофициальный клиент Anixart для компьютера со своим плеером"
+        : "An unofficial Anixart client for the desktop, with a player of its own";
     out property <string> about-unaffiliated: lang == "ru"
         ? "AniRust не связан с разработчиками Anixart. Название и оформление Anixart принадлежат их владельцам. Лицензия GPL-3.0-or-later."
         : "AniRust is not affiliated with the developers of Anixart. The Anixart name and branding belong to their owners. Licensed GPL-3.0-or-later.";
@@ -514,7 +513,7 @@ export global Tr {
     out property <string> private-collection: lang == "ru" ? "Только для меня" : "Only for me";
     out property <string> change-cover: lang == "ru" ? "Сменить обложку" : "Change cover";
     out property <string> add-to-collection: lang == "ru" ? "В коллекцию" : "Add to collection";
-    out property <string> no-collections: lang == "ru" ? "Коллекций пока нет." : "No collections yet.";
+    out property <string> no-collections: lang == "ru" ? "Коллекций пока нет" : "No collections yet";
     out property <string> back-to-collections: lang == "ru" ? "К коллекциям" : "Back to collections";
     out property <string> action-failed: lang == "ru" ? "Не получилось. Попробуйте ещё раз." : "That did not work. Try again.";
     public pure function by-author(login: string) -> string {
@@ -537,8 +536,8 @@ export global Tr {
     out property <string> list-history: lang == "ru" ? "История" : "History";
     out property <string> list-favourites: lang == "ru" ? "Избранное" : "Favourites";
     out property <string> sign-in-to-see: lang == "ru"
-        ? "Войдите, чтобы увидеть свои списки."
-        : "Sign in to see your lists.";
+        ? "Войдите, чтобы увидеть свои списки"
+        : "Sign in to see your lists";
     out property <string> nothing-here: lang == "ru" ? "Здесь пока пусто" : "Nothing here yet";
     out property <string> no-downloads: lang == "ru"
         ? "Скачанных серий пока нет. Кнопка загрузки есть в списке серий."
@@ -566,16 +565,16 @@ export global Tr {
     out property <string> show-less: lang == "ru" ? "Свернуть" : "Show less";
     out property <string> pinned: lang == "ru" ? "Закреплено" : "Pinned";
     out property <string> sign-in-to-feed: lang == "ru"
-        ? "Войдите, чтобы видеть ленту."
-        : "Sign in to see the feed.";
+        ? "Войдите, чтобы видеть ленту"
+        : "Sign in to see the feed";
     out property <string> feed-empty: lang == "ru"
         ? "В ленте пока пусто. Подпишитесь на каналы во вкладке «Свежее»."
         : "Nothing here yet. Subscribe to channels from the Latest tab.";
     out property <string> remove-from-history: lang == "ru" ? "Убрать из истории" : "Remove from history";
     out property <string> recently-watched: lang == "ru" ? "Просмотрено недавно" : "Watched recently";
     out property <string> nothing-watched: lang == "ru"
-        ? "Пока ничего не просмотрено."
-        : "Nothing watched yet.";
+        ? "Пока ничего не просмотрено"
+        : "Nothing watched yet";
 
     /// Which episode, worded as each language words it.
     public pure function episode-of(number: int) -> string {
@@ -613,8 +612,8 @@ export global Tr {
     out property <string> collections: lang == "ru" ? "Коллекции" : "Collections";
     out property <string> friends: lang == "ru" ? "Друзья" : "Friends";
     out property <string> sign-in-to-profile: lang == "ru"
-        ? "Войдите, чтобы видеть свои списки и синхронизировать прогресс."
-        : "Sign in to see your lists and sync your progress.";
+        ? "Войдите, чтобы видеть свои списки и синхронизировать прогресс"
+        : "Sign in to see your lists and sync your progress";
 
     out property <string> appearance: lang == "ru" ? "Оформление" : "Appearance";
     out property <string> appearance-why: lang == "ru"
@@ -638,8 +637,8 @@ export global Tr {
     out property <string> cancel: lang == "ru" ? "Отмена" : "Cancel";
     out property <string> sign-in-title: lang == "ru" ? "Вход в Anixart" : "Sign in to Anixart";
     out property <string> sign-in-why: lang == "ru"
-        ? "Списки, история и прогресс просмотра синхронизируются с аккаунтом."
-        : "Lists, history and watch progress sync with the account.";
+        ? "Списки, история и прогресс просмотра синхронизируются с аккаунтом"
+        : "Lists, history and watch progress sync with the account";
     out property <string> unknown-login: lang == "ru" ? "Такого логина нет" : "No such login";
     out property <string> wrong-password: lang == "ru" ? "Неверный пароль" : "Wrong password";
     out property <string> sign-in-failed: lang == "ru"
@@ -648,8 +647,8 @@ export global Tr {
     out property <string> sign-up-title: lang == "ru" ? "Регистрация" : "Create an account";
     out property <string> restore-title: lang == "ru" ? "Восстановление пароля" : "Reset your password";
     out property <string> restore-why: lang == "ru"
-        ? "Пришлём код на почту, к которой привязан аккаунт."
-        : "A code goes to the email the account is tied to.";
+        ? "Пришлём код на почту, к которой привязан аккаунт"
+        : "A code goes to the email the account is tied to";
     out property <string> code-sent: lang == "ru"
         ? "Мы отправили код на почту. Введите его здесь."
         : "A code is on its way to your email. Enter it here.";
@@ -677,8 +676,8 @@ export global Tr {
         : "Type this PIN on the phone and confirm";
     out property <string> qr-pin-label: lang == "ru" ? "PIN" : "PIN";
     out property <string> qr-needs-11: lang == "ru"
-        ? "Нужен Anixart 11 или новее."
-        : "Needs Anixart 11 or newer.";
+        ? "Нужен Anixart 11 или новее"
+        : "Needs Anixart 11 or newer";
     out property <string> qr-new-code: lang == "ru" ? "Новый код" : "New code";
     out property <string> qr-with-password: lang == "ru" ? "Войти по паролю" : "Sign in with a password";
 
@@ -690,7 +689,7 @@ export global Tr {
             ? (lang == "ru" ? "Отсканировано на «\{device}». Введите PIN на телефоне." : "Scanned on “\{device}”. Type the PIN on the phone.")
             : (lang == "ru" ? "Отсканировано. Введите PIN на телефоне." : "Scanned. Type the PIN on the phone."))
         : state == "expired" ? (lang == "ru" ? "Код устарел. Возьмите новый." : "The code expired. Get a new one.")
-        : state == "declined" ? (lang == "ru" ? "Вход отклонён на телефоне." : "The sign-in was turned down on the phone.")
+        : state == "declined" ? (lang == "ru" ? "Вход отклонён на телефоне" : "The sign-in was turned down on the phone")
         : state == "too-many-attempts" ? (lang == "ru" ? "Слишком много неверных PIN. Возьмите новый код." : "Too many wrong PINs. Get a new code.")
         : state == "too-many-requests" ? (lang == "ru" ? "Слишком много попыток. Подождите немного." : "Too many tries. Wait a little.")
         : (lang == "ru" ? "Не получилось. Проверьте связь и возьмите новый код." : "That did not work. Check the connection and get a new code.")
@@ -701,8 +700,8 @@ export global Tr {
     out property <string> change-avatar: lang == "ru" ? "Сменить аватар" : "Change picture";
     out property <string> delete-avatar: lang == "ru" ? "Убрать аватар" : "Remove picture";
     out property <string> avatar-banned: lang == "ru"
-        ? "Смена аватара для аккаунта сейчас запрещена."
-        : "This account may not change its picture for now.";
+        ? "Смена аватара для аккаунта сейчас запрещена"
+        : "This account may not change its picture for now";
     out property <string> status-field: lang == "ru" ? "Статус" : "Status";
     out property <string> privacy: lang == "ru" ? "Приватность" : "Privacy";
     out property <string> privacy-counts: lang == "ru" ? "Счётчики списков" : "List counts";
@@ -715,13 +714,13 @@ export global Tr {
     out property <string> privacy-nobody: lang == "ru" ? "Никто" : "Nobody";
     out property <string> incognito: lang == "ru" ? "Инкогнито" : "Incognito";
     out property <string> incognito-why: lang == "ru"
-        ? "Другие не видят, что вы в сети."
-        : "Others do not see when you are online.";
+        ? "Другие не видят, что вы в сети"
+        : "Others do not see when you are online";
     out property <string> socials: lang == "ru" ? "Соцсети" : "Social links";
     out property <string> login-section: lang == "ru" ? "Вход" : "Signing in";
     out property <string> login-change-why: lang == "ru"
-        ? "Логин можно менять не чаще, чем разрешает сервис."
-        : "The login can be changed only as often as the service allows.";
+        ? "Логин можно менять не чаще, чем разрешает сервис"
+        : "The login can be changed only as often as the service allows";
     public pure function login-next-change(date: string) -> string {
         lang == "ru" ? "Сменить логин снова можно " + date + "." : "The login can be changed again on " + date + "."
     }
@@ -762,7 +761,7 @@ export global Tr {
             ? "Аккаунт будет удалён " + date + ". До этого удаление можно отменить."
             : "The account will be deleted on " + date + ". Until then the deletion can be cancelled."
     }
-    out property <string> deletion-in-progress: lang == "ru" ? "Удаление уже идёт." : "The deletion is already under way.";
+    out property <string> deletion-in-progress: lang == "ru" ? "Удаление уже идёт" : "The deletion is already under way";
     out property <string> cancel-deletion: lang == "ru" ? "Отменить удаление" : "Cancel the deletion";
     out property <string> appeal-sent: lang == "ru" ? "Апелляция отправлена" : "Appeal sent";
 

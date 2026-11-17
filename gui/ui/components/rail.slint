@@ -30,10 +30,14 @@ export component Rail inherits Rectangle {
         Rectangle {
             height: root.bar-height;
 
+            // The mark alone, in the colour of text: the gradient tile is
+            // the launcher's icon, and in the window it would be the only
+            // loud thing in the chrome.
             Image {
-                source: @image-url("../../../packaging/icons/anirust.svg");
-                width: 36px;
-                height: 36px;
+                source: @image-url("../icons/mark.svg");
+                colorize: MaterialPalette.on-surface;
+                width: 28px;
+                height: 28px;
             }
         }
 

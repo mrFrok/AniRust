@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="40 36 176 180">
+  <!-- The program's mark without its tile: an A whose crossbar is a play button. -->
+  <path d="M128 46 L206 206" stroke="#000" stroke-width="26" stroke-linecap="round" fill="none"/>
+  <path d="M128 46 L50 206" stroke="#000" stroke-width="26" stroke-linecap="round" fill="none"/>
+  <path d="M112 128 L152 152 L112 176 Z" fill="#000" stroke="#000" stroke-width="10" stroke-linejoin="round"/>
+</svg>
