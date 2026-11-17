@@ -18,6 +18,7 @@ import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { Account, HistoryItem, PersonItem } from "../structs.slint";
 import { PersonChip } from "../components/person-chip.slint";
+import { QuietButton } from "../components/quiet-button.slint";
 import { Scheme, Accent } from "../globals/scheme.slint";
 
 /// One wedge of the ring.
@@ -177,8 +178,10 @@ component Bars inherits HorizontalLayout {
         alignment: end;
         spacing: Spacing.tight;
 
+        // Empty days say nothing rather than "0": the flat stub under them
+        // already reads as none.
         Text {
-            text: value;
+            text: value > 0 ? value : "";
             color: MaterialPalette.on-surface;
             font-size: Typography.label-medium-size;
             horizontal-alignment: center;
@@ -338,7 +341,7 @@ component ProfileSide inherits VerticalLayout {
 
                 VerticalLayout {
                     alignment: center;
-                    TextButton {
+                    QuietButton {
                         text: Tr.decline;
                         clicked => { root.answer-request(i, false); }
                     }
@@ -552,13 +555,16 @@ export component ProfilePage inherits Rectangle {
 
             // Back where the profile was opened from, when it was opened
             // from somewhere — a comment, a release.
-            if root.can-go-back: TextButton {
+            if root.can-go-back: QuietButton {
+                has-icon: true;
                 icon: @image-url("../icons/back.svg");
                 text: Tr.back;
                 clicked => { root.go-back(); }
             }
 
-            TextButton {
+            QuietButton {
+
+                has-icon: true;
                 icon: root.can-go-back ? @image-url("../icons/person.svg") : @image-url("../icons/back.svg");
                 text: Tr.my-profile;
                 clicked => { root.back-to-mine(); }
@@ -686,7 +692,7 @@ export component ProfilePage inherits Rectangle {
                         clicked => { root.friend-action(); }
                     }
 
-                    OutlineButton {
+                    QuietButton {
                         text: root.account.blocked ? Tr.unblock : Tr.block;
                         clicked => { root.toggle-block(); }
                     }

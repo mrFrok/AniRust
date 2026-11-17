@@ -8,12 +8,13 @@
 // is not the picture's.
 
 import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, IconButton, TextButton, FilledButton, OutlineButton, CircularProgressIndicator } from "@material";
+import { MaterialPalette, IconButton, FilledButton, OutlineButton, CircularProgressIndicator } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { CommentItem, PickerOption } from "../structs.slint";
 import { Dropdown } from "release-parts.slint";
+import { QuietButton } from "quiet-button.slint";
 
 /// A vote button: an arrow that lights when it is the account's vote.
 export component VoteArrow inherits Rectangle {
@@ -168,9 +169,11 @@ component CommentRow inherits Rectangle {
 
                 Text {
                     text: root.item.score;
-                    color: root.item.score > 0
-                        ? MaterialPalette.primary
-                        : (root.item.score < 0 ? MaterialPalette.error : MaterialPalette.on-surface-variant);
+                    // In colour only once it is the account's own vote: a
+                    // column of purple and red numbers reads as alarms.
+                    color: root.item.my-vote == 2 ? MaterialPalette.primary
+                        : root.item.my-vote == 1 ? MaterialPalette.error
+                        : MaterialPalette.on-surface-variant;
                     font-size: Typography.label-large-size;
                     vertical-alignment: center;
                     min-width: 20px;
@@ -183,22 +186,22 @@ component CommentRow inherits Rectangle {
                     clicked => { root.vote(root.item.my-vote == 1 ? 0 : 1); }
                 }
 
-                TextButton {
+                QuietButton {
                     text: Tr.reply;
                     clicked => { root.reply(); }
                 }
 
-                if root.item.mine: TextButton {
+                if root.item.mine: QuietButton {
                     text: Tr.edit;
                     clicked => { root.edit(); }
                 }
 
-                if root.item.mine: TextButton {
+                if root.item.mine: QuietButton {
                     text: Tr.delete;
                     clicked => { root.delete(); }
                 }
 
-                if !root.item.mine: TextButton {
+                if !root.item.mine: QuietButton {
                     text: Tr.report;
                     clicked => { root.report(); }
                 }
@@ -207,7 +210,7 @@ component CommentRow inherits Rectangle {
             if !root.item.is-reply && root.item.replies > 0: HorizontalLayout {
                 alignment: start;
 
-                TextButton {
+                QuietButton {
                     text: Tr.replies-label(root.item.replies, root.item.expanded);
                     clicked => { root.toggle-replies(); }
                 }
@@ -407,7 +410,7 @@ export component CommentsSheet inherits Rectangle {
 
                         Text {
                             text: root.editing ? Tr.editing-comment : Tr.replying-to + " " + root.reply-to;
-                            color: MaterialPalette.primary;
+                            color: MaterialPalette.on-surface-variant;
                             font-size: Typography.label-large-size;
                             vertical-alignment: center;
                             horizontal-stretch: 1;

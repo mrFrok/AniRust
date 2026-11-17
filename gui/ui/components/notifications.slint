@@ -10,6 +10,7 @@ import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { NotificationItem } from "../structs.slint";
+import { QuietButton } from "quiet-button.slint";
 import { Dropdown } from "release-parts.slint";
 
 component NotificationRow inherits Rectangle {
@@ -184,12 +185,12 @@ export component NotificationsSheet inherits Rectangle {
                 spacing: Spacing.small;
                 alignment: start;
 
-                TextButton {
+                QuietButton {
                     text: Tr.mark-all-seen;
                     clicked => { root.mark-all-seen(); }
                 }
 
-                TextButton {
+                QuietButton {
                     text: root.confirming ? Tr.clear-all-confirm : Tr.clear-all;
                     clicked => {
                         if (root.confirming) {

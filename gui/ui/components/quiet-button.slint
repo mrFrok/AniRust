@@ -11,6 +11,7 @@ export component QuietButton inherits Rectangle {
     in property <string> text;
     in property <image> icon;
     in property <bool> has-icon: false;
+    in property <bool> enabled: true;
     callback clicked;
 
     height: 40px;
@@ -44,7 +45,10 @@ export component QuietButton inherits Rectangle {
         }
     }
 
+    opacity: root.enabled ? 1 : 0.38;
+
     touch := TouchArea {
+        enabled: root.enabled;
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }

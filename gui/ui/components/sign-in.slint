@@ -10,6 +10,7 @@
 import { MaterialPalette, TextField, FilledButton, TextButton, OutlineButton, CircularProgressIndicator } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing, Motion } from "../globals/shape.slint";
+import { QuietButton } from "quiet-button.slint";
 import { Tr } from "../globals/tr.slint";
 
 export component SignInSheet inherits Rectangle {
@@ -302,12 +303,12 @@ export component SignInSheet inherits Rectangle {
             if root.mode == "sign-in": HorizontalLayout {
                 alignment: space-between;
 
-                TextButton {
+                QuietButton {
                     text: Tr.create-account;
                     clicked => { root.mode = "sign-up"; }
                 }
 
-                TextButton {
+                QuietButton {
                     text: Tr.forgot-password;
                     clicked => { root.mode = "restore"; }
                 }
@@ -316,12 +317,12 @@ export component SignInSheet inherits Rectangle {
             if root.mode != "sign-in" && !root.on-qr: HorizontalLayout {
                 alignment: start;
 
-                TextButton {
+                QuietButton {
                     text: Tr.have-account;
                     clicked => { root.mode = "sign-in"; }
                 }
 
-                if root.waiting-for-code: TextButton {
+                if root.waiting-for-code: QuietButton {
                     text: Tr.resend-code;
                     enabled: !root.busy;
                     clicked => { root.resend(); }
@@ -333,7 +334,7 @@ export component SignInSheet inherits Rectangle {
 
                 // On the QR form the way back shares the row with the actions,
                 // pushed to the far side of them.
-                if root.on-qr: TextButton {
+                if root.on-qr: QuietButton {
                     text: Tr.qr-with-password;
                     clicked => {
                         root.qr-stop();
@@ -343,7 +344,7 @@ export component SignInSheet inherits Rectangle {
 
                 Rectangle { horizontal-stretch: 1; }
 
-                TextButton {
+                QuietButton {
                     text: Tr.cancel;
                     clicked => { root.dismiss(); }
                 }

@@ -3,11 +3,12 @@
 // What has been saved, and what is still coming.
 
 import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, LinearProgressIndicator, OutlineButton } from "@material";
+import { MaterialPalette, LinearProgressIndicator } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { DownloadItem } from "../structs.slint";
+import { QuietButton } from "../components/quiet-button.slint";
 
 component QueueRow inherits Rectangle {
     in property <DownloadItem> item;
@@ -38,9 +39,7 @@ component QueueRow inherits Rectangle {
                     : Tr.dl-failed;
                 color: root.item.status == "failed"
                     ? MaterialPalette.error
-                    : (root.item.status == "done"
-                        ? MaterialPalette.primary
-                        : MaterialPalette.on-surface-variant);
+                    : MaterialPalette.on-surface-variant;
                 font-size: Typography.label-medium-size;
                 vertical-alignment: center;
             }
@@ -95,7 +94,7 @@ export component DownloadsPage inherits Rectangle {
             if root.items.length > 0: VerticalLayout {
                 alignment: center;
 
-                OutlineButton {
+                QuietButton {
                     text: Tr.clear-finished;
                     clicked => { root.clear-finished(); }
                 }
