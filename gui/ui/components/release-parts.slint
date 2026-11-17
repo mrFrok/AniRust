@@ -113,7 +113,7 @@ export component Dropdown inherits Rectangle {
                     for option[index] in root.model: Rectangle {
                         height: root.row-height;
                         background: index == root.current
-                            ? MaterialPalette.primary-container
+                            ? MaterialPalette.secondary-container
                             : (option-touch.has-hover
                                 ? MaterialPalette.surface-container-highest
                                 : transparent);
@@ -125,9 +125,7 @@ export component Dropdown inherits Rectangle {
 
                             Text {
                                 text: option.label;
-                                color: index == root.current
-                                    ? MaterialPalette.on-primary-container
-                                    : MaterialPalette.on-surface;
+                                color: MaterialPalette.on-surface;
                                 font-size: Typography.body-medium-size;
                                 vertical-alignment: center;
                                 horizontal-stretch: 1;
@@ -136,9 +134,7 @@ export component Dropdown inherits Rectangle {
 
                             Text {
                                 text: detail(option);
-                                color: index == root.current
-                                    ? MaterialPalette.on-primary-container
-                                    : MaterialPalette.on-surface-variant;
+                                color: MaterialPalette.on-surface-variant;
                                 font-size: Typography.label-medium-size;
                                 vertical-alignment: center;
                             }
@@ -187,8 +183,10 @@ export component EpisodeRow inherits Rectangle {
 
     height: 48px;
     border-radius: Shape.medium;
+    // The episode on now is a step up from the list, with its number in the
+    // accent: enough to find it, without a block of colour in the column.
     background: root.playing
-        ? MaterialPalette.primary-container
+        ? MaterialPalette.secondary-container
         : (root.hovered ? MaterialPalette.surface-container-high : transparent);
     animate background { duration: Motion.standard-duration; easing: Motion.standard; }
 
@@ -203,7 +201,7 @@ export component EpisodeRow inherits Rectangle {
         Text {
             text: root.episode.position;
             color: root.playing
-                ? MaterialPalette.on-primary-container
+                ? MaterialPalette.primary
                 : (root.episode.watched
                     ? MaterialPalette.on-surface-variant
                     : MaterialPalette.on-surface);
@@ -221,9 +219,7 @@ export component EpisodeRow inherits Rectangle {
 
             if root.episode.name != "": Text {
                 text: root.episode.name;
-                color: root.playing
-                    ? MaterialPalette.on-primary-container
-                    : MaterialPalette.on-surface;
+                color: MaterialPalette.on-surface;
                 font-size: Typography.body-medium-size;
                 overflow: elide;
             }
@@ -232,9 +228,7 @@ export component EpisodeRow inherits Rectangle {
                 text: root.episode.resume-at != ""
                     ? Tr.resume-from + " " + root.episode.resume-at
                     : Tr.filler;
-                color: root.playing
-                    ? MaterialPalette.on-primary-container
-                    : MaterialPalette.on-surface-variant;
+                color: MaterialPalette.on-surface-variant;
                 font-size: Typography.label-small-size;
             }
         }
@@ -275,7 +269,7 @@ export component EpisodeRow inherits Rectangle {
                 color: root.episode.watched
                     ? (tick.has-hover
                         ? MaterialPalette.outline
-                        : (root.playing ? MaterialPalette.on-primary-container : MaterialPalette.primary))
+                        : MaterialPalette.on-surface-variant)
                     : (tick.has-hover ? MaterialPalette.primary : MaterialPalette.outline-variant);
                 font-size: Typography.title-medium-size;
                 horizontal-alignment: center;

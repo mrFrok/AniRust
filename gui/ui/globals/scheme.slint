@@ -54,7 +54,7 @@ export global Scheme {
         : root.appearance == Appearance.dark ? root.both(root.base.dark)
         : root.both(root.blacken(root.base).dark);
 
-    property <MaterialSchemes> base: root.scheme-of(root.accent);
+    property <MaterialSchemes> base: root.neutral(root.scheme-of(root.accent));
 
     /// The scheme an accent has, for drawing its swatch too.
     public pure function scheme-of(a: Accent) -> MaterialSchemes {
@@ -180,6 +180,119 @@ export global Scheme {
     /// One scheme in both halves, for an appearance that was asked for by name.
     pure function both(scheme: MaterialScheme) -> MaterialSchemes {
         return { light: scheme, dark: scheme };
+    }
+
+    /// The accent's scheme with every surface, border and body text role
+    /// taken to one graphite ramp, the same whatever the accent. Material
+    /// tints its surfaces with the accent; here the posters carry the colour,
+    /// and the accent is kept for what is chosen and the one action that
+    /// matters on a screen. Selection (`secondaryContainer`) is a step up the
+    /// ramp, not a wash of colour.
+    pure function neutral(s: MaterialSchemes) -> MaterialSchemes {
+        return {
+            light: {
+                primary: s.light.primary,
+                surfaceTint: s.light.surfaceTint,
+                onPrimary: s.light.onPrimary,
+                primaryContainer: s.light.primaryContainer,
+                onPrimaryContainer: s.light.onPrimaryContainer,
+                secondary: s.light.secondary,
+                onSecondary: s.light.onSecondary,
+                secondaryContainer: #E4E4E7,
+                onSecondaryContainer: #18181A,
+                tertiary: s.light.tertiary,
+                onTertiary: s.light.onTertiary,
+                tertiaryContainer: s.light.tertiaryContainer,
+                onTertiaryContainer: s.light.onTertiaryContainer,
+                error: s.light.error,
+                onError: s.light.onError,
+                errorContainer: s.light.errorContainer,
+                onErrorContainer: s.light.onErrorContainer,
+                background: #FAFAFA,
+                onBackground: #18181A,
+                surface: #FAFAFA,
+                onSurface: #18181A,
+                surfaceVariant: #E4E4E7,
+                onSurfaceVariant: #5C5C62,
+                outline: #85858B,
+                outlineVariant: #DEDEE1,
+                shadow: s.light.shadow,
+                scrim: s.light.scrim,
+                inverseSurface: #2A2A2C,
+                inverseOnSurface: #F2F2F3,
+                inversePrimary: s.light.inversePrimary,
+                primaryFixed: s.light.primaryFixed,
+                onPrimaryFixed: s.light.onPrimaryFixed,
+                primaryFixedDim: s.light.primaryFixedDim,
+                onPrimaryFixedVariant: s.light.onPrimaryFixedVariant,
+                secondaryFixed: s.light.secondaryFixed,
+                onSecondaryFixed: s.light.onSecondaryFixed,
+                secondaryFixedDim: s.light.secondaryFixedDim,
+                onSecondaryFixedVariant: s.light.onSecondaryFixedVariant,
+                tertiaryFixed: s.light.tertiaryFixed,
+                onTertiaryFixed: s.light.onTertiaryFixed,
+                tertiaryFixedDim: s.light.tertiaryFixedDim,
+                onTertiaryFixedVariant: s.light.onTertiaryFixedVariant,
+                surfaceDim: #DCDCDF,
+                surfaceBright: #FFFFFF,
+                surfaceContainerLowest: #FFFFFF,
+                surfaceContainerLow: #F5F5F6,
+                surfaceContainer: #F0F0F1,
+                surfaceContainerHigh: #EAEAEC,
+                surfaceContainerHighest: #E4E4E7,
+            },
+            dark: {
+                primary: s.dark.primary,
+                surfaceTint: s.dark.surfaceTint,
+                onPrimary: s.dark.onPrimary,
+                primaryContainer: s.dark.primaryContainer,
+                onPrimaryContainer: s.dark.onPrimaryContainer,
+                secondary: s.dark.secondary,
+                onSecondary: s.dark.onSecondary,
+                secondaryContainer: #2C2C2F,
+                onSecondaryContainer: #F2F2F3,
+                tertiary: s.dark.tertiary,
+                onTertiary: s.dark.onTertiary,
+                tertiaryContainer: s.dark.tertiaryContainer,
+                onTertiaryContainer: s.dark.onTertiaryContainer,
+                error: s.dark.error,
+                onError: s.dark.onError,
+                errorContainer: s.dark.errorContainer,
+                onErrorContainer: s.dark.onErrorContainer,
+                background: #121213,
+                onBackground: #E9E9EB,
+                surface: #121213,
+                onSurface: #E9E9EB,
+                surfaceVariant: #2A2A2C,
+                onSurfaceVariant: #A3A3A8,
+                outline: #6B6B70,
+                outlineVariant: #2C2C2F,
+                shadow: s.dark.shadow,
+                scrim: s.dark.scrim,
+                inverseSurface: #E9E9EB,
+                inverseOnSurface: #1A1A1B,
+                inversePrimary: s.dark.inversePrimary,
+                primaryFixed: s.dark.primaryFixed,
+                onPrimaryFixed: s.dark.onPrimaryFixed,
+                primaryFixedDim: s.dark.primaryFixedDim,
+                onPrimaryFixedVariant: s.dark.onPrimaryFixedVariant,
+                secondaryFixed: s.dark.secondaryFixed,
+                onSecondaryFixed: s.dark.onSecondaryFixed,
+                secondaryFixedDim: s.dark.secondaryFixedDim,
+                onSecondaryFixedVariant: s.dark.onSecondaryFixedVariant,
+                tertiaryFixed: s.dark.tertiaryFixed,
+                onTertiaryFixed: s.dark.onTertiaryFixed,
+                tertiaryFixedDim: s.dark.tertiaryFixedDim,
+                onTertiaryFixedVariant: s.dark.onTertiaryFixedVariant,
+                surfaceDim: #121213,
+                surfaceBright: #353537,
+                surfaceContainerLowest: #0D0D0E,
+                surfaceContainerLow: #161617,
+                surfaceContainer: #1A1A1B,
+                surfaceContainerHigh: #222224,
+                surfaceContainerHighest: #2A2A2C,
+            },
+        };
     }
 
     /// The dark half with its surfaces taken to black.

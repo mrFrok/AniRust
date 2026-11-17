@@ -62,35 +62,6 @@ export component IconButton inherits Rectangle {
     }
 }
 
-/// A short text indicator in the top bar — quality, decoder and the like.
-export component TextIndicator inherits Rectangle {
-    in property <string> text;
-    callback clicked;
-
-    width: label.preferred-width + Spacing.base;
-    // Same box as IconButton, so a row of mixed controls shares one centre
-    // line instead of each finding its own.
-    height: Spacing.touch-target;
-    background: transparent;
-
-    label := Text {
-        text: root.text;
-        color: #FFFFFF;
-        opacity: touch.has-hover ? 1.0 : 0.88;
-        font-size: Typography.body-medium-size;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        width: 100%;
-        height: 100%;
-        animate opacity { duration: Motion.standard-duration; easing: Motion.standard; }
-    }
-
-    touch := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-}
-
 /// Seek bar, showing what has played and what has arrived.
 ///
 /// The buffered extent is a third band between track and playhead: when
@@ -193,20 +164,23 @@ export component SeekBar inherits Rectangle {
 export component SettingChip inherits Rectangle {
     in property <string> label;
     in property <bool> selected: false;
-    /// Marks the sensible default.
+    /// Marks the sensible default: a small dot before the label.
     in property <bool> recommended: false;
-    /// Marks an option heavy enough to cause trouble.
+    /// Marks an option heavy enough to cause trouble: the dot in amber, and
+    /// red once chosen.
     in property <bool> heavy: false;
     callback clicked;
 
-    height: 44px;
-    width: row.preferred-width + Spacing.comfortable;
-    border-radius: Shape.medium;
+    height: 36px;
+    width: row.preferred-width;
+    border-radius: Shape.small;
     border-width: root.selected ? 0px : 1px;
-    border-color: #FFFFFF33;
+    border-color: #FFFFFF2E;
 
+    // Chosen reads as a light chip with dark text: unmistakable on video,
+    // and no colour spent on it.
     background: root.selected
-        ? (root.heavy ? #7F2B2B : MaterialPalette.surface-container-highest)
+        ? (root.heavy ? #8A3030 : #F2F2F3)
         : (touch.has-hover ? #FFFFFF14 : transparent);
 
     animate background { duration: Motion.standard-duration; easing: Motion.standard; }
@@ -217,16 +191,22 @@ export component SettingChip inherits Rectangle {
         spacing: Spacing.small;
         alignment: center;
 
-        Text {
-            text: root.recommended ? "👍" : (root.heavy ? "🔥" : "");
-            font-size: Typography.body-medium-size;
-            vertical-alignment: center;
-            visible: root.recommended || root.heavy;
+        if root.recommended || root.heavy: VerticalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background: root.heavy
+                    ? #E0A040
+                    : (root.selected ? #111113 : #FFFFFFB3);
+            }
         }
 
         Text {
             text: root.label;
-            color: #FFFFFF;
+            color: root.selected && !root.heavy ? #111113 : #FFFFFF;
             font-size: Typography.body-medium-size;
             vertical-alignment: center;
         }
@@ -255,15 +235,15 @@ export component SettingOption inherits Rectangle {
         spacing: Spacing.base;
 
         Rectangle {
-            width: 22px;
-            height: 22px;
+            width: 18px;
+            height: 18px;
             y: Spacing.tight;
-            border-radius: 11px;
+            border-radius: 9px;
             border-width: 2px;
             border-color: root.selected ? #FFFFFF : #FFFFFF73;
 
             Rectangle {
-                width: root.selected ? 11px : 0px;
+                width: root.selected ? 8px : 0px;
                 height: self.width;
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
@@ -284,8 +264,8 @@ export component SettingOption inherits Rectangle {
                 Text {
                     text: root.label;
                     color: #FFFFFF;
-                    font-size: Typography.title-medium-size;
-                    font-weight: Typography.title-medium-weight-em;
+                    font-size: Typography.body-large-size;
+                    font-weight: 500;
                     vertical-alignment: center;
                 }
 

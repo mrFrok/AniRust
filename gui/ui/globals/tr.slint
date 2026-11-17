@@ -64,8 +64,6 @@ export global Tr {
     out property <string> decoder-sw-hint: lang == "ru"
         ? "Помогает при проблемах с картинкой, но сильнее нагружает процессор."
         : "Helps when the picture misbehaves, at a cost in CPU.";
-    out property <string> lock-hint: lang == "ru"
-        ? "Управление заблокировано" : "Controls locked";
     out property <string> vote-refused: lang == "ru"
         ? "Сервис не принял оценку: похоже, оценки постов он принимает только из официального приложения."
         : "The service did not take the rating: it seems to accept post ratings only from the official app.";
@@ -95,6 +93,16 @@ export global Tr {
         ? "Real-ESRGAN удваивает видео до 720p, перед шейдерами; что выше, увеличивают шейдеры. Вместе с генерацией кадров его не потянет почти никакая видеокарта."
         : "Real-ESRGAN doubles video up to 720p, before the shaders; anything taller is left to them. Together with frame generation it is too much for almost any GPU.";
     out property <string> frame-generation: lang == "ru" ? "Генерация кадров" : "Frame generation";
+    out property <string> sharpness: lang == "ru" ? "Чёткость" : "Sharpness";
+    out property <string> sharper: lang == "ru" ? "Чётче" : "Sharper";
+    out property <string> smoothness: lang == "ru" ? "Плавность" : "Smoothness";
+    out property <string> fine-tune: lang == "ru" ? "Тонкая настройка" : "Fine-tune";
+    /// Under the sharpness choice: what "Max" is doing on this machine.
+    public pure function sharpness-hint(neural: bool) -> string {
+        neural
+            ? (lang == "ru" ? "Нейросеть удваивает картинку, затем шейдеры дорисовывают детали." : "A network doubles the picture, then shaders refine the detail.")
+            : (lang == "ru" ? "Шейдеры Anime4K. Нейросеть — в тонкой настройке." : "Anime4K shaders. The network is under fine-tune.")
+    }
     out property <string> frame-generation-hint: lang == "ru"
         ? "RIFE дорисовывает кадры между настоящими — движение становится плавным. Сильно нагружает видеокарту: вместе с ней лучше апскейл «Быстро»."
         : "RIFE draws frames between the real ones, for smooth motion. Heavy on the GPU: pair it with Fast upscaling.";
