@@ -39,6 +39,7 @@ export component SettingsPage inherits Rectangle {
     callback select-accent(int);
     callback set-translucent(bool);
     callback set-remember-player(bool);
+    callback test-machine();
     callback set-check-updates(bool);
     callback check-for-updates();
     callback install-update();
@@ -219,6 +220,39 @@ export component SettingsPage inherits Rectangle {
                             changed checked => {
                                 if (self.checked != root.remember-player) { root.set-remember-player(self.checked); }
                             }
+                        }
+                    }
+                }
+
+                // ---- the machine test -------------------------------------------
+                HorizontalLayout {
+                    spacing: Spacing.base;
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: Spacing.hair;
+
+                        Text {
+                            text: Tr.bench-setting;
+                            color: MaterialPalette.on-surface;
+                            font-size: Typography.title-medium-size;
+                            font-weight: Typography.title-medium-weight-em;
+                        }
+
+                        Text {
+                            text: Tr.bench-setting-hint;
+                            color: MaterialPalette.on-surface-variant;
+                            font-size: Typography.body-medium-size;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+
+                        TonalButton {
+                            text: Tr.bench-start;
+                            clicked => { root.test-machine(); }
                         }
                     }
                 }

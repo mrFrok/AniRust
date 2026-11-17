@@ -151,6 +151,9 @@ pub struct Preferences {
     /// Asking GitHub for a newer release on start and once a day.
     pub check_updates: bool,
     pub player: PlayerPreferences,
+    /// The machine test has been offered — taken, applied or turned down —
+    /// so the next start does not offer it again.
+    pub machine_tested: bool,
 }
 
 impl Default for Preferences {
@@ -162,6 +165,7 @@ impl Default for Preferences {
             translucent: false,
             check_updates: true,
             player: PlayerPreferences::default(),
+            machine_tested: false,
         }
     }
 }

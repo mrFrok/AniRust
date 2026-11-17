@@ -689,6 +689,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         start_playing(&ui, state == "theatre");
     }
+    // The machine test: offered on the first start, running its second
+    // step, and what it found.
+    if let Some(bench) = state.strip_prefix("bench-") {
+        ui.set_bench_state(bench.into());
+        ui.set_bench_step(1);
+        ui.set_bench_sharpness(2);
+        ui.set_bench_neural(true);
+        ui.set_bench_rate(2);
+    }
+
     // A release out, the card in the corner over the catalogue, and the
     // same during its download.
     if state == "update-available" || state == "update-downloading" {

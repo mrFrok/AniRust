@@ -15,6 +15,7 @@
 //! goes through [`tasks`] and comes back on the UI thread.
 
 mod adapt;
+mod bench;
 mod bookmarks;
 mod channel_admin;
 mod collections;
@@ -92,6 +93,7 @@ fn main() -> Result<()> {
     window.on_open_link(|url| release::open_in_browser(&url));
     let prefs = Rc::new(Cell::new(preferences::Preferences::load()));
     wire_preferences(&window, &prefs);
+    bench::wire(&window, &prefs, recommended_engine(gpus::vendors()));
 
     let config = player_config();
     tracing::info!(hwdec = %config.hwdec, "player config");

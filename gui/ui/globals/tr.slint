@@ -98,6 +98,36 @@ export global Tr {
     out property <string> smoothness: lang == "ru" ? "Плавность" : "Smoothness";
     out property <string> fine-tune: lang == "ru" ? "Тонкая настройка" : "Fine-tune";
     /// Under the sharpness choice: what "Max" is doing on this machine.
+    // ---- the first-run test of this machine ------------------------------
+    out property <string> bench-offer: lang == "ru"
+        ? "Подобрать картинку под этот компьютер? Проверка займёт около минуты."
+        : "Pick the picture settings for this computer? The test takes about a minute.";
+    out property <string> bench-start: lang == "ru" ? "Проверить" : "Test";
+    out property <string> bench-later: lang == "ru" ? "Не сейчас" : "Not now";
+    out property <string> bench-apply: lang == "ru" ? "Применить" : "Apply";
+    out property <string> bench-keep: lang == "ru" ? "Оставить как есть" : "Keep as is";
+    out property <string> bench-setting: lang == "ru" ? "Подобрать картинку под компьютер" : "Pick picture settings for this computer";
+    out property <string> bench-setting-hint: lang == "ru"
+        ? "Короткая проверка видеокарты: чёткость и плавность, которые она тянет без пропуска кадров."
+        : "A short test of the graphics card: the sharpness and smoothness it runs without dropping frames.";
+    public pure function bench-step(step: int) -> string {
+        if step == 0 { return lang == "ru" ? "Проверяю плавность…" : "Testing smoothness…"; }
+        lang == "ru"
+            ? "Проверяю нейросеть… В первый раз она собирается под видеокарту — это может занять несколько минут."
+            : "Testing the network… The first time it is built for the graphics card, which can take a few minutes."
+    }
+    public pure function bench-result(sharpness: int, neural: bool, rate: int) -> string {
+        (lang == "ru" ? "Для этого компьютера: чёткость — " : "For this computer: sharpness ")
+            + (sharpness == 2
+                ? (neural ? (lang == "ru" ? "максимум, нейросетью" : "max, by the network") : (lang == "ru" ? "максимум" : "max"))
+                : sharpness == 1 ? (lang == "ru" ? "чётче" : "sharper") : (lang == "ru" ? "выкл" : "off"))
+            + (lang == "ru" ? ", плавность — " : ", smoothness ")
+            + (rate == 2 ? (lang == "ru" ? "60 кадров" : "60 frames")
+                : rate == 1 ? (lang == "ru" ? "×2 кадра" : "×2 frames")
+                : (lang == "ru" ? "выкл" : "off"))
+            + "."
+    }
+
     public pure function sharpness-hint(neural: bool) -> string {
         neural
             ? (lang == "ru" ? "Нейросеть удваивает картинку, затем шейдеры дорисовывают детали." : "A network doubles the picture, then shaders refine the detail.")

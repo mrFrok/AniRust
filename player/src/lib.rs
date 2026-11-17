@@ -29,6 +29,7 @@ use std::time::Duration;
 use libmpv2::Mpv;
 
 mod background;
+pub mod bench;
 pub mod frames;
 pub mod render;
 pub mod shaders;

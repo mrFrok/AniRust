@@ -1,0 +1,78 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The offer to test this machine and pick the picture settings it runs, in
+// the window's corner like the update card: asked once, never in the way.
+
+import { MaterialPalette, FilledButton } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing } from "../globals/shape.slint";
+import { Tr } from "../globals/tr.slint";
+import { QuietButton } from "quiet-button.slint";
+
+export component BenchCard inherits Rectangle {
+    /// "offer", "running" or "done".
+    in property <string> state;
+    in property <int> step;
+    in property <int> sharpness;
+    in property <bool> neural;
+    in property <int> rate;
+
+    callback start();
+    callback apply();
+    callback dismiss();
+
+    width: 380px;
+    height: layout.preferred-height;
+    border-radius: Shape.large;
+    background: MaterialPalette.surface-container-high;
+    drop-shadow-blur: 16px;
+    drop-shadow-color: #00000060;
+
+    layout := VerticalLayout {
+        padding: Spacing.base;
+        spacing: Spacing.small;
+
+        Text {
+            text: root.state == "offer" ? Tr.bench-offer
+                : root.state == "running" ? Tr.bench-step(root.step)
+                : Tr.bench-result(root.sharpness, root.neural, root.rate);
+            color: MaterialPalette.on-surface;
+            font-size: Typography.body-large-size;
+            wrap: word-wrap;
+        }
+
+        // Two steps, so the bar moves in halves; the second one may sit a
+        // while on its first run, and the line above says why.
+        if root.state == "running": Rectangle {
+            height: 4px;
+            border-radius: 2px;
+            background: MaterialPalette.surface-container-highest;
+
+            Rectangle {
+                x: 0;
+                width: parent.width * (root.step + 1) / 2;
+                height: 100%;
+                border-radius: 2px;
+                background: MaterialPalette.primary;
+                animate width { duration: 300ms; }
+            }
+        }
+
+        if root.state != "running": HorizontalLayout {
+            spacing: Spacing.small;
+            alignment: end;
+
+            QuietButton {
+                text: root.state == "offer" ? Tr.bench-later : Tr.bench-keep;
+                clicked => { root.dismiss(); }
+            }
+
+            FilledButton {
+                text: root.state == "offer" ? Tr.bench-start : Tr.bench-apply;
+                clicked => {
+                    if (root.state == "offer") { root.start(); } else { root.apply(); }
+                }
+            }
+        }
+    }
+}

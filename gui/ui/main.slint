@@ -23,6 +23,7 @@ import { PostEditor } from "components/post-editor.slint";
 import { ChannelAdmin } from "components/channel-admin.slint";
 import { ConfirmSheet } from "components/confirm.slint";
 import { UpdateBanner } from "components/update-banner.slint";
+import { BenchCard } from "components/bench-card.slint";
 import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem, CollectionItem, AccountSettings, VideoItem, EnforcementItem, DraftBlock, SuggestionItem, FranchiseItem } from "structs.slint";
 
 export component MainWindow inherits Window {
@@ -366,6 +367,17 @@ export component MainWindow inherits Window {
     callback set-neural-engine(int);
     callback fetch-runtime();
     callback toggle-neural-upscale();
+
+    // The machine test: "" when there is nothing to show, else "offer",
+    // "running" or "done", with the step it is on and what it found.
+    in property <string> bench-state: "";
+    in property <int> bench-step: 0;
+    in property <int> bench-sharpness: 0;
+    in property <bool> bench-neural: false;
+    in property <int> bench-rate: 0;
+    callback bench-start();
+    callback bench-apply();
+    callback bench-dismiss();
     in property <bool> adaptive: true;
     callback toggle-adaptive();
     callback step-audio-delay(int);
@@ -699,6 +711,7 @@ export component MainWindow inherits Window {
             select-accent(i) => { root.select-accent(i); }
             set-translucent(on) => { root.set-translucent(on); }
             set-remember-player(on) => { root.set-remember-player(on); }
+            test-machine => { root.bench-start(); }
             set-check-updates(on) => { root.set-check-updates(on); }
             check-for-updates => { root.check-for-updates(); }
             install-update => { root.install-update(); }
@@ -998,6 +1011,20 @@ export component MainWindow inherits Window {
         install => { root.install-update(); }
         open-notes => { root.open-update-notes(); }
         dismiss => { root.update-dismissed = true; }
+    }
+
+    // Not over a playing episode: the test runs a player of its own.
+    if root.bench-state != "" && !root.playing: BenchCard {
+        x: parent.width - self.width - 24px;
+        y: parent.height - self.height - 24px;
+        state: root.bench-state;
+        step: root.bench-step;
+        sharpness: root.bench-sharpness;
+        neural: root.bench-neural;
+        rate: root.bench-rate;
+        start => { root.bench-start(); }
+        apply => { root.bench-apply(); }
+        dismiss => { root.bench-dismiss(); }
     }
 
     if root.notifications-open: NotificationsSheet {
