@@ -344,7 +344,18 @@ fn wire_preferences(window: &MainWindow, held: &Rc<Cell<preferences::Preferences
     show_language(window, preferences.language);
     show_appearance(window, preferences.appearance);
     show_accent(window, preferences.accent);
-    window.set_translucent(preferences.translucent);
+    // On Linux the window is always see-through, its own background fully
+    // so: how much shows through, and how blurred, is the compositor's to
+    // say, as for every other window there. Cards and panels keep a light
+    // ground so they stand apart. Elsewhere it is a switch.
+    if cfg!(target_os = "linux") {
+        window.set_translucent_choice(false);
+        window.set_glass_base(0.0);
+        window.set_glass_raised(0.3);
+        window.set_translucent(true);
+    } else {
+        window.set_translucent(preferences.translucent);
+    }
     window.set_remember_player(preferences.player.remember);
 
     window.on_select_language({

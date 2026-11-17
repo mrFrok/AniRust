@@ -27,6 +27,9 @@ export component SettingsPage inherits Rectangle {
     in property <int> appearance: 0;
     in property <int> accent: 0;
     in property <bool> translucent: false;
+    /// Whether the see-through switch is offered: on Linux the compositor
+    /// decides instead.
+    in property <bool> translucent-choice: true;
     in property <bool> remember-player: true;
     /// The updater: whether it checks, and what it is doing (see Tr.update-status).
     in property <bool> check-updates: true;
@@ -382,7 +385,7 @@ export component SettingsPage inherits Rectangle {
                         }
                     }
 
-                    HorizontalLayout {
+                    if root.translucent-choice: HorizontalLayout {
                         spacing: Spacing.base;
                         max-width: 560px;
 

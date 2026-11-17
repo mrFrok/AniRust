@@ -28,6 +28,10 @@ export global Scheme {
     /// The window's surfaces see-through, whatever the colour. The blur
     /// behind them, where there is one, is the compositor's.
     in property <bool> translucent: false;
+    /// How opaque the see-through window's background and its raised
+    /// surfaces (cards, panels) are.
+    in property <float> glass-base: 0.4;
+    in property <float> glass-raised: 0.55;
 
     /// Handed to `MaterialPalette.schemes` by the window.
     ///
@@ -67,8 +71,10 @@ export global Scheme {
              : root.violet-scheme;
     }
 
-    /// The surfaces given alpha, so the window shows through. Taken from
-    /// LibreFastbootFirmwareFlasher as it is there.
+    /// The surfaces given alpha, so the window shows through, about as much
+    /// as the desktop's own see-through windows: at the 0.65 first taken from
+    /// LibreFastbootFirmwareFlasher the graphite surfaces hid the wallpaper
+    /// almost entirely. The compositor's blur keeps the text readable.
     pure function glassify(s: MaterialSchemes) -> MaterialSchemes {
         return {
             light: {
@@ -89,9 +95,9 @@ export global Scheme {
                 onError: s.light.onError,
                 errorContainer: s.light.errorContainer,
                 onErrorContainer: s.light.onErrorContainer,
-                background: s.light.background.with-alpha(0.65),
+                background: s.light.background.with-alpha(root.glass-base),
                 onBackground: s.light.onBackground,
-                surface: s.light.surface.with-alpha(0.65),
+                surface: s.light.surface.with-alpha(root.glass-base),
                 onSurface: s.light.onSurface,
                 surfaceVariant: s.light.surfaceVariant,
                 onSurfaceVariant: s.light.onSurfaceVariant,
@@ -114,13 +120,13 @@ export global Scheme {
                 onTertiaryFixed: s.light.onTertiaryFixed,
                 tertiaryFixedDim: s.light.tertiaryFixedDim,
                 onTertiaryFixedVariant: s.light.onTertiaryFixedVariant,
-                surfaceDim: s.light.surfaceDim.with-alpha(0.65),
-                surfaceBright: s.light.surfaceBright.with-alpha(0.72),
-                surfaceContainerLowest: s.light.surfaceContainerLowest.with-alpha(0.77),
-                surfaceContainerLow: s.light.surfaceContainerLow.with-alpha(0.77),
-                surfaceContainer: s.light.surfaceContainer.with-alpha(0.77),
-                surfaceContainerHigh: s.light.surfaceContainerHigh.with-alpha(0.77),
-                surfaceContainerHighest: s.light.surfaceContainerHighest.with-alpha(0.77),
+                surfaceDim: s.light.surfaceDim.with-alpha(root.glass-base),
+                surfaceBright: s.light.surfaceBright.with-alpha((root.glass-base + root.glass-raised) / 2),
+                surfaceContainerLowest: s.light.surfaceContainerLowest.with-alpha(root.glass-raised),
+                surfaceContainerLow: s.light.surfaceContainerLow.with-alpha(root.glass-raised),
+                surfaceContainer: s.light.surfaceContainer.with-alpha(root.glass-raised),
+                surfaceContainerHigh: s.light.surfaceContainerHigh.with-alpha(root.glass-raised),
+                surfaceContainerHighest: s.light.surfaceContainerHighest.with-alpha(root.glass-raised),
             },
             dark: {
                 primary: s.dark.primary,
@@ -140,9 +146,9 @@ export global Scheme {
                 onError: s.dark.onError,
                 errorContainer: s.dark.errorContainer,
                 onErrorContainer: s.dark.onErrorContainer,
-                background: s.dark.background.with-alpha(0.65),
+                background: s.dark.background.with-alpha(root.glass-base),
                 onBackground: s.dark.onBackground,
-                surface: s.dark.surface.with-alpha(0.65),
+                surface: s.dark.surface.with-alpha(root.glass-base),
                 onSurface: s.dark.onSurface,
                 surfaceVariant: s.dark.surfaceVariant,
                 onSurfaceVariant: s.dark.onSurfaceVariant,
@@ -165,13 +171,13 @@ export global Scheme {
                 onTertiaryFixed: s.dark.onTertiaryFixed,
                 tertiaryFixedDim: s.dark.tertiaryFixedDim,
                 onTertiaryFixedVariant: s.dark.onTertiaryFixedVariant,
-                surfaceDim: s.dark.surfaceDim.with-alpha(0.65),
-                surfaceBright: s.dark.surfaceBright.with-alpha(0.72),
-                surfaceContainerLowest: s.dark.surfaceContainerLowest.with-alpha(0.77),
-                surfaceContainerLow: s.dark.surfaceContainerLow.with-alpha(0.77),
-                surfaceContainer: s.dark.surfaceContainer.with-alpha(0.77),
-                surfaceContainerHigh: s.dark.surfaceContainerHigh.with-alpha(0.77),
-                surfaceContainerHighest: s.dark.surfaceContainerHighest.with-alpha(0.77),
+                surfaceDim: s.dark.surfaceDim.with-alpha(root.glass-base),
+                surfaceBright: s.dark.surfaceBright.with-alpha((root.glass-base + root.glass-raised) / 2),
+                surfaceContainerLowest: s.dark.surfaceContainerLowest.with-alpha(root.glass-raised),
+                surfaceContainerLow: s.dark.surfaceContainerLow.with-alpha(root.glass-raised),
+                surfaceContainer: s.dark.surfaceContainer.with-alpha(root.glass-raised),
+                surfaceContainerHigh: s.dark.surfaceContainerHigh.with-alpha(root.glass-raised),
+                surfaceContainerHighest: s.dark.surfaceContainerHighest.with-alpha(root.glass-raised),
             },
         };
     }
