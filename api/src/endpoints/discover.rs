@@ -39,22 +39,82 @@ pub struct ChannelSearch {
     pub permission: Option<i32>,
 }
 
+/// Everything the front page shows, in one answer.
+///
+/// Since 11.0 the app asks for this once instead of for each part on its own:
+/// the curated cards, recommendations, what is being watched and discussed, a
+/// page of collections and the week's comments.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct DiscoverHub {
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub interesting: Vec<Interesting>,
+    /// Empty for an anonymous client.
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub recommendations: Vec<Release>,
+    /// What to pass back as `recommendations_previous_page` for the next set:
+    /// the service rotates through them. -1 when there are none.
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub recommendations_page: i32,
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub watching: Vec<Release>,
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub discussing: Vec<Release>,
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub collections: Vec<Collection>,
+    /// What to pass back as `collections_previous_page`.
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub collections_page: i32,
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub collections_page_count: i32,
+    /// Each comment's release in full, references already followed.
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub comments: Vec<Comment>,
+}
+
 impl Client {
+    /// The front page at once. Pass -1 for both the first time, then the
+    /// pages the previous answer gave, to move on to the next set.
+    ///
+    /// `GET discover/hub?recommendations_previous_page=&collections_previous_page=`,
+    /// anonymous or not.
+    pub async fn discover_hub(
+        &self,
+        recommendations_previous_page: i32,
+        collections_previous_page: i32,
+    ) -> Result<DiscoverHub> {
+        let mut body: Value = self
+            .send(
+                self.get("discover/hub")
+                    .query(
+                        "recommendations_previous_page",
+                        recommendations_previous_page,
+                    )
+                    .query("collections_previous_page", collections_previous_page)
+                    .with_token(),
+            )
+            .await?;
+        follow_release_references(&mut body);
+        serde_json::from_value(body.clone()).map_err(|source| crate::Error::Decode {
+            source,
+            body: body.to_string(),
+        })
+    }
+
     /// The front page's curated cards.
     ///
-    /// `POST discover/interesting`, anonymous.
+    /// From [`Self::discover_hub`]: the app stopped asking
+    /// `discover/interesting` in 11.0.
     pub async fn discover_interesting(&self) -> Result<Vec<Interesting>> {
-        let payload: PageablePayload<Interesting> =
-            self.send(self.post("discover/interesting")).await?;
-        Ok(payload.content)
+        Ok(self.discover_hub(-1, -1).await?.interesting)
     }
 
     /// Comments from across the service that are getting attention.
     ///
-    /// `POST discover/comments`, anonymous.
+    /// From [`Self::discover_hub`]: the app stopped asking `discover/comments`
+    /// in 11.0.
     pub async fn discover_comments(&self) -> Result<Vec<Comment>> {
-        let payload: PageablePayload<Comment> = self.send(self.post("discover/comments")).await?;
-        Ok(payload.content)
+        Ok(self.discover_hub(-1, -1).await?.comments)
     }
 
     /// Which releases get an episode on which day of the week.
@@ -285,6 +345,55 @@ impl Client {
             )
             .await?;
         Ok(payload.into())
+    }
+}
+
+/// Puts each comment's release back in full where the hub gave only its
+/// number.
+///
+/// The service writes with Jackson's object identity: a release is written out
+/// once with an `@id`, and every later appearance — a second comment on it, or
+/// a comment on one already in the watching list — is just that number. The
+/// numbering is per type, so only objects found where releases go are taken:
+/// a collection's `@id` 3 is not a release's.
+fn follow_release_references(body: &mut Value) {
+    use std::collections::HashMap;
+
+    fn remember(release: &Value, known: &mut HashMap<i64, Value>) {
+        if let Some(id) = release.get("@id").and_then(Value::as_i64) {
+            known.entry(id).or_insert_with(|| release.clone());
+        }
+    }
+
+    let mut known: HashMap<i64, Value> = HashMap::new();
+    for list in ["recommendations", "watching", "discussing"] {
+        for release in body[list].as_array().into_iter().flatten() {
+            remember(release, &mut known);
+        }
+    }
+    for collection in body["collections"].as_array().into_iter().flatten() {
+        for list in ["releases", "releases_preview"] {
+            for release in collection[list].as_array().into_iter().flatten() {
+                remember(release, &mut known);
+            }
+        }
+    }
+    // In order: a comment may point back at a release an earlier comment
+    // gave in full.
+    if let Some(comments) = body["comments"].as_array_mut() {
+        for comment in comments {
+            let Some(release) = comment.get_mut("release") else {
+                continue;
+            };
+            match release.as_i64() {
+                Some(id) => {
+                    if let Some(full) = known.get(&id) {
+                        *release = full.clone();
+                    }
+                }
+                None => remember(release, &mut known),
+            }
+        }
     }
 }
 

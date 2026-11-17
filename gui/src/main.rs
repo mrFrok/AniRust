@@ -29,6 +29,7 @@ mod notifications;
 mod people;
 mod preferences;
 mod progress;
+mod qr;
 mod register;
 mod relay;
 mod release;
@@ -117,6 +118,7 @@ fn main() -> Result<()> {
         home: Rc::new(RefCell::new(HomeState::new(Rc::clone(&account)))),
         collections: Rc::new(RefCell::new(collections::CollectionsState::default())),
         pending: Rc::new(RefCell::new(register::Pending::default())),
+        qr: Rc::new(RefCell::new(qr::State::default())),
         email_change: Rc::new(RefCell::new(settings::EmailChange::default())),
         reports: Rc::new(RefCell::new(reports::ReportState::default())),
         standing: Rc::new(RefCell::new(standing::Standing::default())),
@@ -192,6 +194,7 @@ struct App {
     feed: Rc<RefCell<feed::FeedState>>,
     collections: Rc<RefCell<collections::CollectionsState>>,
     pending: Rc<RefCell<register::Pending>>,
+    qr: Rc<RefCell<qr::State>>,
     email_change: Rc<RefCell<settings::EmailChange>>,
     reports: Rc<RefCell<reports::ReportState>>,
     standing: Rc<RefCell<standing::Standing>>,
@@ -274,6 +277,26 @@ fn wire_account(window: &MainWindow, app: &Rc<App>) {
             let Some(window) = weak.upgrade() else { return };
             register::resend(&register_context(&window, &app));
         }
+    });
+
+    window.on_start_qr_sign_in({
+        let app = Rc::clone(&app);
+        let weak = weak.clone();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            qr::start(&qr::Context {
+                window: &window,
+                state: &app.qr,
+                session: &app.account,
+                client: &app.client,
+                http: app.http.clone(),
+            });
+        }
+    });
+
+    window.on_stop_qr_sign_in({
+        let app = Rc::clone(&app);
+        move || qr::stop(&app.qr)
     });
 
     window.on_sign_out(move || {

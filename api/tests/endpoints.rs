@@ -170,10 +170,12 @@ endpoint! {
     call: |c| c.discover_recommendations(1, 0),
 }
 
+// Since 11.0 the front page's parts all come from one `discover/hub`.
 endpoint! {
-    discover_discussing: "POST" "/discover/discussing",
+    discover_discussing: "GET" "/discover/hub",
     token: true,
-    reply: page(),
+    ["recommendations_previous_page" = "-1"] ["collections_previous_page" = "-1"]
+    reply: json!({ "code": 0 }),
     call: |c| c.discover_discussing(),
 }
 
@@ -899,17 +901,111 @@ async fn suggestions_name_the_channel_in_the_body() {
 // ---- A2: discovery, schedule, config, search -----------------------------
 
 endpoint! {
-    discover_interesting: "POST" "/discover/interesting",
-    token: false,
-    reply: page(),
+    discover_hub: "GET" "/discover/hub",
+    token: true,
+    ["recommendations_previous_page" = "2"] ["collections_previous_page" = "0"]
+    reply: json!({ "code": 0, "recommendations_page": 3 }),
+    call: |c| c.discover_hub(2, 0),
+}
+
+endpoint! {
+    discover_interesting: "GET" "/discover/hub",
+    token: true,
+    reply: json!({ "code": 0 }),
     call: |c| c.discover_interesting(),
 }
 
 endpoint! {
-    discover_comments: "POST" "/discover/comments",
-    token: false,
-    reply: page(),
+    discover_comments: "GET" "/discover/hub",
+    token: true,
+    reply: json!({ "code": 0 }),
     call: |c| c.discover_comments(),
+}
+
+endpoint! {
+    qr_sign_in_create: "POST" "/auth/qr/create",
+    token: false,
+    reply: json!({ "code": 0, "key": "k", "secret": "s", "pin": "1234" }),
+    call: |c| c.qr_sign_in_create("AniRust · Linux"),
+}
+
+endpoint! {
+    qr_sign_in_status: "POST" "/auth/qr/status",
+    token: false,
+    reply: json!({ "code": 0, "status": 0 }),
+    call: |c| c.qr_sign_in_status("k", "s"),
+}
+
+/// A comment's release that the hub gave only as a reference, to one written
+/// out in full earlier in the same answer, comes back in full.
+#[tokio::test]
+async fn hub_comments_follow_release_references() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/discover/hub"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "code": 0,
+            "watching": [{ "@id": 7, "id": 300, "title_ru": "Тетрадь смерти" }],
+            "collections": [{ "@id": 7, "id": 9, "title": "a collection, not a release" }],
+            "comments": [
+                { "id": 1, "message": "a", "release": { "@id": 8, "id": 301, "title_ru": "Другое" } },
+                { "id": 2, "message": "b", "release": 7 },
+                { "id": 3, "message": "c", "release": 8 }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let hub = client(&server).discover_hub(-1, -1).await.expect("a hub");
+    let ids: Vec<Option<i64>> = hub
+        .comments
+        .iter()
+        .map(|comment| {
+            comment
+                .release
+                .as_ref()
+                .and_then(|r| r.full())
+                .map(|r| r.id)
+        })
+        .collect();
+    assert_eq!(ids, [Some(301), Some(300), Some(301)]);
+}
+
+#[tokio::test]
+async fn a_confirmed_qr_sign_in_hands_over_the_session() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/auth/qr/status"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "code": 0, "status": 2,
+            "profile": { "id": 5, "login": "someone" },
+            "profileToken": { "id": 1, "token": "t" }
+        })))
+        .mount(&server)
+        .await;
+
+    let answer = client(&server)
+        .qr_sign_in_status("k", "s")
+        .await
+        .expect("an answer");
+    assert_eq!(answer.status(), anirust_api::QrStatus::Confirmed);
+    assert_eq!(answer.profile_token.map(|t| t.token).as_deref(), Some("t"));
+}
+
+#[tokio::test]
+async fn an_expired_qr_sign_in_is_an_answer_not_an_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/auth/qr/status"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "code": 2 })))
+        .mount(&server)
+        .await;
+
+    let answer = client(&server)
+        .qr_sign_in_status("k", "s")
+        .await
+        .expect("an answer");
+    assert_eq!(answer.status(), anirust_api::QrStatus::Expired);
 }
 
 endpoint! {

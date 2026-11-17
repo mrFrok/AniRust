@@ -646,6 +646,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_show_sign_in(true);
         ui.set_sign_in_mode("restore-code".into());
     }
+    if let Some(qr_state) = match state.as_str() {
+        "qr" => Some("waiting"),
+        "qr-scanned" => Some("scanned"),
+        "qr-expired" => Some("expired"),
+        "qr-loading" => Some("loading"),
+        _ => None,
+    } {
+        ui.set_show_sign_in(true);
+        ui.set_sign_in_mode("qr".into());
+        ui.set_qr_state(qr_state.into());
+        if qr_state != "loading" {
+            ui.set_qr_image(sample_qr());
+            ui.set_qr_pin("4821".into());
+        }
+        if qr_state == "scanned" {
+            ui.set_qr_device("Pixel 8".into());
+        }
+    }
     window.set_size(PhysicalSize::new(width, height));
 
     let mut pixels = vec![slint::Rgb8Pixel { r: 0, g: 0, b: 0 }; (width * height) as usize];
@@ -1138,4 +1156,25 @@ fn sample_channels() -> Vec<ChannelItem> {
         ),
         c("Клипы и опенинги", "", 1_204, false, false),
     ]
+}
+
+/// A code like the one the sign-in sheet shows, with a made-up key.
+fn sample_qr() -> slint::Image {
+    const QUIET: usize = 4;
+    const SCALE: usize = 8;
+    let code = qrcode::QrCode::new(b"anixart://sign-in/qr?key=0123456789abcdefABCDEF0123456789")
+        .expect("a short link fits");
+    let modules = code.width();
+    let colors = code.to_colors();
+    let side = (modules + 2 * QUIET) * SCALE;
+    let mut buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(side as u32, side as u32);
+    for (at, pixel) in buffer.make_mut_slice().iter_mut().enumerate() {
+        let (x, y) = (at % side / SCALE, at / side / SCALE);
+        let dark = (QUIET..QUIET + modules).contains(&x)
+            && (QUIET..QUIET + modules).contains(&y)
+            && colors[(y - QUIET) * modules + (x - QUIET)] == qrcode::Color::Dark;
+        let v = if dark { 0 } else { 255 };
+        *pixel = slint::Rgba8Pixel::new(v, v, v, 255);
+    }
+    slint::Image::from_rgba8(buffer)
 }

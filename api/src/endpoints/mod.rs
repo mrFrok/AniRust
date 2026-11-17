@@ -34,10 +34,10 @@ mod service;
 
 pub use account::SignInError;
 pub use article::{ArticleEntryPoint, ArticleEventKind};
-pub use auth::{AuthStep, Provider};
+pub use auth::{AuthStep, Provider, QrSignIn, QrStatus};
 pub use channel::{ChannelBlock, ChannelBlockRequest, ChannelFilter, ChannelSettings};
 pub use collection::{CollectionSort, CollectionView};
-pub use discover::ChannelSearch;
+pub use discover::{ChannelSearch, DiscoverHub};
 pub use episode::{DubberChannel, EpisodeSort};
 pub use people::{Badge, FriendOutcome, LoginChange, ProfileInfo, Socials};
 pub use preference::{Binding, LoginChangeInfo, Preferences, Privacy, SettingStep};

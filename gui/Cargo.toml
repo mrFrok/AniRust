@@ -70,6 +70,7 @@ slint = { version = "1.18", default-features = false, features = [
     "unstable-winit-030",
 ] }
 raw-window-handle = "0.6"
+qrcode = { version = "0.14", default-features = false }
 
 # The GPUs' makers on Windows, from DXGI's adapter list, so the menu offers
 # the neural engines the machine can run. The version Slint's accessibility

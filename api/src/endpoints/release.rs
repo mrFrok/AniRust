@@ -107,11 +107,17 @@ impl Client {
     }
 
     /// Most-discussed releases.
+    ///
+    /// From [`Self::discover_hub`]: the app stopped asking
+    /// `discover/discussing` in 11.0. One page, all there is.
     pub async fn discover_discussing(&self) -> Result<Page<Release>> {
-        let payload: PageablePayload<Release> = self
-            .send(self.post("discover/discussing").with_token())
-            .await?;
-        Ok(payload.into())
+        let content = self.discover_hub(-1, -1).await?.discussing;
+        Ok(Page {
+            total_count: content.len() as i64,
+            total_page_count: 1,
+            current_page: 0,
+            content,
+        })
     }
 
     /// The catalogue, filtered. Pages are 0-based.

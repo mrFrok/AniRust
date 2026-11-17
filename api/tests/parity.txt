@@ -29,6 +29,8 @@ GET article/{}
 POST auth/checkLogin
 POST auth/firebase
 POST auth/google
+POST auth/qr/create
+POST auth/qr/status
 POST auth/resend
 POST auth/restore
 POST auth/restore/resend
@@ -91,9 +93,7 @@ GET collectionMy/{}/releases
 GET config/anixplayer
 GET config/toggles
 GET config/urls
-POST discover/comments
-POST discover/discussing
-POST discover/interesting
+GET discover/hub
 POST discover/recommendations/{}
 POST discover/watching/{}
 GET episode/target/{}/{}/{}

@@ -626,6 +626,38 @@ export global Tr {
     out property <string> confirm: lang == "ru" ? "Подтвердить" : "Confirm";
     out property <string> continue: lang == "ru" ? "Продолжить" : "Continue";
 
+    out property <string> qr-sign-in: lang == "ru" ? "Войти с телефона" : "Sign in with your phone";
+    out property <string> qr-sign-in-hint: lang == "ru"
+        ? "Подойдёт и для аккаунтов Google, VK, Telegram, Яндекса"
+        : "Works for Google, VK, Telegram and Yandex accounts too";
+    out property <string> qr-title: lang == "ru" ? "Вход с телефона" : "Sign in with your phone";
+    out property <string> qr-step-scan: lang == "ru"
+        ? "Откройте Anixart на телефоне и наведите камеру на код"
+        : "Open Anixart on your phone and point the camera at the code";
+    out property <string> qr-step-pin: lang == "ru"
+        ? "Введите на телефоне этот PIN и подтвердите вход"
+        : "Type this PIN on the phone and confirm";
+    out property <string> qr-pin-label: lang == "ru" ? "PIN" : "PIN";
+    out property <string> qr-needs-11: lang == "ru"
+        ? "Нужен Anixart 11 или новее."
+        : "Needs Anixart 11 or newer.";
+    out property <string> qr-new-code: lang == "ru" ? "Новый код" : "New code";
+    out property <string> qr-with-password: lang == "ru" ? "Войти по паролю" : "Sign in with a password";
+
+    /// What is happening with a QR sign-in, for the line under the code.
+    public pure function qr-status(state: string, device: string) -> string {
+        state == "loading" ? (lang == "ru" ? "Готовим код…" : "Getting a code…")
+        : state == "waiting" ? (lang == "ru" ? "Ждём, пока телефон отсканирует код" : "Waiting for the phone to scan the code")
+        : state == "scanned" ? (device != ""
+            ? (lang == "ru" ? "Отсканировано на «\{device}». Введите PIN на телефоне." : "Scanned on “\{device}”. Type the PIN on the phone.")
+            : (lang == "ru" ? "Отсканировано. Введите PIN на телефоне." : "Scanned. Type the PIN on the phone."))
+        : state == "expired" ? (lang == "ru" ? "Код устарел. Возьмите новый." : "The code expired. Get a new one.")
+        : state == "declined" ? (lang == "ru" ? "Вход отклонён на телефоне." : "The sign-in was turned down on the phone.")
+        : state == "too-many-attempts" ? (lang == "ru" ? "Слишком много неверных PIN. Возьмите новый код." : "Too many wrong PINs. Get a new code.")
+        : state == "too-many-requests" ? (lang == "ru" ? "Слишком много попыток. Подождите немного." : "Too many tries. Wait a little.")
+        : (lang == "ru" ? "Не получилось. Проверьте связь и возьмите новый код." : "That did not work. Check the connection and get a new code.")
+    }
+
     out property <string> account-settings: lang == "ru" ? "Настройки аккаунта" : "Account settings";
     out property <string> profile-section: lang == "ru" ? "Профиль" : "Profile";
     out property <string> change-avatar: lang == "ru" ? "Сменить аватар" : "Change picture";

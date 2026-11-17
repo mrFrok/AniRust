@@ -62,10 +62,10 @@ pub use client::{Ack, Client, ClientBuilder, DEFAULT_BASE_URL};
 pub use endpoints::{
     AppealStatus, ArticleEntryPoint, ArticleEventKind, AuthStep, Badge, Binding, Bookmarks,
     ChannelBlock, ChannelBlockRequest, ChannelFilter, ChannelSearch, ChannelSettings,
-    CollectionSort, CollectionView, Deletion, DubberChannel, Enforcement, EpisodeSort,
+    CollectionSort, CollectionView, Deletion, DiscoverHub, DubberChannel, Enforcement, EpisodeSort,
     FriendOutcome, Health, LoginChange, LoginChangeInfo, Preferences, Privacy, ProfileInfo,
-    Provider, ReleaseVideo, ReleaseVideos, ReportReason, ReportTarget, SettingStep, SignInError,
-    Socials, VideoBlock, VideoCategory,
+    Provider, QrSignIn, QrStatus, ReleaseVideo, ReleaseVideos, ReportReason, ReportTarget,
+    SettingStep, SignInError, Socials, VideoBlock, VideoCategory,
 };
 pub use error::{ApiCode, Error, Result};
 pub use models::{

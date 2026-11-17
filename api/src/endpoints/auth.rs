@@ -47,6 +47,101 @@ pub struct AuthStep {
     pub available: bool,
 }
 
+/// A sign-in by QR code, as the service answers each step of it.
+///
+/// Since 11.0 a new device can be signed in from a phone that already is:
+/// the device shows a code, the phone scans it, the person types the PIN the
+/// device shows, and the device — asking all along — is handed the session.
+/// The way in for accounts made through Google, VK, Telegram or Yandex, whose
+/// tokens only the official app can get.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct QrSignIn {
+    /// The service's code: 0, or why the step was refused — see
+    /// [`QrStatus`] and the method.
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub code: i32,
+    /// Names the sign-in: what the QR code carries. 32 letters and digits.
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub key: String,
+    /// Proves to the service that the one asking is the device that started
+    /// it. Never shown.
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub secret: String,
+    /// What the person types on the phone.
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub pin: String,
+    /// Seconds until the code stops working.
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub expires_in: i64,
+    /// Seconds to wait between asks.
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub poll_interval: i64,
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    status: i32,
+    /// Where the phone is, once it scanned.
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub device: String,
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub country_code: String,
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub attempts_left: Option<i32>,
+    /// Signed in, once confirmed.
+    #[serde(deserialize_with = "crate::serde_ext::nullable")]
+    pub profile: Option<Profile>,
+    #[serde(
+        alias = "profileToken",
+        deserialize_with = "crate::serde_ext::nullable"
+    )]
+    pub profile_token: Option<ProfileToken>,
+}
+
+/// Where a QR sign-in stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QrStatus {
+    /// Shown, not yet scanned.
+    Waiting,
+    /// Scanned; the person is typing the PIN.
+    Scanned,
+    /// Confirmed on the phone: the session is in the answer.
+    Confirmed,
+    /// Turned down on the phone.
+    Declined,
+    /// The code ran out; a new one is needed.
+    Expired,
+    /// The phone got the PIN wrong too often.
+    TooManyAttempts,
+    /// Asked too often.
+    TooManyRequests,
+    /// A code the client does not know.
+    Other(i32),
+}
+
+impl QrSignIn {
+    /// What the QR code has to say for the official app to take it.
+    #[must_use]
+    pub fn link(&self) -> String {
+        format!("anixart://sign-in/qr?key={}", self.key)
+    }
+
+    /// Where the sign-in stands. The service's body `code` names the ways
+    /// it can end — 2 expired, 3 declined, 4 too many PIN attempts, 6 too
+    /// many requests — and `status` the steps of one going well.
+    #[must_use]
+    pub fn status(&self) -> QrStatus {
+        match (self.code, self.status) {
+            (0, 0) => QrStatus::Waiting,
+            (0, 1) => QrStatus::Scanned,
+            (0, 2) => QrStatus::Confirmed,
+            (2, _) => QrStatus::Expired,
+            (3, _) => QrStatus::Declined,
+            (4, _) => QrStatus::TooManyAttempts,
+            (6, _) => QrStatus::TooManyRequests,
+            (code, _) => QrStatus::Other(code),
+        }
+    }
+}
+
 /// A service an account can sign in with. Its token comes from that
 /// service's own sign-in, made for the official Android app; this client
 /// has no way to get one, and offers these only so the protocol is whole.
@@ -225,6 +320,28 @@ impl Client {
                 ("email", email.to_owned()),
                 (provider.field(), token.to_owned()),
             ],
+        )
+        .await
+    }
+
+    /// Starts a QR sign-in for this device, named `device` on the phone that
+    /// confirms it.
+    ///
+    /// `POST auth/qr/create`
+    pub async fn qr_sign_in_create(&self, device: &str) -> Result<QrSignIn> {
+        self.send_any_code(self.post("auth/qr/create").form([("device", device)]))
+            .await
+    }
+
+    /// Asks where a QR sign-in stands; once confirmed the answer carries the
+    /// profile and its token. Ask no more often than
+    /// [`QrSignIn::poll_interval`].
+    ///
+    /// `POST auth/qr/status`
+    pub async fn qr_sign_in_status(&self, key: &str, secret: &str) -> Result<QrSignIn> {
+        self.send_any_code(
+            self.post("auth/qr/status")
+                .form([("key", key), ("secret", secret)]),
         )
         .await
     }

@@ -564,6 +564,16 @@ export component MainWindow inherits Window {
     /// Submits whichever form is up.
     callback submit-sign-in();
     callback resend-sign-in-code();
+    /// Signing in by QR code from a phone: Rust fills these as it goes.
+    in property <image> qr-image;
+    in property <string> qr-pin;
+    /// Where it stands; see `SignInSheet.qr-state`.
+    in property <string> qr-state: "loading";
+    /// The phone that scanned it, as it names itself.
+    in property <string> qr-device;
+    /// Asks the service for a new code, dropping any under way.
+    callback start-qr-sign-in();
+    callback stop-qr-sign-in();
     callback sign-out();
     /// Signing out is asked about first.
     in-out property <bool> confirm-sign-out: false;
@@ -1210,9 +1220,17 @@ export component MainWindow inherits Window {
         error: root.sign-in-error;
         suggestions: root.login-suggestions;
 
+        qr-image: root.qr-image;
+        qr-pin: root.qr-pin;
+        qr-state: root.qr-state;
+        qr-device: root.qr-device;
+
         submit => { root.submit-sign-in(); }
         resend => { root.resend-sign-in-code(); }
+        qr-start => { root.start-qr-sign-in(); }
+        qr-stop => { root.stop-qr-sign-in(); }
         dismiss => {
+            root.stop-qr-sign-in();
             root.show-sign-in = false;
             root.password = "";
             root.sign-in-code = "";

@@ -7,15 +7,15 @@
 // in is something done in passing, and coming back to where you were is the
 // whole point of doing it that way.
 
-import { MaterialPalette, TextField, FilledButton, TextButton } from "@material";
+import { MaterialPalette, TextField, FilledButton, TextButton, OutlineButton, CircularProgressIndicator } from "@material";
 import { Typography } from "../globals/typography.slint";
-import { Shape, Spacing } from "../globals/shape.slint";
+import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 
 export component SignInSheet inherits Rectangle {
-    /// Which form is up: "sign-in", "sign-up", "sign-up-code", "restore" or
-    /// "restore-code". The forms with a code come after the service has
-    /// emailed one; Rust moves to them.
+    /// Which form is up: "sign-in", "sign-up", "sign-up-code", "restore",
+    /// "restore-code" or "qr". The forms with a code come after the service
+    /// has emailed one; Rust moves to them.
     in-out property <string> mode: "sign-in";
     in-out property <string> login;
     in-out property <string> password;
@@ -27,17 +27,31 @@ export component SignInSheet inherits Rectangle {
     in property <string> error;
     /// Free logins the service offers in place of a taken one.
     in property <[string]> suggestions: [];
+    /// The code a phone scans, drawn by Rust black on white.
+    in property <image> qr-image;
+    in property <string> qr-pin;
+    /// "loading", "waiting", "scanned", "expired", "declined",
+    /// "too-many-attempts", "too-many-requests" or "error".
+    in property <string> qr-state: "loading";
+    in property <string> qr-device;
 
     callback submit();
     /// Asks for the emailed code again.
     callback resend();
     callback dismiss();
+    /// Asks for a QR code, and drops the one under way.
+    callback qr-start();
+    callback qr-stop();
 
     property <bool> login-error: root.error == "unknown-login" || root.error == "bad-login" || root.error == "login-taken" || root.error == "not-found";
     property <bool> email-error: root.error == "bad-email" || root.error == "email-taken" || root.error == "email-service";
     property <bool> password-error: root.error == "wrong-password" || root.error == "bad-password";
     property <bool> code-error: root.error == "wrong-code" || root.error == "code-expired";
     property <bool> waiting-for-code: root.mode == "sign-up-code" || root.mode == "restore-code";
+    property <bool> on-qr: root.mode == "qr";
+    /// The code on screen can still be scanned.
+    property <bool> qr-live: root.qr-state == "waiting" || root.qr-state == "scanned" || root.qr-state == "too-many-requests";
+    property <bool> qr-ended: !root.qr-live && root.qr-state != "loading";
 
     // Scrim. Clicking it is the same as cancelling, which is what every sheet
     // in the world does.
@@ -74,13 +88,13 @@ export component SignInSheet inherits Rectangle {
                     ? Tr.sign-up-title
                     : root.mode == "restore" || root.mode == "restore-code"
                         ? Tr.restore-title
-                        : Tr.sign-in-title;
+                        : root.on-qr ? Tr.qr-title : Tr.sign-in-title;
                 color: MaterialPalette.on-surface;
                 font-size: Typography.title-large-size;
                 font-weight: Typography.title-large-weight-em;
             }
 
-            Text {
+            if !root.on-qr: Text {
                 text: root.waiting-for-code
                     ? Tr.code-sent
                     : root.mode == "restore" ? Tr.restore-why : Tr.sign-in-why;
@@ -92,7 +106,7 @@ export component SignInSheet inherits Rectangle {
             // A rejected login and a rejected password are faults of one
             // field each, so each is reported under the field it belongs to.
             // Only a failure that belongs to none gets a line of its own.
-            if !root.waiting-for-code: TextField {
+            if !root.waiting-for-code && !root.on-qr: TextField {
                 label: root.mode == "sign-up" ? Tr.new-login-field : Tr.login-field;
                 text <=> root.login;
                 has-error: root.login-error;
@@ -128,7 +142,7 @@ export component SignInSheet inherits Rectangle {
 
             // Restoring asks for the new password beside the code: the code
             // is what proves it is the owner setting it.
-            if root.mode != "restore" && root.mode != "sign-up-code": TextField {
+            if root.mode != "restore" && root.mode != "sign-up-code" && !root.on-qr: TextField {
                 label: root.mode == "restore-code" ? Tr.new-password-field : Tr.password-field;
                 input-type: InputType.password;
                 text <=> root.password;
@@ -142,6 +156,146 @@ export component SignInSheet inherits Rectangle {
                 color: MaterialPalette.error;
                 font-size: Typography.body-medium-size;
                 wrap: word-wrap;
+            }
+
+            if root.on-qr: VerticalLayout {
+                spacing: Spacing.base;
+
+                // White whatever the theme, with the quiet zone drawn into the
+                // picture: scanners look for dark modules on a light ground.
+                // The same size while loading, so the sheet does not jump.
+                HorizontalLayout {
+                    alignment: center;
+
+                    Rectangle {
+                        width: 208px;
+                        height: 208px;
+                        border-radius: Shape.medium;
+                        background: #ffffff;
+                        clip: true;
+
+                        Image {
+                            width: parent.width;
+                            height: parent.height;
+                            source: root.qr-image;
+                            image-rendering: pixelated;
+                            opacity: root.qr-ended ? 0.12 : 1;
+                            accessible-role: image;
+                            accessible-label: Tr.qr-step-scan;
+
+                            animate opacity { duration: Motion.standard-duration; easing: Motion.standard; }
+                        }
+
+                        if root.qr-state == "loading": CircularProgressIndicator {
+                            indeterminate: true;
+                            width: 40px;
+                            height: 40px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                        }
+                    }
+                }
+
+                // The PIN is the one thing to carry to the phone: biggest on
+                // the sheet, spaced so it reads digit by digit.
+                if root.qr-pin != "" && !root.qr-ended: VerticalLayout {
+                    spacing: Spacing.tight;
+
+                    Text {
+                        text: Tr.qr-pin-label;
+                        horizontal-alignment: center;
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.label-large-size;
+                    }
+
+                    Text {
+                        text: root.qr-pin;
+                        horizontal-alignment: center;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.display-small-size;
+                        letter-spacing: 12px;
+                        font-weight: 600;
+                        accessible-role: text;
+                        accessible-label: Tr.qr-pin-label + " " + root.qr-pin;
+                    }
+                }
+
+                Text {
+                    text: Tr.qr-status(root.qr-state, root.qr-device);
+                    horizontal-alignment: center;
+                    color: root.qr-ended ? MaterialPalette.error : MaterialPalette.on-surface-variant;
+                    font-size: Typography.body-medium-size;
+                    wrap: word-wrap;
+                    accessible-role: text;
+                }
+
+                // The way out of an ended code sits right under what says it
+                // ended, not at the far end of the sheet.
+                if root.qr-ended: HorizontalLayout {
+                    alignment: center;
+
+                    FilledButton {
+                        text: Tr.qr-new-code;
+                        clicked => { root.qr-start(); }
+                    }
+                }
+
+                if !root.qr-ended: VerticalLayout {
+                    spacing: Spacing.small;
+
+                    for step[index] in [Tr.qr-step-scan, Tr.qr-step-pin]: HorizontalLayout {
+                        spacing: Spacing.small;
+
+                        Rectangle {
+                            width: 24px;
+                            height: 24px;
+                            border-radius: self.width / 2;
+                            background: MaterialPalette.secondary-container;
+
+                            Text {
+                                text: index + 1;
+                                color: MaterialPalette.on-secondary-container;
+                                font-size: Typography.label-medium-size;
+                            }
+                        }
+
+                        Text {
+                            text: step;
+                            vertical-alignment: center;
+                            color: MaterialPalette.on-surface;
+                            font-size: Typography.body-medium-size;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    Text {
+                        text: Tr.qr-needs-11;
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.body-small-size;
+                    }
+                }
+            }
+
+            // Another way in, under the one most people use: for an account
+            // with no password of its own, the only one.
+            if root.mode == "sign-in": VerticalLayout {
+                spacing: Spacing.tight;
+
+                OutlineButton {
+                    text: Tr.qr-sign-in;
+                    clicked => {
+                        root.mode = "qr";
+                        root.qr-start();
+                    }
+                }
+
+                Text {
+                    text: Tr.qr-sign-in-hint;
+                    horizontal-alignment: center;
+                    color: MaterialPalette.on-surface-variant;
+                    font-size: Typography.body-small-size;
+                    wrap: word-wrap;
+                }
             }
 
             // The other forms, from this one.
@@ -159,7 +313,7 @@ export component SignInSheet inherits Rectangle {
                 }
             }
 
-            if root.mode != "sign-in": HorizontalLayout {
+            if root.mode != "sign-in" && !root.on-qr: HorizontalLayout {
                 alignment: start;
 
                 TextButton {
@@ -176,14 +330,25 @@ export component SignInSheet inherits Rectangle {
 
             HorizontalLayout {
                 spacing: Spacing.small;
-                alignment: end;
+
+                // On the QR form the way back shares the row with the actions,
+                // pushed to the far side of them.
+                if root.on-qr: TextButton {
+                    text: Tr.qr-with-password;
+                    clicked => {
+                        root.qr-stop();
+                        root.mode = "sign-in";
+                    }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
 
                 TextButton {
                     text: Tr.cancel;
                     clicked => { root.dismiss(); }
                 }
 
-                FilledButton {
+                if !root.on-qr: FilledButton {
                     text: root.busy
                         ? Tr.loading
                         : root.mode == "sign-in"
