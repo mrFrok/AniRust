@@ -241,10 +241,13 @@ export component PlayerPage inherits Rectangle {
     }
 
     Text {
-        text: root.state == "loading" ? Tr.loading
-            : root.state == "buffering" ? Tr.buffering
+        // "Nothing playing" only when nothing is: mpv says playing as soon as
+        // the file is open, and the first picture can be a while behind it —
+        // longer still while the networks warm up.
+        text: root.state == "buffering" ? Tr.buffering
             : root.state == "ended" ? Tr.ended
-            : Tr.idle;
+            : root.state == "idle" ? Tr.idle
+            : Tr.loading;
         color: #FFFFFFB3;
         font-size: Typography.body-large-size;
         visible: !root.has-video || root.waiting;

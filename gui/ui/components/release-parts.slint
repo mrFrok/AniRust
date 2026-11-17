@@ -180,7 +180,7 @@ export component EpisodeRow inherits Rectangle {
     /// Under the pointer, counting the row's own buttons. The row's touch area
     /// sits beneath them, so on its own it lets go exactly when the pointer
     /// reaches a button — which is when the buttons must stay shown.
-    property <bool> hovered: touch.has-hover || tick.has-hover;
+    property <bool> hovered: touch.has-hover || tick.has-hover || download-touch.has-hover;
 
     height: 48px;
     border-radius: Shape.medium;
@@ -234,10 +234,10 @@ export component EpisodeRow inherits Rectangle {
             }
         }
 
-        // Appears under the pointer rather than sitting on every row: a
-        // column of identical buttons would compete with the numbers, and
-        // keeping one episode is not the usual thing to want.
-        if root.hovered: Rectangle {
+        // On every row, quiet until pointed at: a button that appeared only
+        // under the pointer went away again when the pointer reached it, and
+        // one nobody can see is one nobody finds.
+        Rectangle {
             width: 32px;
             background: transparent;
 
@@ -245,7 +245,7 @@ export component EpisodeRow inherits Rectangle {
                 source: @image-url("../icons/download.svg");
                 colorize: download-touch.has-hover
                     ? MaterialPalette.primary
-                    : MaterialPalette.on-surface-variant;
+                    : (root.hovered ? MaterialPalette.on-surface-variant : MaterialPalette.outline);
                 width: 18px;
                 height: 18px;
                 x: (parent.width - self.width) / 2;
