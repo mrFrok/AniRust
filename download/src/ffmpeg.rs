@@ -99,4 +99,48 @@ impl Ffmpeg {
             message.lines().last().unwrap_or("no output").to_owned(),
         ))
     }
+
+    /// Puts the picture from `picture` together with every sound and
+    /// subtitle track of `original`, copied as they are, into `destination`.
+    ///
+    /// For an episode whose picture was made again — upscaled, given more
+    /// frames — and whose sound should not be touched at all.
+    pub async fn merge(
+        &self,
+        picture: &Path,
+        original: &Path,
+        destination: &Path,
+    ) -> Result<(), FfmpegError> {
+        let output = Command::new(&self.program)
+            .arg("-y")
+            .arg("-loglevel")
+            .arg("error")
+            .arg("-i")
+            .arg(picture)
+            .arg("-i")
+            .arg(original)
+            .args([
+                "-map", "0:v:0", "-map", "1:a?", "-map", "1:s?", "-map", "1:t?",
+            ])
+            .args(["-c", "copy"])
+            .arg(destination)
+            .output()
+            .await
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    FfmpegError::NotFound
+                } else {
+                    FfmpegError::Spawn(error)
+                }
+            })?;
+
+        if output.status.success() {
+            return Ok(());
+        }
+
+        let message = String::from_utf8_lossy(&output.stderr);
+        Err(FfmpegError::Failed(
+            message.lines().last().unwrap_or("no output").to_owned(),
+        ))
+    }
 }

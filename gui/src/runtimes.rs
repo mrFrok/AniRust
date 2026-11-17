@@ -113,6 +113,64 @@ pub async fn fetch(
     Ok(target)
 }
 
+/// Fetches the light upscaling network from its author's release, takes it
+/// out of the archive, checks it against its digest and puts it where the
+/// player looks for it. Answers with its path.
+///
+/// The archive holds every size of the network; only the one playback runs
+/// is kept. The download is about 30 MB, once.
+pub async fn fetch_light_upscale(http: reqwest::Client) -> Result<PathBuf, String> {
+    use anirust_player::frames::light_upscale;
+    use sha2::Digest;
+
+    let target = light_upscale::path().ok_or("there is no data folder to put it in")?;
+    let archive = http
+        .get(light_upscale::ARCHIVE)
+        .timeout(std::time::Duration::from_secs(600))
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|e| e.to_string())?
+        .bytes()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let network = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        let mut zip =
+            zip::ZipArchive::new(std::io::Cursor::new(archive)).map_err(|e| e.to_string())?;
+        let mut member = zip
+            .by_name(light_upscale::MEMBER)
+            .map_err(|e| e.to_string())?;
+        let mut network = Vec::new();
+        member
+            .read_to_end(&mut network)
+            .map_err(|e| e.to_string())?;
+        Ok(network)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    let digest = sha2::Sha256::digest(&network);
+    let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    if hex != light_upscale::SHA256 {
+        return Err("the network is not the one expected".to_owned());
+    }
+
+    let parent = target.parent().ok_or("the data folder has no parent")?;
+    tokio::fs::create_dir_all(parent)
+        .await
+        .map_err(|e| e.to_string())?;
+    let partial = target.with_extension("onnx.partial");
+    tokio::fs::write(&partial, &network)
+        .await
+        .map_err(|e| e.to_string())?;
+    tokio::fs::rename(&partial, &target)
+        .await
+        .map_err(|e| e.to_string())?;
+    tracing::info!(path = %target.display(), "light upscaling network installed");
+    Ok(target)
+}
+
 /// Unpacks `archive` into `into`, without the archive's own top folder, and
 /// only the top folders named in `keep`.
 fn unpack(archive: &Path, into: &Path, keep: &[&str]) -> Result<(), String> {

@@ -30,6 +30,7 @@ use libmpv2::Mpv;
 
 mod background;
 pub mod bench;
+pub mod enhance;
 pub mod frames;
 pub mod render;
 pub mod shaders;
@@ -159,6 +160,12 @@ pub enum Error {
         path: std::path::PathBuf,
         source: std::io::Error,
     },
+    /// A job was stopped before it was through.
+    #[error("cancelled")]
+    Cancelled,
+    /// The VapourSynth script failed; the note it left says how.
+    #[error("the filter failed:\n{0}")]
+    Filter(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

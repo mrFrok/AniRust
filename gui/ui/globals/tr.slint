@@ -98,6 +98,20 @@ export global Tr {
     out property <string> smoothness: lang == "ru" ? "Плавность" : "Smoothness";
     out property <string> fine-tune: lang == "ru" ? "Тонкая настройка" : "Fine-tune";
     /// Under the sharpness choice: what "Max" is doing on this machine.
+    // ---- improving a saved episode -----------------------------------------
+    out property <string> enhance: lang == "ru" ? "Улучшить" : "Improve";
+    out property <string> enhance-stop: lang == "ru" ? "Остановить" : "Stop";
+    out property <string> enhance-title: lang == "ru" ? "Улучшить серию" : "Improve the episode";
+    out property <string> enhance-why: lang == "ru"
+        ? "Нейросети обработают файл без спешки, лучшими моделями, и сохранят новый рядом. Займёт примерно вдвое дольше серии."
+        : "The networks go over the file without hurrying, with their best models, and save a new one beside it. Takes about twice the episode's length.";
+    out property <string> enhance-as-is: lang == "ru" ? "Как есть" : "As is";
+    out property <string> enhance-double-size: lang == "ru" ? "×2 нейросетью" : "×2 by the network";
+    out property <string> enhance-start: lang == "ru" ? "Начать" : "Start";
+    out property <string> enhance-running: lang == "ru" ? "Обработка" : "Improving";
+    out property <string> enhance-starting: lang == "ru" ? "Загружаю нейросети…" : "Loading the networks…";
+    out property <string> enhance-stopped: lang == "ru" ? "Остановлено" : "Stopped";
+
     // ---- the first-run test of this machine ------------------------------
     out property <string> bench-offer: lang == "ru"
         ? "Подобрать картинку под этот компьютер? Проверка займёт около минуты."

@@ -122,6 +122,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 status: "done".into(),
                 progress: 1.0,
                 detail: "/home/you/Видео/AniRust/Демоны старшей школы - 03 [AniLibria].mp4".into(),
+                enhancing: false,
+                can_enhance: true,
             },
             DownloadItem {
                 title: "Демоны старшей школы — 4".into(),
@@ -129,6 +131,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 status: "running".into(),
                 progress: 0.42,
                 detail: "".into(),
+                enhancing: false,
+                can_enhance: false,
             },
             DownloadItem {
                 title: "Демоны старшей школы — 5".into(),
@@ -136,6 +140,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 status: "queued".into(),
                 progress: 0.0,
                 detail: "".into(),
+                enhancing: false,
+                can_enhance: false,
             },
         ])));
     }

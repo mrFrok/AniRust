@@ -44,6 +44,10 @@ export struct DownloadItem {
     progress: float,
     /// Where it was written, or why it was not.
     detail: string,
+    /// A job making a saved episode better rather than fetching one.
+    enhancing: bool,
+    /// Whether "Improve" is offered on it.
+    can-enhance: bool,
 }
 
 /// One episode in the list.

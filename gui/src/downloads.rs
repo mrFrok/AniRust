@@ -15,12 +15,15 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use slint::{ComponentHandle, VecModel};
 
 use anirust_download::{Download, Ffmpeg, Progress};
 use anirust_extract::{Registry, ResolvedStream};
 
+use crate::enhance::{self, Choice, Outcome};
 use crate::{DownloadItem, MainWindow, tasks};
 
 /// What a queued episode needs to be fetched.
@@ -59,6 +62,13 @@ struct Entry {
     status: Status,
     fraction: f32,
     detail: String,
+    /// The file it wrote, once done.
+    path: Option<PathBuf>,
+    /// Set for a job that makes a saved episode better rather than fetching
+    /// one: the file it starts from and what it does.
+    enhance: Option<(PathBuf, Choice)>,
+    /// Asks a running improvement to stop.
+    stop: Option<Arc<AtomicBool>>,
 }
 
 /// The queue, and whether something is being fetched from it right now.
@@ -67,11 +77,31 @@ pub struct Queue {
     entries: Vec<Entry>,
     waiting: VecDeque<usize>,
     running: bool,
+    /// Improvements waiting, and whether one is running: apart from the
+    /// downloads, since one wants the network and the other the GPU.
+    enhance_waiting: VecDeque<usize>,
+    enhancing: bool,
+    /// The engine the networks run on, and what this machine can do with it:
+    /// the neural upscale, frame generation.
+    engine: usize,
+    pub can_upscale: bool,
+    pub can_generate: bool,
     /// Where finished episodes are written.
     directory: Option<PathBuf>,
 }
 
 impl Queue {
+    /// An empty queue whose improvements run on `engine`.
+    #[must_use]
+    pub fn new(engine: usize, can_upscale: bool, can_generate: bool) -> Self {
+        Self {
+            engine,
+            can_upscale,
+            can_generate,
+            ..Self::default()
+        }
+    }
+
     /// Where downloads land: the user's own videos directory, under a folder of
     /// ours, falling back to the home directory when the platform has no such
     /// notion.
@@ -112,6 +142,9 @@ pub fn enqueue(
             status: Status::Queued,
             fraction: 0.0,
             detail: String::new(),
+            path: None,
+            enhance: None,
+            stop: None,
         });
         let at = queue.entries.len() - 1;
         queue.waiting.push_back(at);
@@ -221,6 +254,7 @@ fn pump(
                         entry.status = Status::Done;
                         entry.fraction = 1.0;
                         entry.detail = path.display().to_string();
+                        entry.path = Some(path.clone());
                         tracing::info!(path = %path.display(), "download finished");
                     }
                     Err(error) => {
@@ -250,6 +284,13 @@ pub fn show(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
             status: entry.status.name().into(),
             progress: entry.fraction,
             detail: entry.detail.as_str().into(),
+            enhancing: entry.enhance.is_some(),
+            // A saved episode, not one made better already, on a machine
+            // that can do something to it.
+            can_enhance: entry.status == Status::Done
+                && entry.enhance.is_none()
+                && entry.path.is_some()
+                && (queue.can_upscale || queue.can_generate),
         })
         .collect();
 
@@ -287,9 +328,157 @@ pub fn clear_finished(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
             .entries
             .iter()
             .enumerate()
-            .filter(|(_, entry)| entry.status == Status::Queued)
+            .filter(|(_, entry)| entry.status == Status::Queued && entry.enhance.is_none())
+            .map(|(at, _)| at)
+            .collect();
+        queue.enhance_waiting = queue
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| entry.status == Status::Queued && entry.enhance.is_some())
             .map(|(at, _)| at)
             .collect();
     }
     show(window, queue);
+}
+
+/// Queues making the saved episode at `index` better, and starts it if no
+/// other improvement is running.
+pub fn enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>, index: usize, choice: Choice) {
+    {
+        let mut queue = queue.borrow_mut();
+        let Some(entry) = queue.entries.get(index) else {
+            return;
+        };
+        let Some(source) = entry.path.clone() else {
+            return;
+        };
+        let job = entry.job.clone();
+        queue.entries.push(Entry {
+            job,
+            status: Status::Queued,
+            fraction: 0.0,
+            detail: String::new(),
+            path: None,
+            enhance: Some((source, choice)),
+            stop: None,
+        });
+        let at = queue.entries.len() - 1;
+        queue.enhance_waiting.push_back(at);
+    }
+    show(window, queue);
+    pump_enhance(window, queue);
+}
+
+/// Stops the improvement at `index`, running or waiting.
+pub fn stop_enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>, index: usize) {
+    {
+        let mut queue = queue.borrow_mut();
+        queue.enhance_waiting.retain(|at| *at != index);
+        let Some(entry) = queue.entries.get_mut(index) else {
+            return;
+        };
+        match entry.status {
+            Status::Running => {
+                if let Some(stop) = &entry.stop {
+                    stop.store(true, Ordering::Relaxed);
+                }
+            }
+            Status::Queued => {
+                entry.status = Status::Failed;
+                entry.detail = String::new();
+            }
+            Status::Done | Status::Failed => {}
+        }
+    }
+    show(window, queue);
+}
+
+fn pump_enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
+    let (at, source, choice, stop, engine) = {
+        let mut queue = queue.borrow_mut();
+        if queue.enhancing {
+            return;
+        }
+        let Some(at) = queue.enhance_waiting.pop_front() else {
+            return;
+        };
+        let engine = queue.engine;
+        let entry = &mut queue.entries[at];
+        let Some((source, choice)) = entry.enhance.clone() else {
+            return;
+        };
+        let stop = Arc::new(AtomicBool::new(false));
+        entry.status = Status::Running;
+        entry.stop = Some(Arc::clone(&stop));
+        queue.enhancing = true;
+        (at, source, choice, stop, engine)
+    };
+    show(window, queue);
+
+    // The worker reports through a channel the UI thread drains: the queue
+    // is the window's, and the worker must not touch it.
+    enum Message {
+        Progress(Option<f32>),
+        End(Outcome),
+    }
+    let (send, mut receive) = tokio::sync::mpsc::unbounded_channel::<Message>();
+    let weak = window.as_weak();
+    let queue_handle = Rc::clone(queue);
+    let _ = slint::spawn_local(async move {
+        while let Some(message) = receive.recv().await {
+            let Some(window) = weak.upgrade() else {
+                break;
+            };
+            let ended = matches!(message, Message::End(_));
+            {
+                let mut queue = queue_handle.borrow_mut();
+                if ended {
+                    queue.enhancing = false;
+                }
+                let entry = &mut queue.entries[at];
+                match message {
+                    Message::Progress(done) => {
+                        entry.fraction = done.unwrap_or(0.0);
+                        entry.detail = if done.is_none() {
+                            "starting".to_owned()
+                        } else {
+                            String::new()
+                        };
+                    }
+                    Message::End(Outcome::Done(path)) => {
+                        tracing::info!(path = %path.display(), "episode improved");
+                        entry.stop = None;
+                        entry.status = Status::Done;
+                        entry.fraction = 1.0;
+                        entry.detail = path.display().to_string();
+                        entry.path = Some(path);
+                    }
+                    Message::End(Outcome::Stopped) => {
+                        entry.stop = None;
+                        entry.status = Status::Failed;
+                        entry.detail = String::new();
+                    }
+                    Message::End(Outcome::Failed(error)) => {
+                        tracing::warn!(%error, "improving the episode failed");
+                        entry.stop = None;
+                        entry.status = Status::Failed;
+                        entry.detail = error;
+                    }
+                }
+            }
+            show(&window, &queue_handle);
+            if ended {
+                pump_enhance(&window, &queue_handle);
+                break;
+            }
+        }
+    });
+
+    std::thread::spawn(move || {
+        let outcome = enhance::run_apart(&source, choice, engine, &stop, &|done| {
+            let _ = send.send(Message::Progress(done));
+        });
+        let _ = send.send(Message::End(outcome));
+    });
 }

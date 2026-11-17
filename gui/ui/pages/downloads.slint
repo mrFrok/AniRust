@@ -3,7 +3,7 @@
 // What has been saved, and what is still coming.
 
 import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, LinearProgressIndicator } from "@material";
+import { MaterialPalette, LinearProgressIndicator, SegmentedButton, FilledButton } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -12,6 +12,8 @@ import { QuietButton } from "../components/quiet-button.slint";
 
 component QueueRow inherits Rectangle {
     in property <DownloadItem> item;
+    callback enhance();
+    callback stop();
 
     height: 72px;
     border-radius: Shape.medium;
@@ -34,8 +36,10 @@ component QueueRow inherits Rectangle {
 
             Text {
                 text: root.item.status == "queued" ? Tr.dl-queued
-                    : root.item.status == "running" ? Tr.dl-running
+                    : root.item.status == "running"
+                        ? (root.item.enhancing ? Tr.enhance-running : Tr.dl-running)
                     : root.item.status == "done" ? Tr.dl-done
+                    : root.item.enhancing && root.item.detail == "" ? Tr.enhance-stopped
                     : Tr.dl-failed;
                 color: root.item.status == "failed"
                     ? MaterialPalette.error
@@ -43,12 +47,30 @@ component QueueRow inherits Rectangle {
                 font-size: Typography.label-medium-size;
                 vertical-alignment: center;
             }
+
+            if root.item.can-enhance: QuietButton {
+                text: Tr.enhance;
+                clicked => { root.enhance(); }
+            }
+
+            if root.item.enhancing && (root.item.status == "running" || root.item.status == "queued"): QuietButton {
+                text: Tr.enhance-stop;
+                clicked => { root.stop(); }
+            }
         }
 
         // The bar takes the detail line's place while running, and steps out
         // of the way once there is nothing left to watch.
-        if root.item.status == "running": LinearProgressIndicator {
+        // While the networks load there is no fraction yet: the line says
+        // so instead of a bar standing still.
+        if root.item.status == "running" && root.item.detail != "starting": LinearProgressIndicator {
             progress: root.item.progress;
+        }
+
+        if root.item.status == "running" && root.item.detail == "starting": Text {
+            text: Tr.enhance-starting;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.label-small-size;
         }
 
         if root.item.status != "running": Text {
@@ -62,7 +84,17 @@ component QueueRow inherits Rectangle {
 
 export component DownloadsPage inherits Rectangle {
     in property <[DownloadItem]> items: [];
+    /// What this machine can do to a saved episode.
+    in property <bool> can-upscale;
+    in property <bool> can-generate;
     callback clear-finished();
+    callback enhance(int, bool, int);
+    callback stop-enhance(int);
+
+    /// The row the choice is open for, or -1.
+    property <int> picking: -1;
+    property <bool> upscale: root.can-upscale;
+    property <int> rate: root.can-generate ? 2 : 0;
 
     background: MaterialPalette.surface;
 
@@ -119,8 +151,118 @@ export component DownloadsPage inherits Rectangle {
                 spacing: Spacing.small;
                 alignment: start;
 
-                for item in root.items: QueueRow {
+                for item[index] in root.items: QueueRow {
                     item: item;
+                    enhance => {
+                        root.upscale = root.can-upscale;
+                        root.rate = root.can-generate ? 2 : 0;
+                        root.picking = index;
+                    }
+                    stop => { root.stop-enhance(index); }
+                }
+            }
+        }
+    }
+
+    // What to do to it: two choices, the most this machine can do already
+    // picked.
+    if root.picking >= 0: Rectangle {
+        background: #000000A6;
+
+        TouchArea {
+            clicked => { root.picking = -1; }
+        }
+
+        Rectangle {
+            width: min(440px, parent.width - 2 * Spacing.comfortable);
+            height: form.preferred-height;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: Shape.extra-large;
+            background: MaterialPalette.surface-container-high;
+            drop-shadow-blur: 32px;
+            drop-shadow-color: #00000080;
+
+            TouchArea {}
+
+            form := VerticalLayout {
+                padding: Spacing.comfortable;
+                spacing: Spacing.base;
+                alignment: start;
+
+                Text {
+                    text: Tr.enhance-title;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-large-size;
+                    font-weight: Typography.title-large-weight-em;
+                }
+
+                Text {
+                    text: Tr.enhance-why;
+                    color: MaterialPalette.on-surface-variant;
+                    font-size: Typography.body-medium-size;
+                    wrap: word-wrap;
+                }
+
+                if root.can-upscale: VerticalLayout {
+                    spacing: Spacing.small;
+
+                    Text {
+                        text: Tr.sharpness;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.title-small-size;
+                        font-weight: Typography.title-small-weight-em;
+                    }
+
+                    HorizontalLayout {
+                        alignment: start;
+
+                        SegmentedButton {
+                            items: [{ text: Tr.enhance-as-is }, { text: Tr.enhance-double-size }];
+                            init => { self.current-index = root.upscale ? 1 : 0; }
+                            index-changed(i) => { root.upscale = i == 1; }
+                        }
+                    }
+                }
+
+                if root.can-generate: VerticalLayout {
+                    spacing: Spacing.small;
+
+                    Text {
+                        text: Tr.smoothness;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.title-small-size;
+                        font-weight: Typography.title-small-weight-em;
+                    }
+
+                    HorizontalLayout {
+                        alignment: start;
+
+                        SegmentedButton {
+                            items: [{ text: Tr.enhance-as-is }, { text: "×2" }, { text: "60" }];
+                            init => { self.current-index = root.rate; }
+                            index-changed(i) => { root.rate = i; }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Spacing.small;
+                    alignment: end;
+
+                    QuietButton {
+                        text: Tr.cancel;
+                        clicked => { root.picking = -1; }
+                    }
+
+                    FilledButton {
+                        text: Tr.enhance-start;
+                        enabled: root.upscale || root.rate > 0;
+                        clicked => {
+                            root.enhance(root.picking, root.upscale, root.rate);
+                            root.picking = -1;
+                        }
+                    }
                 }
             }
         }

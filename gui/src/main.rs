@@ -23,6 +23,7 @@ mod comments;
 mod desktop;
 mod downloads;
 mod editor;
+mod enhance;
 mod feed;
 mod gpus;
 mod home;
@@ -76,7 +77,16 @@ fn main() -> Result<()> {
     // The machine test, started by the program itself: no window, its result
     // on standard output, its log on standard error.
     let mut args = std::env::args().skip(1);
-    if args.next().as_deref() == Some(bench::FLAG) {
+    let first = args.next();
+    if first.as_deref() == Some(enhance::FLAG) {
+        tracing_subscriber::fmt()
+            .with_env_filter("anirust=info,anirust_player=info")
+            .with_writer(std::io::stderr)
+            .init();
+        enhance::child_main(&args.collect::<Vec<_>>());
+        return Ok(());
+    }
+    if first.as_deref() == Some(bench::FLAG) {
         tracing_subscriber::fmt()
             .with_env_filter("anirust=info,anirust_player=info")
             .with_writer(std::io::stderr)
@@ -143,7 +153,11 @@ fn main() -> Result<()> {
         comments: Rc::new(RefCell::new(comments::CommentsState::default())),
         notifications: Rc::new(RefCell::new(notifications::NotificationsState::default())),
         people: Rc::new(RefCell::new(people::PeopleState::default())),
-        queue: Rc::new(RefCell::new(downloads::Queue::default())),
+        queue: Rc::new(RefCell::new({
+            let engine = recommended_engine(gpus::vendors());
+            let (can_upscale, can_generate) = enhance::available(engine);
+            downloads::Queue::new(engine, can_upscale, can_generate)
+        })),
         account,
         playing: Rc::new(RefCell::new(None)),
         settings: Rc::new(Settings::from_preferences(prefs.get().player.in_force())),
@@ -1437,6 +1451,32 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
         }
     });
 
+    {
+        let queue = app.queue.borrow();
+        window.set_enhance_can_upscale(queue.can_upscale);
+        window.set_enhance_can_generate(queue.can_generate);
+    }
+    window.on_enhance_download({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |index, upscale, rate| {
+            let Some(window) = weak.upgrade() else { return };
+            let choice = enhance::Choice {
+                upscale,
+                rate: rate.clamp(0, 2) as usize,
+            };
+            downloads::enhance(&window, &app.queue, index.max(0) as usize, choice);
+        }
+    });
+    window.on_stop_enhance({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            downloads::stop_enhance(&window, &app.queue, index.max(0) as usize);
+        }
+    });
+
     window.on_clear_finished_downloads({
         let app = Rc::clone(app);
         let weak = weak.clone();
@@ -1878,13 +1918,23 @@ fn wire_release(window: &MainWindow, app: &Rc<App>) {
 
 /// What to do once another voice-over's or source's episodes have arrived,
 /// when one of this release's episodes is playing: the same episode in it,
-/// from where the picture is now. Without this the old voice-over played on,
-/// and the list showed the new one's episodes beside it.
+/// from where the picture was.
+///
+/// The old voice-over stops at once, not when the new list arrives: hearing
+/// the voice just switched away from for another second or two reads as the
+/// switch not having worked.
 fn keep_playing(window: &MainWindow, app: &Rc<App>) -> Option<release::Then> {
     let position = window.get_current_episode();
     if !window.get_playing() || position <= 0 {
         return None;
     }
+    let player = app.bridge.player();
+    let at = player.position().filter(|at| !at.is_zero());
+    if let Err(error) = player.stop() {
+        tracing::warn!(%error, "stopping the previous voice-over failed");
+    }
+    window.set_state("loading".into());
+
     let app = Rc::clone(app);
     Some(Box::new(move |window: &MainWindow| {
         // The viewer may have closed the player, or picked another episode,
@@ -1892,15 +1942,14 @@ fn keep_playing(window: &MainWindow, app: &Rc<App>) -> Option<release::Then> {
         if !window.get_playing() || window.get_current_episode() != position {
             return;
         }
-        let there = app.release.borrow().episode_at(position).is_some();
-        if there {
-            let at = app.bridge.player().position().filter(|at| !at.is_zero());
+        if app.release.borrow().episode_at(position).is_some() {
             play_at(window, &app, position, at);
         } else {
+            window.invoke_close_player();
             let line = if window.get_lang() == "ru" {
-                format!("Здесь нет серии {position}: играет прежняя озвучка")
+                format!("В этой озвучке нет серии {position}")
             } else {
-                format!("Episode {position} is not here: the previous voice-over plays on")
+                format!("This voice-over has no episode {position}")
             };
             show_hint(window, line);
         }
@@ -2457,8 +2506,15 @@ impl Settings {
         });
     }
 
-    /// The upscaling the menus are set to.
+    /// The upscaling the menus are set to, or none under the neural upscale:
+    /// the network has restored the detail and doubled the picture already,
+    /// mpv's own scaler takes it the rest of the way, and Anime4K on top
+    /// only spent the GPU — on 720p sources, enough to tip a 4070 Ti SUPER
+    /// into dropping frames.
     fn upscale(&self) -> UpscalePreset {
+        if self.on_mlrt() && self.neural_upscale.get() {
+            return UpscalePreset::OFF;
+        }
         UpscalePreset::new(
             UpscaleMode::ALL[self.upscale_mode.get()],
             UpscaleQuality::ALL[self.upscale_quality.get()],
@@ -3103,6 +3159,8 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         chosen.neural_upscale.set(!chosen.neural_upscale.get());
         keep_now();
         chosen.apply_generation(player);
+        let preset = chosen.upscale();
+        player.later("upscaling", move |player| player.set_upscale(preset));
     });
 
     let chosen = Rc::clone(settings);
@@ -3111,14 +3169,52 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         if chosen.neural_upscale.replace(on) != on {
             keep_now();
             chosen.apply_generation(player);
+            let preset = chosen.upscale();
+            player.later("upscaling", move |player| player.set_upscale(preset));
         }
     });
+
+    // The light upscaling network, fetched quietly once a vs-mlrt engine is
+    // there to run it: with it the network doubles 1080p as well as 720p,
+    // fast enough to play. Until it is in, Real-ESRGAN doubles up to 720p.
+    let fetch_light: Rc<dyn Fn()> = {
+        let chosen = Rc::clone(settings);
+        let http = app.http.clone();
+        let fetching = Rc::new(Cell::new(false));
+        Rc::new(move || {
+            let engine_there = chosen.mlrt.borrow().iter().any(Option::is_some);
+            if !engine_there
+                || fetching.get()
+                || anirust_player::frames::light_upscale::installed().is_some()
+            {
+                return;
+            }
+            fetching.set(true);
+            let chosen = Rc::clone(&chosen);
+            let fetching = Rc::clone(&fetching);
+            tasks::spawn(runtimes::fetch_light_upscale(http.clone()), move |result| {
+                fetching.set(false);
+                match result {
+                    Ok(_) => {
+                        if chosen.neural_upscale.get() {
+                            chosen.apply_generation(player);
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "the light upscaling network was not fetched");
+                    }
+                }
+            });
+        })
+    };
+    fetch_light();
 
     // A vendor's runtime, fetched from the vendor when asked. The line on
     // screen follows the download; once it is in, the engine starts using it.
     let chosen = Rc::clone(settings);
     let http = app.http.clone();
     let weak = window.as_weak();
+    let fetch_light_after = Rc::clone(&fetch_light);
     window.on_fetch_runtime(move || {
         let Some(backend) = chosen.backend() else {
             return;
@@ -3146,6 +3242,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         let chosen = Rc::clone(&chosen);
         let weak = weak.clone();
         let name = backend_name(backend);
+        let fetch_light = Rc::clone(&fetch_light_after);
         tasks::spawn(
             runtimes::fetch(http.clone(), backend, move |progress| {
                 let _ = send.send(progress);
@@ -3157,6 +3254,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
                     Ok(_) => {
                         chosen.refresh_mlrt();
                         chosen.apply_generation(player);
+                        fetch_light();
                         show_hint(
                             &window,
                             if ru {
@@ -3893,7 +3991,7 @@ fn check_filters(
     };
     let ru = window.get_lang() == "ru";
     let enhancement = settings.enhancement();
-    let upscale_fits = source_h <= anirust_player::frames::NEURAL_UPSCALE_MAX_HEIGHT;
+    let upscale_fits = source_h <= anirust_player::frames::live_upscale_max_height();
     let frames_work = enhancement.frames.is_none() || generated.is_some();
     let upscale_works = !enhancement.upscale
         || !upscale_fits
@@ -3928,11 +4026,11 @@ fn check_filters(
 
 /// Why neural upscaling leaves this source alone.
 fn upscale_too_tall(source_h: u32, ru: bool) -> String {
-    let limit = anirust_player::frames::NEURAL_UPSCALE_MAX_HEIGHT;
+    let limit = anirust_player::frames::live_upscale_max_height();
     if ru {
-        format!("Нейросетевой апскейл — для видео до {limit}p; {source_h}p увеличивают шейдеры")
+        format!("Нейросеть увеличивает видео до {limit}p; {source_h}p и так крупное")
     } else {
-        format!("Neural upscaling is for video up to {limit}p; {source_h}p is left to the shaders")
+        format!("The network enlarges video up to {limit}p; {source_h}p is large already")
     }
 }
 

@@ -376,6 +376,11 @@ export component MainWindow inherits Window {
     in property <int> bench-sharpness: 0;
     in property <bool> bench-neural: false;
     in property <int> bench-rate: 0;
+    // Improving a saved episode.
+    in property <bool> enhance-can-upscale: false;
+    in property <bool> enhance-can-generate: false;
+    callback enhance-download(int, bool, int);
+    callback stop-enhance(int);
     callback bench-start();
     callback bench-apply();
     callback bench-dismiss();
@@ -655,7 +660,11 @@ export component MainWindow inherits Window {
         // about the application rather than about what to watch.
         if root.destination == 5: DownloadsPage {
             items: root.downloads;
+            can-upscale: root.enhance-can-upscale;
+            can-generate: root.enhance-can-generate;
             clear-finished => { root.clear-finished-downloads(); }
+            enhance(i, upscale, rate) => { root.enhance-download(i, upscale, rate); }
+            stop-enhance(i) => { root.stop-enhance(i); }
         }
 
         if root.destination == 3: FeedPage {

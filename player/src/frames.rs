@@ -88,11 +88,75 @@ impl RifeModel {
     }
 }
 
-/// The tallest source Real-ESRGAN doubles. Doubled, 1080p is 4K, which an
-/// RTX 4070 Ti SUPER makes at about 19 frames a second against the 43 it
-/// makes from 720p — slower than the episode plays — while Anime4K's shaders
-/// take 1080p to 4K well on their own. Taller sources pass it by.
+/// The tallest source Real-ESRGAN doubles while an episode plays. Doubled,
+/// 1080p is 4K, which an RTX 4070 Ti SUPER makes at 0.8 of the episode's
+/// pace. Taller sources pass it by; the light network below takes them.
 pub const NEURAL_UPSCALE_MAX_HEIGHT: u32 = 720;
+
+/// The light network for playback: AnimeJaNai HD V3, SuperUltraCompact —
+/// the same kind of network as Real-ESRGAN's, with 24 features and 8 layers
+/// against 64 and 16. On an RTX 4070 Ti SUPER it doubles 720p at 4.4 times
+/// the episode's pace and 1080p at 2.0, where Real-ESRGAN makes 1.8 and 0.8.
+///
+/// Its licence (CC BY-NC-SA 4.0) does not go with the program's, so it is
+/// not shipped: it is fetched from its author's release on first use, for
+/// the viewer's own watching, and checked against the digest below.
+pub mod light_upscale {
+    /// The archive the author publishes the networks in.
+    pub const ARCHIVE: &str = "https://github.com/the-database/mpv-upscale-2x_animejanai/releases/download/3.0.0/2x_AnimeJaNai_HD_V3_ModelsOnly.zip";
+    /// The network's path inside it.
+    pub const MEMBER: &str =
+        "2x_AnimeJaNai_HD_V3_ModelsOnly/2x_AnimeJaNai_HD_V3_SuperUltraCompact.onnx";
+    /// Its file name once fetched.
+    pub const FILE: &str = "2x_AnimeJaNai_HD_V3_SuperUltraCompact.onnx";
+    /// SHA-256 of the network.
+    pub const SHA256: &str = "f6bbfbed502b8d300ee9d678d2c277d4b56235c36d053c3a1a41be060c54c0e6";
+    /// The tallest source it doubles while an episode plays.
+    pub const MAX_HEIGHT: u32 = 1080;
+
+    /// Where it is kept: the data folder, beside the vendors' runtimes.
+    #[must_use]
+    pub fn path() -> Option<std::path::PathBuf> {
+        dirs::data_dir().map(|data| data.join("anirust").join("models").join(FILE))
+    }
+
+    /// The network, when it has been fetched.
+    #[must_use]
+    pub fn installed() -> Option<std::path::PathBuf> {
+        path().filter(|path| path.is_file())
+    }
+}
+
+/// Which network doubles the picture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Upscaler<'a> {
+    /// Real-ESRGAN AnimeVideo, shipped: the cleaner, the heavier.
+    RealEsrgan,
+    /// The light network at this path, for playback.
+    Light(&'a Path),
+}
+
+impl Upscaler<'_> {
+    /// The tallest source it doubles while an episode plays.
+    #[must_use]
+    pub fn live_max_height(self) -> u32 {
+        match self {
+            Self::RealEsrgan => NEURAL_UPSCALE_MAX_HEIGHT,
+            Self::Light(_) => light_upscale::MAX_HEIGHT,
+        }
+    }
+}
+
+/// The tallest source playback doubles: up to 1080p once the light network
+/// is fetched, 720p until then.
+#[must_use]
+pub fn live_upscale_max_height() -> u32 {
+    if light_upscale::installed().is_some() {
+        light_upscale::MAX_HEIGHT
+    } else {
+        NEURAL_UPSCALE_MAX_HEIGHT
+    }
+}
 
 /// What to make, and from how tall a picture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -539,6 +603,32 @@ pub fn script(
     display_fps: Option<f64>,
     error_file: &Path,
 ) -> String {
+    let light = light_upscale::installed();
+    let upscaler = light
+        .as_deref()
+        .map_or(Upscaler::RealEsrgan, Upscaler::Light);
+    script_with(
+        networks,
+        enhancement,
+        display_fps,
+        error_file,
+        upscaler,
+        upscaler.live_max_height(),
+    )
+}
+
+/// [`script`], with the network that doubles the picture and the tallest
+/// source it doubles given: a file improved at leisure takes the cleaner
+/// network, and 1080p to 4K.
+#[must_use]
+pub fn script_with(
+    networks: Networks<'_>,
+    enhancement: Enhancement,
+    display_fps: Option<f64>,
+    error_file: &Path,
+    upscaler: Upscaler<'_>,
+    upscale_limit: u32,
+) -> String {
     let mut body = String::new();
 
     // ---- the engine ----
@@ -557,8 +647,8 @@ pub fn script(
     let max_height = enhancement
         .frames
         .map_or(0, |generation| generation.max_height);
-    // A source Real-ESRGAN doubles stays at its size for RIFE after it: it is
-    // no taller than RIFE's limit, and doubled, it is meant to stay large.
+    // A source the network will double stays at its size for RIFE: it is no
+    // taller than RIFE's limit, and doubled, it is meant to stay large.
     body.push_str(&format!(
         r#"    clip = video_in
     source = Fraction(container_fps).limit_denominator(1001) if container_fps > 0 else Fraction(24000, 1001)
@@ -575,14 +665,8 @@ pub fn script(
         clip = core.resize.Bilinear(clip, format=vs.RGBS, matrix_in_s=matrix)
 "#,
         upscale = if upscale { "True" } else { "False" },
-        limit = NEURAL_UPSCALE_MAX_HEIGHT,
+        limit = upscale_limit,
     ));
-
-    if upscale {
-        body.push_str(
-            "    if upscale:\n        clip = vsmlrt.RealESRGAN(clip, model=vsmlrt.RealESRGANv2Model.animevideo_xsx2, backend=backend)\n",
-        );
-    }
 
     if let Some(generation) = enhancement.frames {
         let target = match (generation.rate, display_fps) {
@@ -631,6 +715,21 @@ pub fn script(
                 model = generation.model.mlrt_name(),
             )),
         }
+    }
+
+    // Doubled after the frames are made, not before: RIFE then draws on a
+    // quarter of the pixels, and the network doubles the made frames as
+    // well as the drawn ones. Twice as fast as the other way round — on a
+    // 4070 Ti SUPER, 720p doubled and at ×2 goes from 0.65 of the episode's
+    // pace to 1.46.
+    if upscale {
+        body.push_str(&match upscaler {
+            Upscaler::RealEsrgan => "    if upscale:\n        clip = vsmlrt.RealESRGAN(clip, model=vsmlrt.RealESRGANv2Model.animevideo_xsx2, backend=backend)\n".to_owned(),
+            Upscaler::Light(network) => format!(
+                "    if upscale:\n        clip = vsmlrt.inference(clip, network_path={}, backend=backend)\n",
+                python_string(network)
+            ),
+        });
     }
 
     body.push_str(
@@ -976,22 +1075,43 @@ mod tests {
     }
 
     #[test]
-    fn upscaling_runs_first_and_keeps_the_picture_large() {
+    fn upscaling_runs_after_the_frames_and_keeps_the_picture_large() {
         let trt = tensorrt();
         let mut enhancement = generation(TargetRate::Sixty, RifeModel::Quality);
         enhancement.upscale = true;
-        let script = script(
+        let script = script_with(
             Networks::Mlrt(&trt),
             enhancement,
             None,
             Path::new("/tmp/err.txt"),
+            Upscaler::RealEsrgan,
+            NEURAL_UPSCALE_MAX_HEIGHT,
         );
         let upscale = script.find("vsmlrt.RealESRGAN(").expect("upscaling");
         let rife = script.find("vsmlrt.RIFE(").expect("frame generation");
-        assert!(upscale < rife);
+        assert!(rife < upscale);
         // Only sources it can double in time, which then keep their size.
         assert!(script.contains("upscale = True and clip.height <= 720"));
         assert!(script.contains("if max_height and not upscale and clip.height > max_height:"));
+    }
+
+    #[test]
+    fn the_light_network_runs_from_where_it_was_fetched() {
+        let trt = tensorrt();
+        let script = script_with(
+            Networks::Mlrt(&trt),
+            Enhancement {
+                frames: None,
+                upscale: true,
+            },
+            None,
+            Path::new("/tmp/err.txt"),
+            Upscaler::Light(Path::new("/data/models/light.onnx")),
+            light_upscale::MAX_HEIGHT,
+        );
+        assert!(script.contains("vsmlrt.inference(clip, network_path=\"/data/models/light.onnx\""));
+        assert!(script.contains("upscale = True and clip.height <= 1080"));
+        assert!(!script.contains("RealESRGAN("));
     }
 
     #[test]
