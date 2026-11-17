@@ -57,11 +57,15 @@ export component FranchiseSheet inherits Rectangle {
                 }
             }
 
-            if root.loading: Text {
-                x: Spacing.comfortable;
-                text: Tr.loading;
-                color: MaterialPalette.on-surface-variant;
-                font-size: Typography.body-medium-size;
+            if root.loading: HorizontalLayout {
+                padding-left: Spacing.comfortable;
+                padding-right: Spacing.comfortable;
+
+                Text {
+                    text: Tr.loading;
+                    color: MaterialPalette.on-surface-variant;
+                    font-size: Typography.body-medium-size;
+                }
             }
 
             ScrollView {

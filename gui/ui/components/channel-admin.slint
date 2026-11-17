@@ -294,12 +294,16 @@ export component ChannelAdmin inherits Rectangle {
                 }
             }
 
-            if root.message != "": Text {
-                x: Spacing.comfortable;
-                text: Tr.settings-message(root.message);
-                color: Tr.settings-message-is-error(root.message) ? MaterialPalette.error : MaterialPalette.on-surface-variant;
-                font-size: Typography.body-medium-size;
-                wrap: word-wrap;
+            if root.message != "": HorizontalLayout {
+                padding-left: Spacing.comfortable;
+                padding-right: Spacing.comfortable;
+
+                Text {
+                    text: Tr.settings-message(root.message);
+                    color: Tr.settings-message-is-error(root.message) ? MaterialPalette.error : MaterialPalette.on-surface-variant;
+                    font-size: Typography.body-medium-size;
+                    wrap: word-wrap;
+                }
             }
         }
     }

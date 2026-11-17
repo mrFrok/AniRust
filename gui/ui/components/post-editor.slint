@@ -228,12 +228,16 @@ export component PostEditor inherits Rectangle {
                 }
             }
 
-            if root.error != "": Text {
-                x: Spacing.comfortable;
-                text: Tr.post-error(root.error);
-                color: MaterialPalette.error;
-                font-size: Typography.body-medium-size;
-                wrap: word-wrap;
+            if root.error != "": HorizontalLayout {
+                padding-left: Spacing.comfortable;
+                padding-right: Spacing.comfortable;
+
+                Text {
+                    text: Tr.post-error(root.error);
+                    color: MaterialPalette.error;
+                    font-size: Typography.body-medium-size;
+                    wrap: word-wrap;
+                }
             }
 
             HorizontalLayout {
