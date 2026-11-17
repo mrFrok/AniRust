@@ -899,7 +899,15 @@ fn play(stream: &ResolvedStream, options: &PlayOptions<'_>, lang: Lang) -> Resul
 
     // Poll rather than subscribe to mpv events: the probe only needs to know
     // that decoding started, and polling keeps this free of an event loop.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    // The networks take their time before the first frame: loading TensorRT
+    // engines alone is fifteen seconds or so, and building one for a new
+    // picture size takes minutes.
+    let patience = if generate.is_some() || mlrt.is_some() || neural_upscale {
+        300
+    } else {
+        30
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(patience);
     let size = loop {
         if let Some(size) = player.video_size() {
             break Some(size);
@@ -911,7 +919,7 @@ fn play(stream: &ResolvedStream, options: &PlayOptions<'_>, lang: Lang) -> Resul
     };
 
     let Some((width, height)) = size else {
-        bail!("{}", lang.play_timed_out(30));
+        bail!("{}", lang.play_timed_out(patience));
     };
     println!("{}", lang.play_ready(width, height));
     if let Some(duration) = player.duration() {
