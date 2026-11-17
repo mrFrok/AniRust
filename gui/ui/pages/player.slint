@@ -228,7 +228,11 @@ export component PlayerPage inherits Rectangle {
     /// Whether the picture sheet shows every knob, not just the three rows.
     property <bool> fine-tune: false;
     /// Anime4K counts as working only once something is actually applied.
-    property <bool> enhancing: root.upscale != 0 || root.interpolation || root.frame-rate != 0;
+    /// Something is making the picture better: lit in the accent. The neural
+    /// upscale counts — with it on, Anime4K is off, and the mark went dark
+    /// exactly while the network worked.
+    property <bool> enhancing: root.upscale != 0 || root.interpolation || root.frame-rate != 0
+        || (root.neural-upscale && root.neural-ready);
 
     video := Image {
         source: root.video-frame;
