@@ -4050,7 +4050,11 @@ fn check_filters(
     }
 
     let note = anirust_player::frames::last_error();
-    let grace = if settings.on_mlrt() { 60 } else { 6 };
+    // With no note the script raised nothing: the filter is there and has
+    // not delivered. On vs-mlrt that is a TensorRT engine still building for
+    // a new size or network — minutes, once — or a load the card cannot
+    // carry, so it is given time before anything is said.
+    let grace = if settings.on_mlrt() { 300 } else { 6 };
     if note.is_none() && since.elapsed() < std::time::Duration::from_secs(grace) {
         return;
     }
@@ -4061,7 +4065,7 @@ fn check_filters(
     );
     show_hint(
         window,
-        filters_failed(note.as_deref(), settings.backend(), ru),
+        filters_failed(note.as_deref(), settings.backend(), settings.on_mlrt(), ru),
     );
 }
 
@@ -4078,7 +4082,7 @@ fn upscale_too_tall(source_h: u32, ru: bool) -> String {
 /// The line on screen for filters that did not start: what is missing when
 /// that is known, else the last line of the script's note — Python's own
 /// summary of the error — else the likely reason for there being none.
-fn filters_failed(note: Option<&str>, backend: Option<Backend>, ru: bool) -> String {
+fn filters_failed(note: Option<&str>, backend: Option<Backend>, mlrt: bool, ru: bool) -> String {
     if backend == Some(Backend::OpenVino)
         && let Some(missing) = gpus::missing_compute_runtime()
     {
@@ -4096,6 +4100,14 @@ fn filters_failed(note: Option<&str>, backend: Option<Backend>, ru: bool) -> Str
     match (reason, ru) {
         (Some(reason), true) => format!("Нейросеть не запустилась: {reason}"),
         (Some(reason), false) => format!("The neural filters did not start: {reason}"),
+        (None, true) if mlrt => {
+            "Нейросеть не успевает за этим видео: уберите плавность или нейросетевое увеличение"
+                .to_owned()
+        }
+        (None, false) if mlrt => {
+            "The network cannot keep up with this video: turn off smoothness or the neural upscale"
+                .to_owned()
+        }
         (None, true) => {
             "Нейросеть не запустилась: нет VapourSynth или фильтра VapourSynth в libmpv".to_owned()
         }
@@ -4242,16 +4254,17 @@ mod tests {
         let note = "Traceback (most recent call last):\n  File \"rife.vpy\", line 40\n\
                     vapoursynth.Error: no GPU device\n\n";
         assert_eq!(
-            filters_failed(Some(note), None, false),
+            filters_failed(Some(note), None, false, false),
             "The neural filters did not start: vapoursynth.Error: no GPU device"
         );
         // A long one is cut, on a character, not a byte.
         let long = "ж".repeat(300);
-        let line = filters_failed(Some(&long), None, true);
+        let line = filters_failed(Some(&long), None, false, true);
         assert!(line.ends_with('…'));
         assert!(line.chars().count() < 200, "{line}");
         // No note at all: the filter itself is missing, most likely.
-        assert!(filters_failed(None, None, true).contains("VapourSynth"));
+        assert!(filters_failed(None, None, false, true).contains("VapourSynth"));
+        assert!(filters_failed(None, None, true, true).contains("не успевает"));
     }
 
     #[test]
