@@ -3494,6 +3494,13 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         window.set_current_episode(0);
         window.set_state("idle".into());
         window.set_has_video(false);
+        // Out of theatre and full screen too: they are ways of watching, and
+        // with nothing to watch they left an empty player filling the window.
+        window.set_theatre(false);
+        if window.get_fullscreen() {
+            window.set_fullscreen(false);
+            window.window().set_fullscreen(false);
+        }
     });
 
     advance
