@@ -950,6 +950,13 @@ export component PlayerPage inherits Rectangle {
                                 clicked => { root.toggle-neural-upscale(); }
                             }
 
+                            if root.frames-available && root.frame-rate != 0: Text {
+                                text: Tr.rife-network;
+                                color: #FFFFFF;
+                                font-size: Typography.title-small-size;
+                                font-weight: Typography.title-small-weight-em;
+                            }
+
                             if root.frames-available && root.frame-rate != 0: HorizontalLayout {
                                 spacing: Spacing.small;
                                 alignment: start;
