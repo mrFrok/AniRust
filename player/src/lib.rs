@@ -28,11 +28,13 @@ use std::time::Duration;
 
 use libmpv2::Mpv;
 
+mod background;
 pub mod frames;
 pub mod render;
 pub mod shaders;
 pub mod tracks;
 
+pub use background::Status;
 pub use frames::{
     Backend, Enhancement, FrameGeneration, Mlrt, Networks, RifeInstall, RifeModel, TargetRate,
 };
@@ -266,9 +268,10 @@ impl PlayerConfig {
 }
 
 /// What the player is doing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PlaybackState {
     /// Nothing loaded.
+    #[default]
     Idle,
     /// Loading, with no picture yet.
     Loading,
@@ -350,6 +353,10 @@ pub struct Player {
     generating: std::sync::atomic::AtomicBool,
     /// The display's refresh rate as last told, for scripts that aim at it.
     display_fps: std::sync::Mutex<Option<f64>>,
+    /// The threads that keep mpv's pauses off the caller's, once started.
+    background: std::sync::OnceLock<background::Background>,
+    /// What the status thread read last.
+    status: std::sync::Mutex<Status>,
 }
 
 impl Player {
@@ -409,6 +416,8 @@ impl Player {
             hwdec: std::sync::Mutex::new(config.hwdec.to_string()),
             generating: std::sync::atomic::AtomicBool::new(false),
             display_fps: std::sync::Mutex::new(None),
+            background: std::sync::OnceLock::new(),
+            status: std::sync::Mutex::new(Status::default()),
         };
 
         player.set_network_timeout(config.network_timeout_secs)?;

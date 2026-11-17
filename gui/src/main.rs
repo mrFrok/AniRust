@@ -2380,30 +2380,44 @@ impl Settings {
         }
     }
 
-    /// Applies the menus' frame generation to the player.
     /// Applies the menus' neural filters to the player.
     ///
     /// vs-mlrt when a backend is chosen and complete; Vulkan otherwise,
     /// which also covers a backend chosen before its runtime is there.
-    fn apply_generation(&self, player: &Player) -> anirust_player::Result<()> {
+    ///
+    /// Queued rather than done here: configuring VapourSynth runs Python,
+    /// the models may be copied, and mpv loads the filter on its own thread,
+    /// none of which the window should wait for.
+    fn apply_generation(&self, player: &Player) {
+        /// What the networks borrow, owned so that it can cross threads.
+        enum Owned {
+            Mlrt(Mlrt),
+            Vulkan(RifeInstall),
+        }
+
         let enhancement = self.enhancement();
-        let mlrt = self.mlrt.borrow();
         let chosen = self
             .backend()
-            .and_then(|backend| mlrt[backend_index(backend)].as_ref());
-        let networks = match (chosen, self.rife.as_ref()) {
-            (Some(mlrt), _) => Some(Networks::Mlrt(mlrt)),
-            (None, Some(rife)) => Some(Networks::Vulkan(rife)),
+            .and_then(|backend| self.mlrt.borrow()[backend_index(backend)].clone());
+        let owned = match (chosen, self.rife.as_ref()) {
+            (Some(mlrt), _) => Some(Owned::Mlrt(mlrt)),
+            (None, Some(rife)) => Some(Owned::Vulkan(rife.clone())),
             (None, None) => None,
         };
-        let wanted = networks.filter(|_| !enhancement.is_empty());
-        if wanted.is_some() {
-            anirust_player::frames::prepare_vapoursynth();
-        }
+        let wanted = owned.filter(|_| !enhancement.is_empty());
         self.filters_since
             .set(wanted.is_some().then(std::time::Instant::now));
         self.engine_build_said.set(false);
-        player.set_enhancement(wanted.map(|networks| (networks, enhancement)))
+        player.later("neural filters", move |player| {
+            let networks = wanted.as_ref().map(|owned| match owned {
+                Owned::Mlrt(mlrt) => Networks::Mlrt(mlrt),
+                Owned::Vulkan(rife) => Networks::Vulkan(rife),
+            });
+            if networks.is_some() {
+                anirust_player::frames::prepare_vapoursynth();
+            }
+            player.set_enhancement(networks.map(|networks| (networks, enhancement)))
+        });
     }
 
     /// The upscaling the menus are set to.
@@ -2552,12 +2566,6 @@ const SPEEDS: [f64; 7] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 /// Sets the loudness, from a key, the wheel or the player's bar.
 type SetVolume = dyn Fn(&MainWindow, i64);
 
-/// The loudness and muting the player's bar and speaker show.
-fn show_volume(window: &MainWindow, player: &Player) {
-    window.set_volume(i32::try_from(player.volume()).unwrap_or(100));
-    window.set_muted(player.is_muted());
-}
-
 /// Puts a line on screen for a moment.
 ///
 /// The counter is not decoration: Slint hides this on a `changed` handler, so
@@ -2581,24 +2589,29 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 
     // The player opens as it was left, when that is kept.
     let kept = app.prefs.get().player.in_force();
-    let applied = player
-        .set_speed(kept.speed)
-        .and_then(|()| player.set_volume(kept.volume))
-        .and_then(|()| player.set_upscale(settings.upscale()))
-        .and_then(|()| player.set_interpolation(kept.interpolation))
-        .and_then(|()| player.set_hwdec(DECODERS[settings.decoder.get()]))
-        .and_then(|()| player.set_loudness_normalization(settings.normalize.get()))
-        .and_then(|()| player.set_subtitle_scale(SUBTITLE_SCALES[settings.subtitle_scale.get()]))
-        .and_then(|()| player.set_ass_override(settings.ass_override.get()))
-        .and_then(|()| player.set_picture(PictureAdjust::PRESETS[settings.picture.get()]))
-        .and_then(|()| settings.apply_generation(player));
-    if let Err(error) = applied {
-        tracing::warn!(%error, "the kept player settings were not applied");
-    }
+    let upscale = settings.upscale();
+    let decoder = DECODERS[settings.decoder.get()];
+    let normalize = settings.normalize.get();
+    let subtitle_scale = SUBTITLE_SCALES[settings.subtitle_scale.get()];
+    let ass_override = settings.ass_override.get();
+    let picture = PictureAdjust::PRESETS[settings.picture.get()];
+    player.later("the kept player settings", move |player| {
+        player.set_speed(kept.speed)?;
+        player.set_volume(kept.volume)?;
+        player.set_upscale(upscale)?;
+        player.set_interpolation(kept.interpolation)?;
+        player.set_hwdec(decoder)?;
+        player.set_loudness_normalization(normalize)?;
+        player.set_subtitle_scale(subtitle_scale)?;
+        player.set_ass_override(ass_override)?;
+        player.set_picture(picture)
+    });
+    settings.apply_generation(player);
 
     bridge.set_force_4k(kept.force_4k);
     window.set_force_4k(kept.force_4k);
-    show_volume(window, player);
+    window.set_volume(i32::try_from(kept.volume.clamp(0, 150)).unwrap_or(100));
+    window.set_muted(false);
 
     if let Some(fonts) = subtitle_fonts_dir() {
         let ready = std::fs::create_dir_all(&fonts)
@@ -2613,6 +2626,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     let keep: Rc<dyn Fn()> = {
         let prefs = Rc::clone(&app.prefs);
         let settings = Rc::clone(&app.settings);
+        let weak = window.as_weak();
         Rc::new(move || {
             let mut all = prefs.get();
             if !all.player.remember {
@@ -2623,7 +2637,11 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
             all.player.upscale_quality = settings.upscale_quality.get();
             all.player.interpolation = settings.interpolation.get();
             all.player.decoder = settings.decoder.get();
-            all.player.volume = player.volume();
+            // The window's level, which a queued change may not have reached
+            // the player with yet.
+            if let Some(window) = weak.upgrade() {
+                all.player.volume = i64::from(window.get_volume());
+            }
             all.player.force_4k = settings.force_4k.get();
             all.player.normalize = settings.normalize.get();
             all.player.subtitle_scale = settings.subtitle_scale.get();
@@ -2666,26 +2684,24 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
             });
     });
 
+    // Everything the viewer changes from here on is queued for the player's
+    // own thread: mpv can stand still for seconds while the neural filters
+    // load, and a click should never wait that out with the window frozen.
     window.on_toggle_pause(move || {
-        if let Err(error) = player.toggle_pause() {
-            tracing::warn!(%error, "pause failed");
-        }
+        player.later("pause", Player::toggle_pause);
     });
 
     window.on_seek_relative(move |delta| {
-        if let Err(error) = player.seek_by(f64::from(delta)) {
-            tracing::warn!(%error, "seek failed");
-        }
+        let delta = f64::from(delta);
+        player.later("seek", move |player| player.seek_by(delta));
     });
 
     window.on_seek_fraction(move |fraction| {
-        let Some(duration) = player.duration() else {
+        let Some(duration) = player.status().duration else {
             return;
         };
         let target = duration.mul_f64(f64::from(fraction).clamp(0.0, 1.0));
-        if let Err(error) = player.seek_to(target) {
-            tracing::warn!(%error, "seek failed");
-        }
+        player.later("seek", move |player| player.seek_to(target));
     });
 
     let current = Rc::clone(playing);
@@ -2695,9 +2711,9 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
             .as_ref()
             .and_then(|stream| stream.opening)
             .map(|range| Duration::from_secs(u64::from(range.end)));
-        if let Err(error) = player.skip_opening(ends_at) {
-            tracing::warn!(%error, "skip failed");
-        }
+        player.later("skip the opening", move |player| {
+            player.skip_opening(ends_at)
+        });
     });
 
     let advance = wire_stepping(window, app);
@@ -2707,9 +2723,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     window.on_set_speed(move |speed| {
         let speed = f64::from(speed);
         chosen.speed.set(speed);
-        if let Err(error) = player.set_speed(speed) {
-            tracing::warn!(%error, "speed change failed");
-        }
+        player.later("speed", move |player| player.set_speed(speed));
         keep_now();
     });
 
@@ -2720,9 +2734,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         chosen.upscale_mode.set(index);
         keep_now();
         let preset = chosen.upscale();
-        if let Err(error) = player.set_upscale(preset) {
-            tracing::warn!(%error, preset = %preset.name(), "upscale change failed");
-        }
+        player.later("upscaling", move |player| player.set_upscale(preset));
     });
 
     let chosen = Rc::clone(settings);
@@ -2732,9 +2744,9 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         chosen.upscale_quality.set(index);
         keep_now();
         let preset = chosen.upscale();
-        if let Err(error) = player.set_upscale(preset) {
-            tracing::warn!(%error, preset = %preset.name(), "upscale change failed");
-        }
+        player.later("upscaling quality", move |player| {
+            player.set_upscale(preset)
+        });
     });
 
     let chosen = Rc::clone(settings);
@@ -2743,9 +2755,9 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         let next = !chosen.interpolation.get();
         chosen.interpolation.set(next);
         keep_now();
-        if let Err(error) = player.set_interpolation(next) {
-            tracing::warn!(%error, "interpolation change failed");
-        }
+        player.later("interpolation", move |player| {
+            player.set_interpolation(next)
+        });
     });
 
     // Switching rendition reopens a different URL, so playback resumes where
@@ -2764,7 +2776,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         };
         chosen.quality.set(index);
 
-        let resume = player.position().unwrap_or_default();
+        let resume = player.status().position.unwrap_or_default();
         let mut source = {
             let (url, headers) = relay::route(&variant.url, stream.headers.clone());
             MediaSource::new(&url).headers(
@@ -2789,9 +2801,9 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         let Some(&id) = chosen.subtitles.borrow().get(index.max(0) as usize) else {
             return;
         };
-        if let Err(error) = player.set_subtitle_track(id) {
-            tracing::warn!(%error, ?id, "subtitle change failed");
-        }
+        player.later("subtitle track", move |player| {
+            player.set_subtitle_track(id)
+        });
     });
 
     let chosen = Rc::clone(settings);
@@ -2799,9 +2811,9 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         let Some(&Some(id)) = chosen.audio.borrow().get(index.max(0) as usize) else {
             return;
         };
-        if let Err(error) = player.set_audio_track(Some(id)) {
-            tracing::warn!(%error, id, "audio change failed");
-        }
+        player.later("audio track", move |player| {
+            player.set_audio_track(Some(id))
+        });
     });
 
     let chosen = Rc::clone(settings);
@@ -2810,9 +2822,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         let index = (index.max(0) as usize).min(DECODERS.len() - 1);
         chosen.decoder.set(index);
         keep_now();
-        if let Err(error) = player.set_hwdec(DECODERS[index]) {
-            tracing::warn!(%error, value = DECODERS[index], "decoder change failed");
-        }
+        player.later("decoder", move |player| player.set_hwdec(DECODERS[index]));
     });
 
     // ---- the keys that change something with no control of its own -------
@@ -2820,20 +2830,18 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     let weak = window.as_weak();
     window.on_toggle_muted(move || {
         let Some(window) = weak.upgrade() else { return };
-        match player.toggle_muted() {
-            Ok(muted) => {
-                show_volume(&window, player);
-                show_hint(
-                    &window,
-                    if muted {
-                        "🔇".to_owned()
-                    } else {
-                        format!("🔊 {}%", player.volume())
-                    },
-                );
-            }
-            Err(error) => tracing::warn!(%error, "mute failed"),
-        }
+        // The window holds the truth: the player only learns of it later.
+        let muted = !window.get_muted();
+        window.set_muted(muted);
+        player.later("mute", move |player| player.set_muted(muted));
+        show_hint(
+            &window,
+            if muted {
+                "🔇".to_owned()
+            } else {
+                format!("🔊 {}%", window.get_volume())
+            },
+        );
     });
 
     // Loudness from a key or the wheel, by a step, or from the player's bar,
@@ -2843,14 +2851,14 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         let keep_now = Rc::clone(&keep);
         Rc::new(move |window: &MainWindow, volume: i64| {
             let volume = volume.clamp(0, 150);
-            if let Err(error) = player.set_volume(volume) {
-                tracing::warn!(%error, volume, "volume change failed");
-                return;
-            }
-            keep_now();
+            window.set_volume(i32::try_from(volume).unwrap_or(100));
             // Reaching for the volume means wanting to hear it.
-            let _ = player.set_muted(false);
-            show_volume(window, player);
+            window.set_muted(false);
+            player.later("volume", move |player| {
+                player.set_volume(volume)?;
+                player.set_muted(false)
+            });
+            keep_now();
         })
     };
 
@@ -2858,8 +2866,8 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     let stepped = Rc::clone(&set_volume);
     window.on_adjust_volume(move |step| {
         let Some(window) = weak.upgrade() else { return };
-        stepped(&window, player.volume() + i64::from(step));
-        show_hint(&window, format!("🔊 {}%", player.volume()));
+        stepped(&window, i64::from(window.get_volume()) + i64::from(step));
+        show_hint(&window, format!("🔊 {}%", window.get_volume()));
     });
 
     let weak = window.as_weak();
@@ -2884,17 +2892,12 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 
         chosen.speed.set(speed);
         keep_now();
-        if let Err(error) = player.set_speed(speed) {
-            tracing::warn!(%error, speed, "speed change failed");
-            return;
-        }
+        player.later("speed", move |player| player.set_speed(speed));
         show_hint(&window, format_speed(speed));
     });
 
     window.on_step_frame(move |forward| {
-        if let Err(error) = player.step_frame(forward) {
-            tracing::warn!(%error, forward, "frame step failed");
-        }
+        player.later("frame step", move |player| player.step_frame(forward));
     });
 
     // Fast while held, then back to whatever the menu says. The menu's speed
@@ -2908,10 +2911,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         } else {
             chosen.speed.get()
         };
-        if let Err(error) = player.set_speed(speed) {
-            tracing::warn!(%error, speed, "hold speed change failed");
-            return;
-        }
+        player.later("hold speed", move |player| player.set_speed(speed));
         if holding {
             show_hint(&window, format!("{} ▶▶", format_speed(speed)));
         }
@@ -2924,7 +2924,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         let Some(dir) = screenshots_dir() else {
             return;
         };
-        let at = player.position().unwrap_or_default().as_secs();
+        let at = player.status().position.unwrap_or_default().as_secs();
         let stem = anirust_download::safe_stem(&format!(
             "{} - {:02} - {:02}m{:02}s{}",
             window.get_release_title(),
@@ -2934,14 +2934,15 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
             if with_subtitles { "" } else { " (clean)" },
         ));
         let path = dir.join(format!("{stem}.png"));
-        let saved = std::fs::create_dir_all(&dir)
-            .map_err(anyhow::Error::from)
-            .and_then(|()| Ok(player.screenshot(&path, with_subtitles)?));
-        match saved {
-            Ok(()) => {
-                tracing::info!(path = %path.display(), with_subtitles, "screenshot saved");
-                show_hint(
-                    &window,
+        // Taken on the player's thread, and said on screen once it is done.
+        let weak = window.as_weak();
+        player.later("screenshot", move |player| {
+            let saved = std::fs::create_dir_all(&dir)
+                .map_err(anyhow::Error::from)
+                .and_then(|()| Ok(player.screenshot(&path, with_subtitles)?));
+            let line = match saved {
+                Ok(()) => {
+                    tracing::info!(path = %path.display(), with_subtitles, "screenshot saved");
                     format!(
                         "📷 {}",
                         if ru {
@@ -2949,22 +2950,21 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
                         } else {
                             "Screenshot saved"
                         }
-                    ),
-                );
-            }
-            Err(error) => {
-                tracing::warn!(%error, path = %path.display(), "screenshot failed");
-                show_hint(
-                    &window,
+                    )
+                }
+                Err(error) => {
+                    tracing::warn!(%error, path = %path.display(), "screenshot failed");
                     if ru {
                         "Снимок не сохранился"
                     } else {
                         "The screenshot failed"
                     }
-                    .to_owned(),
-                );
-            }
-        }
+                    .to_owned()
+                }
+            };
+            let _ = weak.upgrade_in_event_loop(move |window| show_hint(&window, line));
+            Ok(())
+        });
     });
 
     window.on_open_screenshots_folder(|| {
@@ -2990,10 +2990,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     window.on_step_audio_delay(move |direction| {
         let Some(window) = weak.upgrade() else { return };
         let delay = step_delay(chosen.audio_delay.get(), direction);
-        if let Err(error) = player.set_audio_delay(delay) {
-            tracing::warn!(%error, delay, "audio delay change failed");
-            return;
-        }
+        player.later("audio delay", move |player| player.set_audio_delay(delay));
         chosen.audio_delay.set(delay);
         let ru = window.get_lang() == "ru";
         let what = if ru { "Звук" } else { "Audio" };
@@ -3005,10 +3002,9 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     window.on_step_subtitle_delay(move |direction| {
         let Some(window) = weak.upgrade() else { return };
         let delay = step_delay(chosen.subtitle_delay.get(), direction);
-        if let Err(error) = player.set_subtitle_delay(delay) {
-            tracing::warn!(%error, delay, "subtitle delay change failed");
-            return;
-        }
+        player.later("subtitle delay", move |player| {
+            player.set_subtitle_delay(delay)
+        });
         chosen.subtitle_delay.set(delay);
         let ru = window.get_lang() == "ru";
         let what = if ru { "Субтитры" } else { "Subtitles" };
@@ -3019,10 +3015,9 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     let keep_now = Rc::clone(&keep);
     window.on_toggle_normalize(move || {
         let on = !chosen.normalize.get();
-        if let Err(error) = player.set_loudness_normalization(on) {
-            tracing::warn!(%error, on, "loudness normalisation change failed");
-            return;
-        }
+        player.later("loudness normalisation", move |player| {
+            player.set_loudness_normalization(on)
+        });
         chosen.normalize.set(on);
         keep_now();
     });
@@ -3031,10 +3026,9 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     let keep_now = Rc::clone(&keep);
     window.on_set_subtitle_scale(move |index| {
         let index = (index.max(0) as usize).min(SUBTITLE_SCALES.len() - 1);
-        if let Err(error) = player.set_subtitle_scale(SUBTITLE_SCALES[index]) {
-            tracing::warn!(%error, index, "subtitle size change failed");
-            return;
-        }
+        player.later("subtitle size", move |player| {
+            player.set_subtitle_scale(SUBTITLE_SCALES[index])
+        });
         chosen.subtitle_scale.set(index);
         keep_now();
     });
@@ -3045,9 +3039,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         let index = (index.max(0) as usize).min(TargetRate::ALL.len());
         chosen.frame_rate.set(index);
         keep_now();
-        if let Err(error) = chosen.apply_generation(player) {
-            tracing::warn!(%error, index, "frame generation change failed");
-        }
+        chosen.apply_generation(player);
     });
 
     let chosen = Rc::clone(settings);
@@ -3065,9 +3057,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
             .engine
             .set((index.max(0) as usize).min(Backend::ALL.len()));
         keep_now();
-        if let Err(error) = chosen.apply_generation(player) {
-            tracing::warn!(%error, index, "engine change failed");
-        }
+        chosen.apply_generation(player);
     });
 
     let chosen = Rc::clone(settings);
@@ -3075,9 +3065,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     window.on_toggle_neural_upscale(move || {
         chosen.neural_upscale.set(!chosen.neural_upscale.get());
         keep_now();
-        if let Err(error) = chosen.apply_generation(player) {
-            tracing::warn!(%error, "neural upscaling change failed");
-        }
+        chosen.apply_generation(player);
     });
 
     // A vendor's runtime, fetched from the vendor when asked. The line on
@@ -3122,9 +3110,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
                 match result {
                     Ok(_) => {
                         chosen.refresh_mlrt();
-                        if let Err(error) = chosen.apply_generation(player) {
-                            tracing::warn!(%error, ?backend, "the engine did not start");
-                        }
+                        chosen.apply_generation(player);
                         show_hint(
                             &window,
                             if ru {
@@ -3156,10 +3142,8 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         let index = (index.max(0) as usize).min(RifeModel::ALL.len() - 1);
         chosen.rife_model.set(index);
         keep_now();
-        if chosen.frame_rate.get() > 0
-            && let Err(error) = chosen.apply_generation(player)
-        {
-            tracing::warn!(%error, index, "RIFE model change failed");
+        if chosen.frame_rate.get() > 0 {
+            chosen.apply_generation(player);
         }
     });
 
@@ -3391,14 +3375,13 @@ fn follow_display(window: &MainWindow, player: &Player, settings: &Settings) {
     }
     settings.display_fps.set(Some(fps));
     window.set_display_fps(fps.round() as i32);
-    if let Err(error) = player.set_display_fps(Some(fps)) {
-        tracing::warn!(%error, fps, "the display rate was not passed on");
-        return;
-    }
+    // Queued ahead of any script that reads it.
+    player.later("display rate", move |player| {
+        player.set_display_fps(Some(fps))
+    });
     tracing::info!(fps, "display rate");
-    let at_display_rate = settings.frame_rate.get() >= adapt::RATE_DISPLAY;
-    if at_display_rate && let Err(error) = settings.apply_generation(player) {
-        tracing::warn!(%error, "frame generation did not follow the display");
+    if settings.frame_rate.get() >= adapt::RATE_DISPLAY {
+        settings.apply_generation(player);
     }
 }
 
@@ -3410,18 +3393,18 @@ fn follow_display(window: &MainWindow, player: &Player, settings: &Settings) {
 fn keep_up(
     window: &MainWindow,
     player: &Player,
+    status: &anirust_player::Status,
     settings: &Settings,
     prefs: &Cell<preferences::Preferences>,
-    playback: PlaybackState,
 ) {
     let load = settings.load();
     let mut watch = settings.watch.borrow_mut();
-    if !settings.adaptive.get() || playback != PlaybackState::Playing || !load.is_enhanced() {
+    if !settings.adaptive.get() || status.state != PlaybackState::Playing || !load.is_enhanced() {
         watch.reset();
         return;
     }
     let now = std::time::Instant::now();
-    if !watch.falling_behind(now, player.dropped_frames()) {
+    if !watch.falling_behind(now, status.dropped_frames) {
         return;
     }
     let Some(step) = load.next_step() else {
@@ -3435,12 +3418,9 @@ fn keep_up(
         "frames are dropping; lowering the load"
     );
     settings.set_load(lowered);
-    let applied = player
-        .set_upscale(settings.upscale())
-        .and_then(|()| settings.apply_generation(player));
-    if let Err(error) = applied {
-        tracing::warn!(%error, "the lower load was not applied");
-    }
+    let preset = settings.upscale();
+    player.later("lower upscaling", move |player| player.set_upscale(preset));
+    settings.apply_generation(player);
     watch.settle(now);
 
     let mut all = prefs.get();
@@ -3495,8 +3475,12 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
                 return;
             }
 
-            let position = player.position().unwrap_or_default();
-            let duration = player.duration();
+            // One snapshot for the whole tick, read off this thread: mpv
+            // stands still for seconds while the neural filters load, and
+            // asking it directly here would stand the window still too.
+            let status = player.status();
+            let position = status.position.unwrap_or_default();
+            let duration = status.duration;
 
             window.set_position_text(format_time(position).into());
             window.set_duration_text(
@@ -3512,13 +3496,13 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
                 window.set_progress(fraction_of(position, duration));
             }
             window.set_buffered(fraction_of(
-                player.buffered_until().unwrap_or(position),
+                status.buffered_until.unwrap_or(position),
                 duration,
             ));
 
             // The decoder mpv actually engaged, which is not always the one
             // asked for — worth showing rather than hiding.
-            let hwdec = player.active_hwdec();
+            let hwdec = status.hwdec.clone();
             window.set_decoder_label(
                 hwdec
                     .as_deref()
@@ -3544,13 +3528,13 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             // Say what is being produced, not just what arrived: with
             // upscaling on, the picture leaving the renderer is larger than
             // the source, and reporting the source would understate it.
-            let generated = generated_fps(player, &settings);
-            check_filters(&window, player, &settings, generated);
+            let generated = generated_fps(&status, &settings);
+            check_filters(&window, &status, &settings, generated);
             explain_engine_build(&window, &settings);
             window.set_quality_label(
                 quality_label(
-                    player.video_size(),
-                    player.filtered_size(),
+                    status.video_size,
+                    status.filtered_size,
                     bridge.rendered_size(),
                     generated,
                     window.get_lang() == "ru",
@@ -3558,7 +3542,7 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
                 .into(),
             );
 
-            let playback = player.state();
+            let playback = status.state;
             // Idle while an episode is wanted is an episode still being
             // found and opened, which the viewer should see as loading
             // rather than as nothing to play.
@@ -3569,7 +3553,7 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             };
             window.set_state(shown.into());
             window.set_paused(playback == PlaybackState::Paused);
-            keep_up(&window, player, &settings, &prefs, playback);
+            keep_up(&window, player, &status, &settings, &prefs);
             // The render loop reads this instead of querying mpv on every
             // frame; a quarter-second of staleness costs nothing here.
             bridge.set_advancing(playback.is_active());
@@ -3587,7 +3571,7 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
                 was_ended.set(false);
             }
 
-            show_tracks(&window, player, &settings, &known_tracks);
+            show_tracks(&window, player, &status, &settings, &known_tracks);
 
             window.set_speed_label(format_speed(settings.speed.get()).into());
             window.set_upscale(settings.upscale_mode.get() as i32);
@@ -3641,10 +3625,11 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
 fn show_tracks(
     window: &MainWindow,
     player: &'static Player,
+    status: &anirust_player::Status,
     settings: &Rc<Settings>,
     known: &Cell<usize>,
 ) {
-    let count = player.track_count();
+    let count = status.track_count;
     if settings.tracks_stale.replace(false) | (count != known.replace(count)) {
         let subtitles = menu_for(player, TrackKind::Subtitle, true);
         let audio = menu_for(player, TrackKind::Audio, false);
@@ -3658,12 +3643,9 @@ fn show_tracks(
 
     window.set_subtitle_track(index_of(
         &settings.subtitles.borrow(),
-        player.current_track(TrackKind::Subtitle),
+        status.subtitle_track,
     ));
-    window.set_audio_track(index_of(
-        &settings.audio.borrow(),
-        player.current_track(TrackKind::Audio),
-    ));
+    window.set_audio_track(index_of(&settings.audio.borrow(), status.audio_track));
 }
 
 /// The entries of one menu: an mpv id, and what to call it.
@@ -3831,10 +3813,10 @@ fn quality_label(
 }
 
 /// The rate frame generation is producing, when it is on and working.
-fn generated_fps(player: &Player, settings: &Settings) -> Option<f64> {
+fn generated_fps(status: &anirust_player::Status, settings: &Settings) -> Option<f64> {
     settings.frame_rate.get().checked_sub(1)?;
-    let source = player.source_fps()?;
-    let out = player.output_fps()?;
+    let source = status.source_fps?;
+    let out = status.output_fps?;
     (out > source * 1.3).then_some(out)
 }
 
@@ -3848,7 +3830,7 @@ fn generated_fps(player: &Player, settings: &Settings) -> Option<f64> {
 /// so silence counts as failure only after a minute.
 fn check_filters(
     window: &MainWindow,
-    player: &Player,
+    status: &anirust_player::Status,
     settings: &Settings,
     generated: Option<f64>,
 ) {
@@ -3857,10 +3839,10 @@ fn check_filters(
     };
     // mpv's figures trail a change: right after one they still speak of the
     // filters before.
-    if since.elapsed() < std::time::Duration::from_secs(3) || !player.is_playing() {
+    if since.elapsed() < std::time::Duration::from_secs(3) || !status.loaded {
         return;
     }
-    let Some((_, source_h)) = player.video_size() else {
+    let Some((_, source_h)) = status.video_size else {
         return;
     };
     let ru = window.get_lang() == "ru";
@@ -3869,8 +3851,8 @@ fn check_filters(
     let frames_work = enhancement.frames.is_none() || generated.is_some();
     let upscale_works = !enhancement.upscale
         || !upscale_fits
-        || player
-            .filtered_size()
+        || status
+            .filtered_size
             .is_some_and(|(_, filtered_h)| filtered_h >= source_h * 3 / 2);
 
     if frames_work && upscale_works {

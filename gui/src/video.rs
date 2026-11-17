@@ -59,6 +59,10 @@ const DUMP_AT_FRAMES: [u64; 2] = [60, 300];
 /// can be slow.
 const REPAINT_KICK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
 
+/// How often the player's snapshot is read from mpv: well inside the status
+/// line's quarter second, so what it shows is never a tick behind.
+const STATUS_EVERY: std::time::Duration = std::time::Duration::from_millis(100);
+
 /// A texture plus the framebuffer that draws into it.
 ///
 /// Sized to the *render* resolution, which is the window's size rather than
@@ -322,8 +326,14 @@ impl VideoBridge {
             ));
         }
 
+        let player: &'static Player = Box::leak(Box::new(player));
+        // From here on the interface reads the player's snapshot and queues
+        // its changes, so mpv standing still — loading the neural filters,
+        // say — never stands the window still with it.
+        player.start_background(STATUS_EVERY);
+
         Ok(Self {
-            player: Box::leak(Box::new(player)),
+            player,
             live: Rc::new(RefCell::new(None)),
             pending: Rc::new(RefCell::new(None)),
             rendered: Rc::new(Cell::new((0, 0))),
@@ -341,7 +351,14 @@ impl VideoBridge {
     /// stream that never buffers.
     pub fn play(&self, source: MediaSource) -> Result<()> {
         if self.live.borrow().is_some() {
-            self.player.open(&source).context("opening the stream")?;
+            // Queued: with the neural filters on, mpv tears the old file's
+            // VapourSynth script down first, which can take seconds.
+            let url = source.url.clone();
+            self.player.later("open the stream", move |player| {
+                player.open(&source)?;
+                tracing::info!(%url, "playback started");
+                Ok(())
+            });
         } else {
             tracing::debug!("deferring playback until the render context exists");
             *self.pending.borrow_mut() = Some(source);
@@ -425,14 +442,11 @@ impl VideoBridge {
                                 // Now that mpv has somewhere to render, it can
                                 // be told what to play.
                                 if let Some(source) = pending.borrow_mut().take() {
-                                    match player.open(&source) {
-                                        Ok(()) => {
-                                            tracing::info!(url = %source.url, "playback started")
-                                        }
-                                        Err(error) => {
-                                            tracing::error!(%error, "could not open the stream");
-                                        }
-                                    }
+                                    player.later("open the stream", move |player| {
+                                        player.open(&source)?;
+                                        tracing::info!(url = %source.url, "playback started");
+                                        Ok(())
+                                    });
                                 }
                             }
                             Err(error) => {
@@ -470,7 +484,7 @@ impl VideoBridge {
                                 if live.frames_drawn % 120 == 1 {
                                     tracing::info!(
                                         frames = live.frames_drawn,
-                                        hwdec = ?player.active_hwdec(),
+                                        hwdec = ?player.status().hwdec,
                                         "video frames are reaching the UI"
                                     );
                                 }
@@ -545,9 +559,8 @@ impl VideoBridge {
                     return;
                 };
                 // Restart the loop whenever the picture should be moving and
-                // is not. Asking mpv here is fine: a quarter-second cadence is
-                // nowhere near the hot path.
-                if player.state().is_active() {
+                // is not.
+                if player.status().state.is_active() {
                     component.window().request_redraw();
                 }
             },
@@ -654,7 +667,9 @@ fn draw(
     // Size is checked first on purpose: `needs_redraw` consumes mpv's frame
     // flag, so bailing out after asking would throw the frame away and mpv
     // would never offer it again. That shows up as stutter, not as an error.
-    let Some(source) = player.video_size() else {
+    // From the snapshot: asking mpv on every frame would wait out every pause
+    // of its core thread right here, on the thread that paints the window.
+    let Some(source) = player.status().video_size else {
         return Ok(None);
     };
     let (width, height) = target_size(source, surface_size);

@@ -1,0 +1,3 @@
+# Third-party code carried in the tree: kept out of GitHub's language stats.
+player/shaders/** linguist-vendored
+gui/material-*/** linguist-vendored
