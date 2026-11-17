@@ -42,12 +42,21 @@ const FTOR_PATH: &str = "/ftor";
 
 pub struct KodikExtractor {
     http: reqwest::Client,
+    /// The same, not following redirects: whether a rendition is there shows
+    /// in the CDN's first answer, and the node it redirects to can take
+    /// twenty seconds to answer at all.
+    probe: reqwest::Client,
 }
 
 impl KodikExtractor {
     #[must_use]
     pub fn new(http: reqwest::Client) -> Self {
-        Self { http }
+        let probe = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap_or_else(|_| http.clone());
+        Self { http, probe }
     }
 }
 
@@ -144,10 +153,11 @@ impl Extractor for KodikExtractor {
         .json()
         .await?;
 
-        let variants = decode_links(&response);
+        let mut variants = decode_links(&response);
         if variants.is_empty() {
             return Err(ExtractError::NoStreams { host: "Kodik" });
         }
+        variants.extend(self.hidden_renditions(&variants, &origin).await);
 
         Ok(ResolvedStream {
             variants,
@@ -162,6 +172,83 @@ impl Extractor for KodikExtractor {
             opening: None,
         })
     }
+}
+
+/// Heights the player's menu may leave out though the CDN has them.
+const HIDDEN_HEIGHTS: [u32; 2] = [720, 1080];
+
+impl KodikExtractor {
+    /// Renditions the CDN serves beside the listed ones but the menu does not
+    /// offer.
+    ///
+    /// The player often lists 480p at most while the same folder on the CDN
+    /// holds a real `720.mp4` and `1080.mp4` — other encodes, not the 480
+    /// under a bigger name: a 720 that answers is 1280×720 at about twice the
+    /// bitrate. A rendition that is there redirects to a node; one that is not
+    /// is a 404. Each height above the best listed is asked for once.
+    async fn hidden_renditions(
+        &self,
+        listed: &[StreamVariant],
+        origin: &str,
+    ) -> Vec<StreamVariant> {
+        let Some(best) = listed
+            .iter()
+            .filter(|variant| variant.kind == StreamKind::Hls)
+            .max_by_key(|variant| variant.height)
+        else {
+            return Vec::new();
+        };
+        let mut found = Vec::new();
+        for height in HIDDEN_HEIGHTS
+            .into_iter()
+            .filter(|height| *height > best.height)
+        {
+            let Some(url) = with_height(&best.url, height) else {
+                break;
+            };
+            if self.is_there(&url, origin).await {
+                tracing::debug!(height, "kodik serves a rendition its menu leaves out");
+                found.push(StreamVariant {
+                    height,
+                    url,
+                    kind: StreamKind::Hls,
+                });
+            } else {
+                // 1080 without 720 has not been seen; stop at the first gap.
+                break;
+            }
+        }
+        found
+    }
+
+    /// Whether the CDN has the file: a redirect to a node or the manifest
+    /// itself when it does, 404 when it does not.
+    async fn is_there(&self, url: &str, origin: &str) -> bool {
+        let response = self
+            .probe
+            .head(url)
+            .header(reqwest::header::USER_AGENT, DEFAULT_USER_AGENT)
+            .header(reqwest::header::REFERER, origin)
+            .send()
+            .await;
+        tracing::debug!(url, status = ?response.as_ref().map(reqwest::Response::status), "kodik rendition probe");
+        response.is_ok_and(|response| {
+            let status = response.status();
+            status.is_success() || status.is_redirection()
+        })
+    }
+}
+
+/// The same rendition's URL for another height: `…/480.mp4:hls:manifest.m3u8`
+/// becomes `…/720.mp4:hls:manifest.m3u8`. `None` for a URL not shaped so.
+fn with_height(url: &str, height: u32) -> Option<String> {
+    let (folder, name) = url.rsplit_once('/')?;
+    let (digits, rest) = name.split_once('.')?;
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) || !rest.starts_with("mp4")
+    {
+        return None;
+    }
+    Some(format!("{folder}/{height}.{rest}"))
 }
 
 /// Reads a `var <name> = "...";` assignment out of the page.
@@ -270,6 +357,15 @@ fn decode_links(response: &FtorResponse) -> Vec<StreamVariant> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_rendition_url_takes_another_height() {
+        assert_eq!(
+            with_height("https://cdn/x/abc:1/480.mp4:hls:manifest.m3u8", 1080).as_deref(),
+            Some("https://cdn/x/abc:1/1080.mp4:hls:manifest.m3u8")
+        );
+        assert_eq!(with_height("https://cdn/x/master.m3u8", 720), None);
+    }
 
     const EMBED_PAGE: &str = include_str!("../tests/fixtures/kodik_embed.html");
     const FTOR_BODY: &str = include_str!("../tests/fixtures/kodik_ftor.json");
