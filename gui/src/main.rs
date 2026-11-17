@@ -73,6 +73,18 @@ const SETTINGS_DESTINATION: i32 = 6;
 const PROFILE_DESTINATION: i32 = 4;
 
 fn main() -> Result<()> {
+    // The machine test, started by the program itself: no window, its result
+    // on standard output, its log on standard error.
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() == Some(bench::FLAG) {
+        tracing_subscriber::fmt()
+            .with_env_filter("anirust=info,anirust_player=info")
+            .with_writer(std::io::stderr)
+            .init();
+        bench::child_main(&args.next().unwrap_or_default());
+        return Ok(());
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::builder()
@@ -3091,6 +3103,15 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         chosen.neural_upscale.set(!chosen.neural_upscale.get());
         keep_now();
         chosen.apply_generation(player);
+    });
+
+    let chosen = Rc::clone(settings);
+    let keep_now = Rc::clone(&keep);
+    window.on_set_neural_upscale(move |on| {
+        if chosen.neural_upscale.replace(on) != on {
+            keep_now();
+            chosen.apply_generation(player);
+        }
     });
 
     // A vendor's runtime, fetched from the vendor when asked. The line on

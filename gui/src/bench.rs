@@ -99,7 +99,7 @@ pub fn wire(window: &MainWindow, held: &Rc<Cell<preferences::Preferences>>, engi
                         }
                     });
                 };
-                let result = run(engine, &step);
+                let result = run_apart(engine, &step);
                 tracing::info!(?result, "machine test done");
                 if let Ok(mut kept) = found.lock() {
                     *kept = result;
@@ -134,9 +134,10 @@ fn apply(window: &MainWindow, found: Found) {
         window.invoke_set_neural_engine(found.engine as i32);
     }
     window.invoke_set_frame_rate(found.rate as i32);
-    if window.get_neural_upscale() != found.neural {
-        window.invoke_toggle_neural_upscale();
-    }
+    // Set, not flipped: the window's copy of it is only kept up to date while
+    // an episode plays, and a flip read off a stale copy turned the network
+    // on when the test had said no.
+    window.invoke_set_neural_upscale(found.neural);
     match found.sharpness {
         0 => window.invoke_set_upscale(0),
         1 => {
@@ -152,6 +153,75 @@ fn apply(window: &MainWindow, found: Found) {
             window.invoke_set_upscale_quality(2);
         }
     }
+}
+
+/// The flag the program is started with to run the test in a process of its
+/// own.
+pub const FLAG: &str = "--machine-test";
+
+/// Runs the test in a child process and reads what it found.
+///
+/// Apart because what the networks take is not given back while the process
+/// lives: TensorRT's context and VapourSynth's frame pools stay allocated after
+/// the player that used them is gone — gigabytes, for a test that runs once.
+/// The child also writes its scripts to a folder of its own, so it never
+/// touches the one an episode plays through.
+fn run_apart(engine: usize, step: &dyn Fn(i32)) -> Found {
+    use std::io::BufRead;
+
+    let Ok(exe) = std::env::current_exe() else {
+        return Found::default();
+    };
+    let child = std::process::Command::new(exe)
+        .arg(FLAG)
+        .arg(engine.to_string())
+        .env(
+            "ANIRUST_SCRIPT_DIR",
+            anirust_player::frames::work_dir().join("machine-test"),
+        )
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .spawn();
+    let mut child = match child {
+        Ok(child) => child,
+        Err(error) => {
+            tracing::warn!(%error, "could not start the machine test");
+            return Found::default();
+        }
+    };
+    let mut found = Found::default();
+    if let Some(out) = child.stdout.take() {
+        for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+            let words: Vec<&str> = line.split_whitespace().collect();
+            match words.as_slice() {
+                ["step", at] => step(at.parse().unwrap_or(0)),
+                ["found", engine, rate, neural, sharpness] => {
+                    found = Found {
+                        engine: engine.parse().unwrap_or(0),
+                        rate: rate.parse().unwrap_or(0),
+                        neural: *neural == "1",
+                        sharpness: sharpness.parse().unwrap_or(1),
+                    };
+                }
+                _ => {}
+            }
+        }
+    }
+    let _ = child.wait();
+    found
+}
+
+/// The child's side: runs the test and writes the steps and the result to
+/// standard output, one line each, for [`run_apart`] to read.
+pub fn child_main(engine: &str) {
+    let found = run(engine.parse().unwrap_or(0), &|at| println!("step {at}"));
+    println!(
+        "found {} {} {} {}",
+        found.engine,
+        found.rate,
+        u8::from(found.neural),
+        found.sharpness
+    );
 }
 
 /// The test itself. Blocks for a minute or so, longer the first time a
@@ -220,21 +290,32 @@ fn run(engine: usize, step: &dyn Fn(i32)) -> Found {
         None => 0,
     };
 
+    // The network on top of the smoothness found, then with less smoothness
+    // under it: doubled to 1440p first, RIFE then draws four times the
+    // pixels, and a card that runs each alone with room to spare may not run
+    // both at sixty. The network is the bigger step for the picture, so it
+    // stays and the smoothness gives way.
     step(1);
-    let neural = mlrt.as_ref().is_some_and(|mlrt| {
-        let generation = match rate {
-            2 => Some(frames(TargetRate::Sixty)),
-            1 => Some(frames(TargetRate::Double)),
-            _ => None,
-        };
-        keeps_up(
-            Networks::Mlrt(mlrt),
-            Enhancement {
+    let mut rate = rate;
+    let mut neural = false;
+    if let Some(mlrt) = mlrt.as_ref() {
+        for tried in (0..=rate).rev() {
+            let generation = match tried {
+                2 => Some(frames(TargetRate::Sixty)),
+                1 => Some(frames(TargetRate::Double)),
+                _ => None,
+            };
+            let enhancement = Enhancement {
                 frames: generation,
                 upscale: true,
-            },
-        )
-    });
+            };
+            if keeps_up(Networks::Mlrt(mlrt), enhancement) {
+                neural = true;
+                rate = tried;
+                break;
+            }
+        }
+    }
 
     Found {
         engine: used_engine,

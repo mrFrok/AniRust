@@ -929,7 +929,7 @@ impl Player {
             return self.apply_hwdec();
         };
 
-        let dir = frames::work_dir();
+        let dir = frames::script_dir();
         let script = dir.join("rife.vpy");
         let error_file = dir.join("rife-error.txt");
         let _ = std::fs::remove_file(&error_file);

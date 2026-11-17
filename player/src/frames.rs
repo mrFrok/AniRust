@@ -716,10 +716,20 @@ pub fn work_dir() -> PathBuf {
         .join("anirust")
 }
 
+/// Where the script and its error note go: [`work_dir`], unless
+/// `ANIRUST_SCRIPT_DIR` names another. The machine test runs in a process of
+/// its own and gives it one, so its scripts never overwrite the player's.
+/// Engines and models stay in [`work_dir`], shared, so what the test builds
+/// the player finds.
+#[must_use]
+pub fn script_dir() -> PathBuf {
+    std::env::var_os("ANIRUST_SCRIPT_DIR").map_or_else(work_dir, PathBuf::from)
+}
+
 /// The note a failed script left, if it left one.
 #[must_use]
 pub fn last_error() -> Option<String> {
-    std::fs::read_to_string(work_dir().join("rife-error.txt"))
+    std::fs::read_to_string(script_dir().join("rife-error.txt"))
         .ok()
         .filter(|text| !text.trim().is_empty())
 }
