@@ -2564,7 +2564,10 @@ impl Settings {
     /// only spent the GPU — on 720p sources, enough to tip a 4070 Ti SUPER
     /// into dropping frames.
     fn upscale(&self) -> UpscalePreset {
-        if self.on_mlrt() && self.neural_upscale.get() {
+        // Ultra asks for both, on purpose: the network, then Anime4K's
+        // strongest quality over what it made.
+        let ultra = self.upscale_quality.get() == UpscaleQuality::ALL.len() - 1;
+        if self.on_mlrt() && self.neural_upscale.get() && !ultra {
             return UpscalePreset::OFF;
         }
         UpscalePreset::new(

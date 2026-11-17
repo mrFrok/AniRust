@@ -222,7 +222,8 @@ export component PlayerPage inherits Rectangle {
     property <bool> chrome-pinned: root.sheet != "" || root.state != "playing";
     /// The sharpness the simple row shows: 0 off, 1 the shaders, 2 the most
     /// this machine does — the network when it is there, A+A at max when not.
-    property <int> sharpness: root.neural-upscale || (root.upscale == 4 && root.upscale-quality >= 2) ? 2
+    property <int> sharpness: root.neural-upscale && root.neural-ready && root.upscale == 4 && root.upscale-quality == 3 ? 3
+        : root.neural-upscale || (root.upscale == 4 && root.upscale-quality >= 2) ? 2
         : root.upscale != 0 ? 1 : 0;
     property <bool> neural-ready: root.neural-engine != 0 && root.engine-ready;
     /// Whether the picture sheet shows every knob, not just the three rows.
@@ -734,6 +735,27 @@ export component PlayerPage inherits Rectangle {
                                     }
                                 }
                             }
+
+                            // The network and Anime4K's heaviest set on top
+                            // of it: the sharpest picture, for a card with
+                            // room to spare.
+                            if root.neural-ready: SettingChip {
+                                label: Tr.quality-ultra;
+                                heavy: true;
+                                selected: root.sharpness == 3;
+                                clicked => {
+                                    if (!root.neural-upscale) { root.toggle-neural-upscale(); }
+                                    root.set-upscale(4);
+                                    root.set-upscale-quality(3);
+                                }
+                            }
+                        }
+
+                        if root.sharpness == 3: Text {
+                            text: Tr.sharpness-ultra-hint;
+                            color: #FFFFFF8C;
+                            font-size: Typography.body-small-size;
+                            wrap: word-wrap;
                         }
 
                         if root.sharpness == 2: Text {

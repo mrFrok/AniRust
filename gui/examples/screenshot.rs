@@ -687,7 +687,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     draw(&window);
     if state == "playing"
         || state == "theatre"
-        || state == "upscale"
+        || state == "upscale" || state == "upscale-ultra"
         || state == "paused"
         || state == "player-settings"
         || state == "player-hint"
@@ -748,9 +748,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_has_video(true);
     }
     // The upscale sheet, a mode and a quality picked.
-    if state == "upscale" {
+    if state == "upscale" || state == "upscale-ultra" {
+        let ultra = state == "upscale-ultra";
         ui.set_upscale(4);
-        ui.set_upscale_quality(2);
+        ui.set_upscale_quality(if ultra { 3 } else { 2 });
+        ui.set_engine_ready(true);
+        ui.set_neural_upscale(ultra);
         ui.set_frames_available(true);
         ui.set_frame_rate(2);
         ui.set_engine_choices(slint::ModelRc::new(slint::VecModel::from(vec![0, 1, 2, 3])));
