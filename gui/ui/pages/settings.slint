@@ -13,6 +13,7 @@ import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { Scheme, Accent } from "../globals/scheme.slint";
+import { QuietButton } from "../components/quiet-button.slint";
 
 export component SettingsPage inherits Rectangle {
     in property <bool> signed-in: false;
@@ -68,7 +69,9 @@ export component SettingsPage inherits Rectangle {
 
             VerticalLayout {
                 horizontal-stretch: 1000;
-                max-width: 720px;
+                // One width for the page: a label and its switch read as a
+                // pair only when they are not a window apart.
+                max-width: 560px;
                 spacing: Spacing.base;
                 alignment: start;
 
@@ -113,7 +116,7 @@ export component SettingsPage inherits Rectangle {
                         clicked => { root.open-account-settings(); }
                     }
 
-                    OutlineButton {
+                    QuietButton {
                         text: Tr.sign-out;
                         clicked => { root.sign-out(); }
                     }

@@ -1,0 +1,51 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { MaterialPalette } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing, Motion } from "../globals/shape.slint";
+
+/// A secondary action in the colour of secondary text: there, findable, and
+/// not competing with the one action a screen is about. Material's text
+/// button paints every such action in the accent.
+export component QuietButton inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> has-icon: false;
+    callback clicked;
+
+    height: 40px;
+    width: row.preferred-width;
+    border-radius: Shape.small;
+    background: touch.has-hover ? MaterialPalette.on-surface.with-alpha(0.08) : transparent;
+    animate background { duration: Motion.standard-duration; easing: Motion.standard; }
+
+    row := HorizontalLayout {
+        padding-left: Spacing.small;
+        padding-right: Spacing.small;
+        spacing: Spacing.small;
+
+        if root.has-icon: VerticalLayout {
+            alignment: center;
+
+            Image {
+                source: root.icon;
+                colorize: touch.has-hover ? MaterialPalette.on-surface : MaterialPalette.on-surface-variant;
+                width: 18px;
+                height: 18px;
+            }
+        }
+
+        Text {
+            text: root.text;
+            color: touch.has-hover ? MaterialPalette.on-surface : MaterialPalette.on-surface-variant;
+            font-size: Typography.label-large-size;
+            font-weight: Typography.label-large-weight;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}

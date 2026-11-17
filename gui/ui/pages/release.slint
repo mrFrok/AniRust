@@ -12,12 +12,13 @@
 // that owns the video texture is declared once, in the window.
 
 import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, IconButton, FloatingActionButton, FABStyle, TonalButton, ActionChip, OutlineButton, TextButton } from "@material";
+import { MaterialPalette, IconButton, FloatingActionButton, FABStyle, TonalButton, ActionChip, OutlineButton } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { VideoItem, PickerOption, EpisodeItem, LinkItem } from "../structs.slint";
 import { EpisodePicker, Poster, Dropdown } from "../components/release-parts.slint";
+import { QuietButton } from "../components/quiet-button.slint";
 
 /// A heading and a wrapping row of chips under it.
 component LinkRow inherits VerticalLayout {
@@ -28,21 +29,22 @@ component LinkRow inherits VerticalLayout {
     callback picked(int);
     callback act();
 
-    spacing: Spacing.tight;
-    padding-top: Spacing.small;
+    spacing: Spacing.small;
+    padding-top: Spacing.base;
 
     HorizontalLayout {
         spacing: Spacing.small;
 
         Text {
             text: root.heading;
-            color: MaterialPalette.on-surface-variant;
-            font-size: Typography.label-medium-size;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.title-small-size;
+            font-weight: Typography.title-small-weight-em;
             vertical-alignment: center;
             horizontal-stretch: 1;
         }
 
-        if root.action != "": TextButton {
+        if root.action != "": QuietButton {
             text: root.action;
             clicked => { root.act(); }
         }
@@ -74,13 +76,14 @@ component VideoRow inherits VerticalLayout {
     in property <[VideoItem]> items;
     callback picked(int);
 
-    spacing: Spacing.tight;
-    padding-top: Spacing.small;
+    spacing: Spacing.small;
+    padding-top: Spacing.base;
 
     Text {
         text: root.heading;
-        color: MaterialPalette.on-surface-variant;
-        font-size: Typography.label-medium-size;
+        color: MaterialPalette.on-surface;
+        font-size: Typography.title-small-size;
+        font-weight: Typography.title-small-weight-em;
     }
 
     Flickable {
@@ -103,8 +106,8 @@ component VideoRow inherits VerticalLayout {
                         border-radius: Shape.medium;
                         clip: true;
                         background: MaterialPalette.surface-container-high;
-                        border-width: touch.has-hover ? 2px : 0px;
-                        border-color: MaterialPalette.primary;
+                        border-width: 1px;
+                        border-color: touch.has-hover ? MaterialPalette.on-surface-variant : transparent;
 
                         Image {
                             source: item.image;
@@ -599,50 +602,37 @@ export component ReleasePage inherits Rectangle {
                                 font-size: Typography.body-medium-size;
                             }
 
+                            // One line of facts, the score first and the
+                            // only one in full colour.
                             HorizontalLayout {
                                 spacing: Spacing.small;
                                 alignment: start;
 
                                 if root.score != "": Text {
                                     text: "★ " + root.score;
-                                    color: MaterialPalette.primary;
-                                    font-size: Typography.title-medium-size;
-                                    font-weight: Typography.title-medium-weight-em;
-                                }
-
-                                Text {
-                                    text: root.year;
-                                    color: MaterialPalette.on-surface-variant;
-                                    font-size: Typography.body-medium-size;
+                                    color: MaterialPalette.on-surface;
+                                    font-size: Typography.body-large-size;
+                                    font-weight: 500;
                                     vertical-alignment: center;
                                 }
 
                                 Text {
-                                    text: root.episodes-label;
-                                    color: MaterialPalette.on-surface-variant;
-                                    font-size: Typography.body-medium-size;
-                                    vertical-alignment: center;
-                                }
-
-                                if root.status != "": Text {
-                                    text: root.status;
+                                    text: root.year
+                                        + (root.episodes-label != "" ? " · " + root.episodes-label : "")
+                                        + (root.status != "" ? " · " + root.status : "");
                                     color: MaterialPalette.on-surface-variant;
                                     font-size: Typography.body-medium-size;
                                     vertical-alignment: center;
                                 }
                             }
 
-                            if root.genres != "": Text {
-                                text: root.genres;
+                            if root.genres != "" || root.studio != "": Text {
+                                text: root.genres
+                                    + (root.genres != "" && root.studio != "" ? " · " : "")
+                                    + root.studio;
                                 color: MaterialPalette.on-surface-variant;
-                                font-size: Typography.body-small-size;
+                                font-size: Typography.body-medium-size;
                                 wrap: word-wrap;
-                            }
-
-                            if root.studio != "": Text {
-                                text: root.studio;
-                                color: MaterialPalette.on-surface-variant;
-                                font-size: Typography.body-small-size;
                             }
 
                             Text {
@@ -663,7 +653,8 @@ export component ReleasePage inherits Rectangle {
                             // thirty more downloads.
                             HorizontalLayout {
                                 alignment: start;
-                                padding-top: Spacing.tight;
+                                spacing: Spacing.small;
+                                padding-top: Spacing.small;
 
                                 OutlineButton {
                                     icon: @image-url("../icons/comment.svg");
@@ -671,7 +662,9 @@ export component ReleasePage inherits Rectangle {
                                     clicked => { root.open-comments(); }
                                 }
 
-                                TextButton {
+                                // Needed rarely, and never instead of watching.
+                                QuietButton {
+                                    has-icon: true;
                                     icon: @image-url("../icons/flag.svg");
                                     text: Tr.report;
                                     clicked => { root.report(); }

@@ -19,6 +19,7 @@ import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { FeedPost, ChannelItem } from "../structs.slint";
+import { QuietButton } from "../components/quiet-button.slint";
 import { VoteArrow } from "../components/comments.slint";
 
 /// An icon and a number beside it.
@@ -131,7 +132,7 @@ component PostCard inherits Rectangle {
                     clicked => { root.toggle-subscription(); }
                 }
 
-                if root.post.subscribed: TextButton {
+                if root.post.subscribed: QuietButton {
                     text: Tr.subscribed;
                     clicked => { root.toggle-subscription(); }
                 }
@@ -154,7 +155,7 @@ component PostCard inherits Rectangle {
         if root.post.text != "" && (root.expanded || measure.preferred-height > folded.preferred-height + 1px): HorizontalLayout {
             alignment: start;
 
-            TextButton {
+            QuietButton {
                 text: root.expanded ? Tr.show-less : Tr.show-more;
                 clicked => { root.expanded = !root.expanded; }
             }
@@ -426,7 +427,7 @@ component ChannelRow inherits Rectangle {
             // its posts stay reachable and leave the feed.
             if root.channel.subscribed: VerticalLayout {
                 alignment: center;
-                TextButton {
+                QuietButton {
                     text: root.channel.muted ? Tr.unmute : Tr.mute;
                     clicked => { root.toggle-mute(); }
                 }
@@ -442,7 +443,7 @@ component ChannelRow inherits Rectangle {
 
             if root.channel.subscribed: VerticalLayout {
                 alignment: center;
-                TextButton {
+                QuietButton {
                     text: Tr.subscribed;
                     clicked => { root.toggle-subscription(); }
                 }
@@ -540,7 +541,8 @@ export component FeedPage inherits Rectangle {
                     HorizontalLayout {
                         alignment: start;
 
-                        TextButton {
+                        QuietButton {
+                            has-icon: true;
                             icon: @image-url("../icons/back.svg");
                             text: Tr.back-to-feed;
                             clicked => { root.close-channel(); }

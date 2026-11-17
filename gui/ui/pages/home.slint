@@ -298,14 +298,8 @@ export component HomePage inherits Rectangle {
                 padding-right: Spacing.base;
                 spacing: Spacing.base;
 
-                Text {
-                    text: "AniRust";
-                    color: MaterialPalette.on-surface;
-                    font-size: Typography.title-large-size;
-                    font-weight: Typography.title-large-weight-em;
-                    vertical-alignment: center;
-                }
-
+                // No wordmark: the mark at the top of the rail already says
+                // whose window this is.
                 field := Rectangle {
                     horizontal-stretch: 1;
                     height: Spacing.touch-target;
