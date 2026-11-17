@@ -422,8 +422,6 @@ Real-ESRGAN (BSD-3-Clause). The vendors' runtimes are not shipped: TensorRT-RTX
 is NVIDIA's, under NVIDIA's licence, and is fetched from NVIDIA by the person
 using the program when they ask; OpenVINO (Apache 2.0) likewise from Intel;
 ROCm comes from the distribution. The Material 3 component set in
-`gui/material-1.18.0/` is MIT, vendored from `ui-libraries/material` of
+`gui/material-1.19.0/` is MIT, vendored from `ui-libraries/material` of
 slint-ui/slint at the tag matching the `slint` dependency — it has no crates.io package, and a UI that changes shape when
-someone else tags a release is not a UI anyone can review. One change is
-ours, marked in place: the secondary tab bar gives every tab the same width,
-so its indicator stays under the tab it marks.
+someone else tags a release is not a UI anyone can review. It is used unchanged.
