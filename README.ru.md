@@ -209,13 +209,13 @@ VapourSynth, сам VapourSynth и плагин с моделями. libmpv и �
   а vs-mlrt — из релиза (`anirust-<версия>-mlrt-linux-x86_64.tar.gz` — это
   только vs-mlrt).
 - **Архив для musl** использует системную libmpv. Установите её командой
-  `sudo apk add mpv-libs libxkbcommon-x11 ffmpeg` на Alpine или
+  `sudo apk add mpv-libs libxkbcommon-x11 libxcursor libxi ffmpeg` на Alpine или
   `sudo xbps-install -S mpv libxkbcommon-x11 ffmpeg` на Void musl, затем распакуйте
   архив и запустите `anirust`. Для готового комплекта с VapourSynth, RIFE и
   vs-mlrt на x86_64 или для старого релиза x86_64 без архива musl используйте
   Flatpak.
 - **Архив aarch64 с glibc** использует системную libmpv. На Ubuntu или
-  Debian установите `libmpv2 libxkbcommon-x11-0 ffmpeg`, распакуйте архив
+  Debian установите `libmpv2 libxkbcommon-x11-0 libxcursor1 libxi6 ffmpeg`, распакуйте архив
   и запустите `anirust`. При установке `.deb` для arm64 APT подтянет
   обязательные библиотеки.
 - **AppImage** — сделайте файл исполняемым (`chmod +x`) и запустите; при

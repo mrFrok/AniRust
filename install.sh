@@ -244,6 +244,12 @@ package_for() { # pm need
         pacman:mpv | xbps:mpv) echo mpv ;;
         apk:xkb-x11 | pacman:xkb-x11 | xbps:xkb-x11) echo libxkbcommon-x11 ;;
         apt:xkb-x11) echo libxkbcommon-x11-0 ;;
+        apk:x-cursor | pacman:x-cursor) echo libxcursor ;;
+        apk:x-input | pacman:x-input) echo libxi ;;
+        apt:x-cursor) echo libxcursor1 ;;
+        apt:x-input) echo libxi6 ;;
+        xbps:x-cursor) echo libXcursor ;;
+        xbps:x-input) echo libXi ;;
         apk:ffmpeg | apt:ffmpeg | pacman:ffmpeg | xbps:ffmpeg) echo ffmpeg ;;
         pacman:vapoursynth | apt:vapoursynth | dnf:vapoursynth | zypper:vapoursynth | xbps:vapoursynth) echo vapoursynth ;;
         pacman:intel-va | dnf:intel-va | zypper:intel-va | xbps:intel-va | apk:intel-va) echo intel-media-driver ;;
@@ -295,7 +301,7 @@ install_dependencies() { # package
     case "$kind" in
         tarball)
             if [ "$ARCH" = aarch64 ] || is_musl; then
-                needs+=(mpv xkb-x11 ffmpeg)
+                needs+=(mpv xkb-x11 x-cursor x-input ffmpeg)
             else
                 needs+=(vapoursynth)
             fi

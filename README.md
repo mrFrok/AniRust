@@ -209,12 +209,12 @@ with a `.sha256` beside it (`sha256sum -c FILE.sha256`).
   from upstream and vs-mlrt from the release
   (`anirust-<version>-mlrt-linux-x86_64.tar.gz` is that vs-mlrt alone).
 - **The musl tarball** uses the system's libmpv. Install it with
-  `sudo apk add mpv-libs libxkbcommon-x11 ffmpeg` on Alpine or
+  `sudo apk add mpv-libs libxkbcommon-x11 libxcursor libxi ffmpeg` on Alpine or
   `sudo xbps-install -S mpv libxkbcommon-x11 ffmpeg` on Void musl, then unpack the
   archive and run `anirust` inside. Use the Flatpak for bundled VapourSynth,
   RIFE and vs-mlrt on x86_64, or for an older x86_64 release without a musl archive.
 - **The aarch64 glibc tarball** uses the host's libmpv. On Ubuntu or Debian,
-  install `libmpv2 libxkbcommon-x11-0 ffmpeg`, unpack the archive, and run
+  install `libmpv2 libxkbcommon-x11-0 libxcursor1 libxi6 ffmpeg`, unpack the archive, and run
   `anirust`. The arm64 `.deb` installs the required libraries through APT.
 - **The AppImage** — `chmod +x` it and run it; the first start adds it to the
   desktop's applications. One file with its own libmpv (with the filter), RIFE

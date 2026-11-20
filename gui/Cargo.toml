@@ -91,7 +91,7 @@ and progress in step with an Anixart account."""
 section = "video"
 priority = "optional"
 depends = "$auto"
-recommends = "xdg-desktop-portal"
+recommends = "xdg-desktop-portal, libxkbcommon-x11-0, libxcursor1, libxi6"
 assets = [
     ["target/release/anirust", "usr/bin/", "755"],
     ["../packaging/linux/io.github.mrfrok.AniRust.desktop", "usr/share/applications/", "644"],
