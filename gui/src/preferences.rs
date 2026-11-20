@@ -154,6 +154,7 @@ pub struct Preferences {
     /// The machine test has been offered — taken, applied or turned down —
     /// so the next start does not offer it again.
     pub machine_tested: bool,
+    pub enhance_profile: usize,
     /// The interface's size, as a place in [`UI_SCALES`].
     pub ui_scale: usize,
 }
@@ -171,6 +172,7 @@ impl Default for Preferences {
             check_updates: true,
             player: PlayerPreferences::default(),
             machine_tested: false,
+            enhance_profile: 2,
             ui_scale: 1,
         }
     }

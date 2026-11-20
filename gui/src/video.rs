@@ -370,6 +370,11 @@ impl VideoBridge {
         self.player
     }
 
+    pub fn stop(&self) {
+        self.pending.borrow_mut().take();
+        self.player.later("stop playback", Player::stop);
+    }
+
     /// Tells the render loop whether the picture is advancing.
     ///
     /// Called from the status poll rather than from the render loop itself,

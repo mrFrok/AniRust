@@ -20,6 +20,28 @@ use libmpv2::Mpv;
 use crate::frames::{self, Enhancement, Networks};
 use crate::{Error, Result};
 
+/// Offline processing presets, from minimum memory use to highest quality.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Profile {
+    Economy,
+    Balanced,
+    High,
+    Maximum,
+}
+
+impl Profile {
+    pub const ALL: [Self; 4] = [Self::Economy, Self::Balanced, Self::High, Self::Maximum];
+
+    pub fn streams(self) -> u8 {
+        match self {
+            Self::Economy => 1,
+            Self::Balanced => 2,
+            Self::High => 6,
+            Self::Maximum => 8,
+        }
+    }
+}
+
 /// How the picture is written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Encoder {
@@ -40,10 +62,24 @@ impl Encoder {
 
     /// Quality-led settings: a constant quality near transparent, 10 bits so
     /// the gradients anime is full of do not band.
-    fn options(self) -> &'static str {
+    fn options(self, profile: Profile) -> String {
+        let (cq, crf, nvenc, cpu) = match profile {
+            Profile::Economy => (24, 23, "p3", "fast"),
+            Profile::Balanced => (21, 20, "p5", "medium"),
+            Profile::High => (19, 18, "p7", "slow"),
+            Profile::Maximum => (17, 16, "p7", "slow"),
+        };
         match self {
-            Self::Nvenc => "preset=p7,tune=hq,rc=vbr,cq=19,b=0,multipass=fullres,spatial-aq=1",
-            Self::X265 => "crf=18,preset=slow",
+            Self::Nvenc => {
+                let multipass = match profile {
+                    Profile::Economy | Profile::Balanced => "disabled",
+                    Profile::High | Profile::Maximum => "fullres",
+                };
+                format!(
+                    "preset={nvenc},tune=hq,rc=vbr,cq={cq},b=0,multipass={multipass},spatial-aq=1"
+                )
+            }
+            Self::X265 => format!("crf={crf},preset={cpu}"),
         }
     }
 }
@@ -67,9 +103,13 @@ pub struct Job<'a> {
     pub networks: Networks<'a>,
     pub enhancement: Enhancement,
     pub encoder: Encoder,
+    pub profile: Profile,
+    pub upscaler: frames::Upscaler<'a>,
     /// A folder of the job's own for the script, so jobs and playback never
     /// share one.
     pub scratch: &'a Path,
+    /// The screen's rate, for frames made to match it.
+    pub display_fps: Option<f64>,
 }
 
 /// Writes `source`'s picture through `enhancement` to `video_out`, a
@@ -89,7 +129,10 @@ pub fn picture(
         networks,
         enhancement,
         encoder,
+        profile,
+        upscaler,
         scratch,
+        display_fps,
     } = *job;
     frames::point_at_bundled_vapoursynth();
     let io = |source| Error::Io {
@@ -99,27 +142,36 @@ pub fn picture(
     std::fs::create_dir_all(scratch).map_err(io)?;
     std::fs::create_dir_all(frames::engines_dir()).map_err(io)?;
     if let Networks::Mlrt(mlrt) = networks {
-        frames::copy_models(&mlrt.dir).map_err(io)?;
+        frames::copy_offline_models(&mlrt.dir, enhancement, upscaler).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                Error::Filter(format!("missing model: {error}"))
+            } else {
+                io(error)
+            }
+        })?;
     }
     let script = scratch.join("enhance.vpy");
     let error_file = scratch.join("enhance-error.txt");
     let _ = std::fs::remove_file(&error_file);
     std::fs::write(
         &script,
-        frames::script_with(
+        frames::script_with_streams(
             networks,
             enhancement,
-            None,
+            display_fps,
             &error_file,
-            frames::Upscaler::RealEsrgan,
+            upscaler,
             1080,
+            Some(profile.streams()),
         ),
     )
     .map_err(io)?;
 
+    let streams = profile.streams();
     let filter = format!(
-        "vapoursynth=file={}:buffered-frames=8:concurrent-frames=4",
-        frames::mpv_quoted(&script.to_string_lossy())
+        "vapoursynth=file={}:buffered-frames={}:concurrent-frames={streams}",
+        frames::mpv_quoted(&script.to_string_lossy()),
+        (streams * 2).max(8)
     );
     let output = video_out.to_string_lossy().into_owned();
     let mpv = Mpv::with_initializer(|init| {
@@ -135,7 +187,7 @@ pub fn picture(
         init.set_property("o", output.as_str())?;
         init.set_property("of", "matroska")?;
         init.set_property("ovc", encoder.name())?;
-        init.set_property("ovcopts", encoder.options())?;
+        init.set_property("ovcopts", encoder.options(profile).as_str())?;
         init.set_property("idle", "yes")?;
         for option in ["osc", "ytdl", "load-scripts"] {
             let _ = init.set_property(option, false);
@@ -147,8 +199,7 @@ pub fn picture(
     let path = source.to_string_lossy();
     mpv.command("loadfile", &[path.as_ref()])?;
 
-    let mut started = false;
-    loop {
+    'encode: loop {
         std::thread::sleep(Duration::from_millis(250));
         if cancel.load(Ordering::Relaxed) {
             let _ = mpv.command("stop", &[]);
@@ -163,19 +214,23 @@ pub fn picture(
             let _ = mpv.command("stop", &[]);
             return Err(Error::Filter(note));
         }
-        let idle = mpv.get_property::<bool>("idle-active").unwrap_or(false);
+
         let position = mpv.get_property::<f64>("time-pos").ok();
         let duration = mpv.get_property::<f64>("duration").ok();
         if let (Some(at), Some(of)) = (position, duration)
             && of > 0.0
         {
-            started = true;
             report(Progress::Working((at / of).clamp(0.0, 1.0) as f32));
         }
-        // Idle again once the file is through: mpv has closed the output by
-        // the time it says so.
-        if idle && started {
-            break;
+        while let Some(event) = mpv.wait_event(0.0) {
+            if let libmpv2::events::Event::EndFile(reason) = event? {
+                if reason == libmpv2::mpv_end_file_reason::Eof {
+                    break 'encode;
+                }
+                return Err(Error::Filter(format!(
+                    "encoding ended unexpectedly ({reason})"
+                )));
+            }
         }
     }
     // Dropping mpv finishes and closes the file it wrote.

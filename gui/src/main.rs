@@ -1508,14 +1508,77 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
         window.set_enhance_can_upscale(queue.can_upscale);
         window.set_enhance_can_generate(queue.can_generate);
     }
+    downloads::show(window, &app.queue);
+    window.on_play_download({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |index| {
+            let Some(window) = weak.upgrade() else { return };
+            let Some((path, title, episode)) = usize::try_from(index)
+                .ok()
+                .and_then(|index| downloads::saved_episode(&app.queue, index))
+            else {
+                return;
+            };
+
+            let source = std::path::absolute(&path)
+                .ok()
+                .filter(|path| path.is_file() && std::fs::File::open(path).is_ok())
+                .and_then(|path| path.into_os_string().into_string().ok())
+                .map(MediaSource::new);
+
+            let load_failures = app.bridge.player().status().load_failures;
+            let started = source.is_some_and(|source| app.bridge.play(source).is_ok());
+            if !started {
+                tracing::warn!(path = %path.display(), "could not open saved episode");
+                window.set_download_playback_error(true);
+                return;
+            }
+
+            app.playing.borrow_mut().take();
+            app.settings.local_load_failures.set(load_failures);
+            app.settings.tracks_stale.set(true);
+            window.set_download_playback_error(false);
+            window.set_current_episode(0);
+            window.set_has_previous(false);
+            window.set_has_next(false);
+            window.set_has_skip(false);
+            window.set_has_video(false);
+            window.set_position_text("0:00".into());
+            window.set_duration_text("--:--".into());
+            window.set_progress(0.0);
+            window.set_buffered(0.0);
+            window.set_quality_label("".into());
+            window.set_hint("".into());
+            window.set_qualities(slint::ModelRc::default());
+            window.set_player_sheet("".into());
+            window.set_episode_label(episode.into());
+            window.set_local_playback_title(title.into());
+            window.set_state("loading".into());
+            window.set_playing(true);
+            window.set_screen("local-playback".into());
+        }
+    });
+    window.set_enhance_profile(app.prefs.get().enhance_profile.min(3) as i32);
     window.on_enhance_download({
         let app = Rc::clone(app);
         let weak = weak.clone();
-        move |index, upscale, rate| {
+        move |index, upscale, rate, profile| {
             let Some(window) = weak.upgrade() else { return };
+            let profile = profile.clamp(0, 3) as usize;
+            let mut prefs = app.prefs.get();
+            if prefs.enhance_profile != profile {
+                prefs.enhance_profile = profile;
+                app.prefs.set(prefs);
+                prefs.save();
+            }
+            window.set_enhance_profile(profile as i32);
             let choice = enhance::Choice {
+                profile: anirust_player::enhance::Profile::ALL[profile],
                 upscale,
-                rate: rate.clamp(0, 2) as usize,
+                rate: rate.clamp(0, 4) as usize,
+                display_millihz: desktop::refresh_rate(window.window())
+                    .map_or(0, |hz| (hz * 1000.0).round() as u32),
             };
             downloads::enhance(&window, &app.queue, index.max(0) as usize, choice);
         }
@@ -2080,7 +2143,7 @@ fn play_at(window: &MainWindow, app: &Rc<App>, position: i32, resume: Option<Dur
 
             // The viewer may have stepped on while this was in flight; what
             // came back is then for an episode nobody is waiting for.
-            if window.get_current_episode() != position {
+            if window.get_screen() != "release" || window.get_current_episode() != position {
                 tracing::debug!(position, "discarding a stream for a superseded episode");
                 return;
             }
@@ -2389,6 +2452,8 @@ struct Settings {
     /// two consecutive episodes routinely have the same count with different
     /// languages in it.
     tracks_stale: Cell<bool>,
+    /// Failure count when the saved file was sent to mpv.
+    local_load_failures: Cell<u64>,
 }
 
 impl Settings {
@@ -2427,6 +2492,7 @@ impl Settings {
             audio: RefCell::new(Vec::new()),
             last_subtitle: Cell::new(None),
             tracks_stale: Cell::new(true),
+            local_load_failures: Cell::new(0),
         }
     }
 }
@@ -2499,6 +2565,7 @@ impl Settings {
             let target = match rate {
                 TargetRate::Double => 60.0,
                 TargetRate::Sixty => 60.0,
+                TargetRate::HundredTwenty => 120.0,
                 TargetRate::Display => self.display_fps.get().unwrap_or(60.0),
                 TargetRate::HalfDisplay => self.display_fps.get().unwrap_or(120.0) / 2.0,
             };
@@ -3496,11 +3563,10 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     // Closing the player stops decoding: a stream running behind a screen
     // nobody is looking at costs bandwidth for nothing.
     let current = Rc::clone(playing);
+    let bridge = Rc::clone(bridge);
     let weak = window.as_weak();
     window.on_close_player(move || {
-        if let Err(error) = player.stop() {
-            tracing::warn!(%error, "stopping playback failed");
-        }
+        bridge.stop();
         current.borrow_mut().take();
 
         let Some(window) = weak.upgrade() else { return };
@@ -3514,6 +3580,9 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         if window.get_fullscreen() {
             window.set_fullscreen(false);
             window.window().set_fullscreen(false);
+        }
+        if window.get_screen() == "local-playback" {
+            window.set_screen("home".into());
         }
     });
 
@@ -3531,6 +3600,9 @@ fn wire_stepping(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 
         move || {
             let Some(window) = weak.upgrade() else { return };
+            if window.get_screen() != "release" {
+                return;
+            }
             let current = window.get_current_episode();
             let neighbour = {
                 let state = app.release.borrow();
@@ -3685,6 +3757,14 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             // stands still for seconds while the neural filters load, and
             // asking it directly here would stand the window still too.
             let status = player.status();
+            if window.get_screen() == "local-playback"
+                && !status.loaded
+                && status.load_failures != settings.local_load_failures.get()
+            {
+                window.invoke_close_player();
+                window.set_download_playback_error(true);
+                return;
+            }
             let position = status.position.unwrap_or_default();
             let duration = status.duration;
 
@@ -3764,11 +3844,13 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             // frame; a quarter-second of staleness costs nothing here.
             bridge.set_advancing(playback.is_active());
 
-            remember(&state, &client, &window, position, duration, &ticks);
+            if window.get_screen() == "release" {
+                remember(&state, &client, &window, position, duration, &ticks);
+            }
 
             // Following on to the next episode is what a viewer who watched
             // one to the end was going to ask for anyway.
-            if playback == PlaybackState::Ended {
+            if playback == PlaybackState::Ended && window.get_screen() == "release" {
                 if !was_ended.replace(true) {
                     tracing::info!("episode ended; going on to the next");
                     advance();

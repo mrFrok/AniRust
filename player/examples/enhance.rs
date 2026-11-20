@@ -54,7 +54,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 Encoder::Nvenc
             },
+            profile: enhance::Profile::High,
+            upscaler: anirust_player::frames::Upscaler::RealEsrgan,
             scratch: &scratch,
+            display_fps: None,
         },
         &Arc::new(AtomicBool::new(false)),
         |progress| {

@@ -36,6 +36,8 @@ pub enum TargetRate {
     /// Sixty, the rate most screens run at.
     #[default]
     Sixty,
+    /// A hundred and twenty: for a fast screen, or a file made at leisure.
+    HundredTwenty,
     /// The screen's own rate, as mpv reports it; sixty when it does not.
     Display,
     /// Half the screen's rate: 90 on a 180 Hz screen. Not offered as such —
@@ -449,6 +451,18 @@ impl Mlrt {
     #[must_use]
     pub fn find(backend: Backend) -> Option<Self> {
         let dir = Self::shipped().filter(|dir| dir.join(backend.plugin()).is_file())?;
+        Self::with_runtime(backend, dir)
+    }
+
+    /// Offline jobs select their models individually and can recover from a missing model.
+    pub fn for_offline(backend: Backend) -> Option<Self> {
+        let dir = places("ANIRUST_MLRT_DIR", "mlrt")
+            .into_iter()
+            .find(|dir| dir.join("vsmlrt.py").is_file() && dir.join(backend.plugin()).is_file())?;
+        Self::with_runtime(backend, dir)
+    }
+
+    fn with_runtime(backend: Backend, dir: PathBuf) -> Option<Self> {
         let runtime = backend
             .runtime_dir()
             .filter(|runtime| backend.is_runtime(runtime))?;
@@ -461,7 +475,7 @@ impl Mlrt {
 
     /// The script lines that load the runtime and the plugin, import
     /// vsmlrt and set `backend` up.
-    fn setup(&self) -> String {
+    fn setup(&self, streams: Option<u8>) -> String {
         let common = format!(
             "    mlrt = {mlrt}
     runtime = {runtime}
@@ -515,25 +529,30 @@ impl Mlrt {
     builder_env[path_var] = os.pathsep.join(libs + [builder_env.get(path_var, "")])
     backend = vsmlrt.Backend.TRT_RTX(
         fp16=False,  # the networks are fp16 already; see prepare-models.py
-        num_streams=4,
+        num_streams={streams},
         engine_folder={engines},
         custom_env=builder_env,
     )
 "#,
+                    streams = streams.unwrap_or(4),
                     engines = python_string(&engines_dir()),
                 ),
             ),
             Backend::OpenVino => (
                 "ov",
-                "    backend = vsmlrt.Backend.OV_GPU(fp16=False, num_streams=2)
-".to_owned(),
+                format!(
+                    "    backend = vsmlrt.Backend.OV_GPU(fp16=False, num_streams={})\n",
+                    streams.unwrap_or(2)
+                ),
             ),
             Backend::MigraphX => (
                 "migx",
-                r#"    vsmlrt.migraphx_driver_path = os.path.join(runtime, "bin", "migraphx-driver")
-    backend = vsmlrt.Backend.MIGX(fp16=False, custom_env=dict(os.environ))
-"#
-                .to_owned(),
+                format!(
+                    r#"    vsmlrt.migraphx_driver_path = os.path.join(runtime, "bin", "migraphx-driver")
+    backend = vsmlrt.Backend.MIGX(fp16=False, num_streams={}, custom_env=dict(os.environ))
+"#,
+                    streams.unwrap_or(1)
+                ),
             ),
         };
         format!(
@@ -563,7 +582,28 @@ pub fn models_cache() -> PathBuf {
 /// compiles from them beside them — MIGraphX does so with no say in where.
 /// Files already there at the same size are left alone.
 pub fn copy_models(shipped: &Path) -> std::io::Result<()> {
-    for model in MLRT_MODELS {
+    copy_selected_models(shipped, MLRT_MODELS)
+}
+
+pub(crate) fn copy_offline_models(
+    shipped: &Path,
+    enhancement: Enhancement,
+    upscaler: Upscaler<'_>,
+) -> std::io::Result<()> {
+    let rife = enhancement.frames.map(|frames| match frames.model {
+        RifeModel::Quality => MLRT_MODELS[0],
+        RifeModel::Fast => MLRT_MODELS[1],
+    });
+    let esrgan =
+        (enhancement.upscale && upscaler == Upscaler::RealEsrgan).then_some(MLRT_MODELS[2]);
+    copy_selected_models(shipped, rife.into_iter().chain(esrgan))
+}
+
+fn copy_selected_models<'a>(
+    shipped: &Path,
+    models: impl IntoIterator<Item = &'a str>,
+) -> std::io::Result<()> {
+    for model in models {
         let from = shipped.join("models").join(model);
         let to = models_cache().join(model);
         let same = std::fs::metadata(&to)
@@ -629,6 +669,26 @@ pub fn script_with(
     upscaler: Upscaler<'_>,
     upscale_limit: u32,
 ) -> String {
+    script_with_streams(
+        networks,
+        enhancement,
+        display_fps,
+        error_file,
+        upscaler,
+        upscale_limit,
+        None,
+    )
+}
+
+pub(crate) fn script_with_streams(
+    networks: Networks<'_>,
+    enhancement: Enhancement,
+    display_fps: Option<f64>,
+    error_file: &Path,
+    upscaler: Upscaler<'_>,
+    upscale_limit: u32,
+    streams: Option<u8>,
+) -> String {
     let mut body = String::new();
 
     // ---- the engine ----
@@ -639,7 +699,7 @@ pub fn script_with(
                 python_string(&install.plugin)
             ));
         }
-        Networks::Mlrt(mlrt) => body.push_str(&mlrt.setup()),
+        Networks::Mlrt(mlrt) => body.push_str(&mlrt.setup(streams)),
     }
 
     // ---- the picture, in the networks' format ----
@@ -672,6 +732,7 @@ pub fn script_with(
         let target = match (generation.rate, display_fps) {
             (TargetRate::Double, _) => "source * 2".to_owned(),
             (TargetRate::Sixty, _) => "Fraction(60)".to_owned(),
+            (TargetRate::HundredTwenty, _) => "Fraction(120)".to_owned(),
             (TargetRate::Display, Some(fps)) => {
                 format!("Fraction({fps:.3}).limit_denominator(1001)")
             }

@@ -8,6 +8,7 @@ import "fonts/Inter-SemiBold.ttf";
 import { MaterialPalette, MaterialSchemes, NavigationRail } from "@material";
 import { Scheme, Appearance, Accent } from "globals/scheme.slint";
 import { Tr } from "globals/tr.slint";
+import { Typography } from "globals/typography.slint";
 import { PlayerPage } from "pages/player.slint";
 import { ReleasePage } from "pages/release.slint";
 import { HomePage } from "pages/home.slint";
@@ -32,7 +33,7 @@ import { BenchCard } from "components/bench-card.slint";
 import { PickerOption, EpisodeItem, ReleaseCard, DownloadItem, Account, HistoryItem, FeedPost, LinkItem, CommentItem, NotificationItem, PersonItem, ChannelItem, CollectionItem, AccountSettings, VideoItem, EnforcementItem, DraftBlock, SuggestionItem, FranchiseItem } from "structs.slint";
 
 export component MainWindow inherits Window {
-    default-font-family: "Inter";
+    default-font-family: Typography.family;
     title: "AniRust";
     icon: @image-url("../../packaging/icons/anirust.svg");
     preferred-width: 1280px;
@@ -394,7 +395,11 @@ export component MainWindow inherits Window {
     // Improving a saved episode.
     in property <bool> enhance-can-upscale: false;
     in property <bool> enhance-can-generate: false;
-    callback enhance-download(int, bool, int);
+    in property <int> enhance-profile: 2;
+    callback enhance-download(int, bool, int, int);
+    in property <bool> download-playback-error: false;
+    in property <string> local-playback-title;
+    callback play-download(int);
     callback stop-enhance(int);
     callback bench-start();
     callback bench-apply();
@@ -654,9 +659,6 @@ export component MainWindow inherits Window {
         height: 100%;
         visible: root.screen == "home";
 
-        // The official client puts these five on a bar along the bottom, where
-        // a thumb reaches them. A desktop window is wide rather than tall and
-        // has no thumb, so the same five run down the left edge.
         rail := Rail {
             items: [
                 { icon: @image-url("icons/home.svg"), text: Tr.nav-home },
@@ -664,12 +666,15 @@ export component MainWindow inherits Window {
                 { icon: @image-url("icons/bookmark.svg"), text: Tr.nav-bookmarks },
                 { icon: @image-url("icons/feed.svg"), text: Tr.nav-feed },
                 { icon: @image-url("icons/person.svg"), text: Tr.nav-profile },
+                { icon: @image-url("icons/download.svg"), text: Tr.nav-downloads,
+                  show-badge: root.downloads-working > 0,
+                  badge: root.downloads-working > 99 ? "99+" : (root.downloads-working > 0 ? "" + root.downloads-working : "") },
             ];
             // The settings are a destination of their own, kept apart at the
             // foot of the rail; Rust knows them as the seventh.
             bottom: { icon: @image-url("icons/settings.svg"), text: Tr.nav-settings };
-            current: root.destination == 6 ? 5 : root.destination;
-            select(i) => { root.select-destination(i == 5 ? 6 : i); }
+            current: root.destination;
+            select(i) => { root.select-destination(i); }
         }
 
         // Two destinations are not a grid of posters, so they are their own
@@ -677,10 +682,14 @@ export component MainWindow inherits Window {
         // about the application rather than about what to watch.
         if root.destination == 5: DownloadsPage {
             items: root.downloads;
+            playback-error: root.download-playback-error;
+            play(i) => { root.play-download(i); }
+            working: root.downloads-working > 0;
             can-upscale: root.enhance-can-upscale;
             can-generate: root.enhance-can-generate;
             clear-finished => { root.clear-finished-downloads(); }
-            enhance(i, upscale, rate) => { root.enhance-download(i, upscale, rate); }
+            saved-profile: root.enhance-profile;
+            enhance(i, upscale, rate, profile) => { root.enhance-download(i, upscale, rate, profile); }
             stop-enhance(i) => { root.stop-enhance(i); }
         }
 
@@ -779,6 +788,8 @@ export component MainWindow inherits Window {
         }
 
         if root.destination < 3: HomePage {
+            heading: root.destination == 0 ? Tr.nav-home
+                : root.destination == 1 ? Tr.nav-catalogue : Tr.nav-bookmarks;
             horizontal-stretch: 1;
 
             results: root.results;
@@ -829,7 +840,6 @@ export component MainWindow inherits Window {
             chips-are-days: root.chips-are-days;
             open-random => { root.open-random(); }
             notice: root.notice;
-            downloads-working: root.downloads-working;
             unseen: root.unseen;
             open-notifications => { root.open-notifications(); }
             collection-open: root.collection-open;
@@ -851,7 +861,6 @@ export component MainWindow inherits Window {
             open-found-channel(i) => { root.open-found-channel(i); }
 
             search(q) => { root.search(q); }
-            open-downloads => { root.select-destination(5); }
             open-release(i) => { root.open-release(i); }
             select-tab(i) => { root.select-tab(i); }
             select-genre(i) => { root.select-genre(i); }
@@ -862,7 +871,7 @@ export component MainWindow inherits Window {
     }
 
     release := ReleasePage {
-        visible: root.screen == "release";
+        visible: root.screen == "release" || root.screen == "local-playback";
         width: 100%;
         height: 100%;
         narrow: root.narrow;
@@ -896,7 +905,7 @@ export component MainWindow inherits Window {
         current-episode: root.current-episode;
         current-index: root.current-index;
         playing: root.playing;
-        theatre: root.theatre;
+        theatre: root.theatre || root.screen == "local-playback";
         signed-in: root.signed-in;
         list: root.release-list;
         favourite: root.release-favourite;
@@ -936,7 +945,8 @@ export component MainWindow inherits Window {
 
             video-frame: root.video-frame;
             has-video: root.has-video;
-            title: root.release-title;
+            title: root.screen == "local-playback" ? root.local-playback-title : root.release-title;
+            local-file: root.screen == "local-playback";
             episode-label: root.episode-label;
             position-text: root.position-text;
             volume: root.volume;
@@ -1297,6 +1307,9 @@ export component MainWindow inherits Window {
     }
 
     forward-focus: keys;
+    changed screen => {
+        if (root.screen == "local-playback") { keys.focus(); }
+    }
 
     // The bindings a viewer already has in their fingers, from the player
     // everyone has used. Deviating from them would be a novelty nobody asked
@@ -1348,9 +1361,14 @@ export component MainWindow inherits Window {
 
             // ---- the screen ----
             if (event.text == "f") { root.toggle-fullscreen(); return accept; }
-            if (event.text == "t") { root.theatre = !root.theatre; return accept; }
+            if (event.text == "t" && root.screen != "local-playback") { root.theatre = !root.theatre; return accept; }
             if (event.text == Key.Escape) {
+                if (root.screen == "local-playback" && root.player-sheet != "") {
+                    root.player-sheet = "";
+                    return accept;
+                }
                 if (root.fullscreen) { root.toggle-fullscreen(); return accept; }
+                if (root.screen == "local-playback") { root.close-player(); return accept; }
                 if (root.theatre) { root.theatre = false; return accept; }
                 return reject;
             }

@@ -11,9 +11,10 @@
 //! it, since a half-downloaded episode is not something to leave lying around
 //! pretending to be an episode.
 
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -43,6 +44,7 @@ pub enum Status {
     Queued,
     Running,
     Done,
+    Unchanged,
     Failed,
 }
 
@@ -52,6 +54,7 @@ impl Status {
             Self::Queued => "queued",
             Self::Running => "running",
             Self::Done => "done",
+            Self::Unchanged => "unchanged",
             Self::Failed => "failed",
         }
     }
@@ -69,6 +72,74 @@ struct Entry {
     enhance: Option<(PathBuf, Choice)>,
     /// Asks a running improvement to stop.
     stop: Option<Arc<AtomicBool>>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedEpisode {
+    release: String,
+    position: i32,
+    dubber: String,
+    path: PathBuf,
+}
+
+impl SavedEpisode {
+    fn from_legacy_file(path: PathBuf) -> Option<Self> {
+        let stem = path.file_stem()?.to_str()?;
+        let stem = match path.extension()?.to_str()? {
+            "mp4" => stem,
+            "mkv" => stem.strip_suffix(" [AniRust]")?,
+            _ => return None,
+        };
+        let (stem, dubber) = stem
+            .strip_suffix(']')
+            .and_then(|s| s.rsplit_once(" ["))
+            .unwrap_or((stem, ""));
+        let (release, position) = stem.rsplit_once(" - ")?;
+        Some(Self {
+            release: release.into(),
+            position: position.parse().ok()?,
+            dubber: dubber.into(),
+            path,
+        })
+    }
+
+    fn into_entry(self) -> Entry {
+        Entry {
+            job: Job {
+                release: self.release,
+                position: self.position,
+                dubber: self.dubber,
+                url: String::new(),
+            },
+            status: Status::Done,
+            fraction: 1.0,
+            detail: self.path.display().to_string(),
+            path: Some(self.path),
+            enhance: None,
+            stop: None,
+        }
+    }
+}
+
+fn restored(directory: &Path) -> Vec<Entry> {
+    let saved: Vec<SavedEpisode> = std::fs::read(directory.join(".downloads.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_else(|| {
+            let mut files: Vec<_> = std::fs::read_dir(directory)
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .filter_map(|entry| SavedEpisode::from_legacy_file(entry.path()))
+                .collect();
+            files.sort_by(|a, b| a.path.cmp(&b.path));
+            files
+        });
+    saved
+        .into_iter()
+        .filter(|episode| episode.path.is_file())
+        .map(SavedEpisode::into_entry)
+        .collect()
 }
 
 /// The queue, and whether something is being fetched from it right now.
@@ -94,11 +165,40 @@ impl Queue {
     /// An empty queue whose improvements run on `engine`.
     #[must_use]
     pub fn new(engine: usize, can_upscale: bool, can_generate: bool) -> Self {
-        Self {
+        let mut queue = Self {
             engine,
             can_upscale,
             can_generate,
             ..Self::default()
+        };
+        queue.entries = restored(&queue.directory());
+        queue
+    }
+
+    fn save(&mut self) {
+        let directory = self.directory();
+        if !directory.is_dir() {
+            return;
+        }
+        let saved: Vec<_> = self
+            .entries
+            .iter()
+            .filter_map(|entry| {
+                Some(SavedEpisode {
+                    path: entry.path.clone()?,
+                    release: entry.job.release.clone(),
+                    position: entry.job.position,
+                    dubber: entry.job.dubber.clone(),
+                })
+            })
+            .collect();
+        let write = || -> std::io::Result<()> {
+            let temp = directory.join(".downloads.json.tmp");
+            std::fs::write(&temp, serde_json::to_vec(&saved)?)?;
+            std::fs::rename(temp, directory.join(".downloads.json"))
+        };
+        if let Err(error) = write() {
+            tracing::warn!(%error, "saving download history failed");
         }
     }
 
@@ -129,10 +229,15 @@ pub fn enqueue(
         let mut queue = queue.borrow_mut();
         // Asking twice for the same episode is a mis-click, not a request for
         // two copies.
-        let already = queue
-            .entries
-            .iter()
-            .any(|entry| entry.job.url == job.url && entry.status != Status::Failed);
+        let destination = queue.directory().join(anirust_download::file_name(
+            &job.release,
+            job.position,
+            &job.dubber,
+        ));
+        let already = queue.entries.iter().any(|entry| {
+            (entry.job.url == job.url && entry.status != Status::Failed)
+                || (entry.path.as_ref() == Some(&destination) && destination.is_file())
+        });
         if already {
             return;
         }
@@ -256,6 +361,7 @@ fn pump(
                         entry.detail = path.display().to_string();
                         entry.path = Some(path.clone());
                         tracing::info!(path = %path.display(), "download finished");
+                        queue.save();
                     }
                     Err(error) => {
                         entry.status = Status::Failed;
@@ -272,6 +378,24 @@ fn pump(
     );
 }
 
+/// The file and labels for a completed download or enhancement.
+pub fn saved_episode(queue: &RefCell<Queue>, index: usize) -> Option<(PathBuf, String, String)> {
+    let queue = queue.borrow();
+    let entry = queue.entries.get(index)?;
+    if entry.status != Status::Done {
+        return None;
+    }
+    Some((
+        entry.path.clone()?,
+        entry.job.release.clone(),
+        if entry.job.dubber.is_empty() {
+            entry.job.position.to_string()
+        } else {
+            format!("{} · {}", entry.job.position, entry.job.dubber)
+        },
+    ))
+}
+
 /// Pushes the queue onto the screen.
 pub fn show(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
     let queue = queue.borrow();
@@ -284,12 +408,19 @@ pub fn show(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
             status: entry.status.name().into(),
             progress: entry.fraction,
             detail: entry.detail.as_str().into(),
-            enhancing: entry.enhance.is_some(),
+            enhancing: entry.enhance.is_some()
+                || entry
+                    .path
+                    .as_ref()
+                    .is_some_and(|p| p.extension().is_some_and(|ext| ext == "mkv")),
             // A saved episode, not one made better already, on a machine
             // that can do something to it.
             can_enhance: entry.status == Status::Done
                 && entry.enhance.is_none()
-                && entry.path.is_some()
+                && entry
+                    .path
+                    .as_ref()
+                    .is_some_and(|p| !p.extension().is_some_and(|ext| ext == "mkv"))
                 && (queue.can_upscale || queue.can_generate),
         })
         .collect();
@@ -310,6 +441,9 @@ pub fn show(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
 pub fn clear_finished(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
     {
         let mut queue = queue.borrow_mut();
+        if queue.running || queue.enhancing {
+            return;
+        }
         let keep: Vec<bool> = queue
             .entries
             .iter()
@@ -322,6 +456,8 @@ pub fn clear_finished(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
             at += 1;
             keeping
         });
+
+        queue.save();
 
         // The waiting list holds indices into `entries`, which have just moved.
         queue.waiting = queue
@@ -388,7 +524,7 @@ pub fn stop_enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>, index: usiz
                 entry.status = Status::Failed;
                 entry.detail = String::new();
             }
-            Status::Done | Status::Failed => {}
+            Status::Done | Status::Unchanged | Status::Failed => {}
         }
     }
     show(window, queue);
@@ -453,6 +589,12 @@ fn pump_enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
                         entry.fraction = 1.0;
                         entry.detail = path.display().to_string();
                         entry.path = Some(path);
+                        queue.save();
+                    }
+                    Message::End(Outcome::Unchanged) => {
+                        entry.stop = None;
+                        entry.status = Status::Unchanged;
+                        entry.detail.clear();
                     }
                     Message::End(Outcome::Stopped) => {
                         entry.stop = None;
@@ -481,4 +623,41 @@ fn pump_enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
         });
         let _ = send.send(Message::End(outcome));
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_downloads_survive_restart_until_cleared() {
+        let dir =
+            std::env::temp_dir().join(format!("anirust-download-history-{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let original = dir.join("Show - 03 [Dub].mp4");
+        let improved = enhance::destination_for(&original);
+        std::fs::write(&original, []).unwrap();
+        std::fs::write(&improved, []).unwrap();
+
+        let mut queue = Queue {
+            entries: restored(&dir),
+            directory: Some(dir.clone()),
+            ..Queue::default()
+        };
+        assert_eq!(queue.entries.len(), 2);
+        assert!(
+            queue
+                .entries
+                .iter()
+                .all(|entry| entry.job.position == 3 && entry.job.dubber == "Dub")
+        );
+        queue.save();
+        std::fs::remove_file(improved).unwrap();
+        assert_eq!(restored(&dir).len(), 1);
+        queue.entries.clear();
+        queue.save();
+        assert!(restored(&dir).is_empty());
+        assert!(original.exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

@@ -315,6 +315,10 @@ export component ReleasePage inherits Rectangle {
         ? root.resume-episode
         : (root.episodes.length > 0 ? root.episodes[0].position : 0);
 
+    changed theatre => {
+        if (root.theatre) { page.content-y = 0px; }
+    }
+
     VerticalLayout {
         // ---- header ------------------------------------------------------
         if !root.theatre: Rectangle {
@@ -343,24 +347,6 @@ export component ReleasePage inherits Rectangle {
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                     overflow: elide;
-                }
-
-                // What the account thinks of it. All three are offered without
-                // an account too, and lead to signing in: a control that does
-                // nothing when clicked is worse than one that says why.
-                // Shown at every width. The title gives way instead — it elides,
-                // and a rating that disappears below some width is a feature
-                // that disappears with it.
-                // Not out yet: nothing to rate.
-                if root.rateable: VerticalLayout {
-                    alignment: center;
-
-                    Rating {
-                        vote: root.vote;
-                        clicked(n) => {
-                            if (root.signed-in) { root.set-vote(n); } else { root.sign-in(); }
-                        }
-                    }
                 }
 
                 VerticalLayout {
@@ -455,6 +441,7 @@ export component ReleasePage inherits Rectangle {
                     // a layout loop — and never taller than the view.
                     height: !self.visible ? 0px
                         : root.theatre ? page.height
+                        : root.narrow && !root.playing ? clamp(page.height * 0.42, 148px, 230px)
                         : max(220px, min(
                             (page.width - 2 * Spacing.base
                                 - (root.narrow ? 0px : root.picker-width + Spacing.base)) * 9 / 16,
@@ -474,11 +461,11 @@ export component ReleasePage inherits Rectangle {
                         background: MaterialPalette.surface-container;
 
                         Image {
-                            source: root.backdrop;
+                            source: root.backdrop-loaded ? root.backdrop : root.poster;
                             image-fit: cover;
                             width: 100%;
                             height: 100%;
-                            opacity: root.backdrop-loaded ? 0.45 : 0.0;
+                            opacity: root.backdrop-loaded ? 0.55 : (root.poster-loaded ? 0.27 : 0.0);
                             animate opacity {
                                 duration: Motion.enter-duration;
                                 easing: Motion.enter;
@@ -489,11 +476,11 @@ export component ReleasePage inherits Rectangle {
                             text: Tr.episode-failed;
                             color: #FFFFFFD9;
                             font-size: Typography.body-medium-size;
-                            horizontal-alignment: center;
+                            horizontal-alignment: left;
                             wrap: word-wrap;
                             width: min(parent.width - 2 * Spacing.loose, 460px);
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - root.start-height) / 2 - self.height - Spacing.base;
+                            x: Spacing.comfortable;
+                            y: parent.height - root.start-height - self.height - Spacing.comfortable - Spacing.base;
                         }
 
                         // The one button that matters on this screen, so it is
@@ -504,10 +491,10 @@ export component ReleasePage inherits Rectangle {
                             style: FABStyle.standard;
                             icon: @image-url("../icons/play.svg");
                             text: root.resume-episode > 0 && root.watched-any
-                                ? Tr.continue-watching + " " + root.first-episode
+                                ? Tr.continue-episode + " " + root.first-episode
                                 : Tr.watch-episode + " " + root.first-episode;
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
+                            x: Spacing.comfortable;
+                            y: parent.height - self.height - Spacing.comfortable;
 
                             clicked => { root.play-episode(root.first-episode); }
                         }
@@ -633,6 +620,25 @@ export component ReleasePage inherits Rectangle {
                                 color: MaterialPalette.on-surface-variant;
                                 font-size: Typography.body-medium-size;
                                 wrap: word-wrap;
+                            }
+
+                            if root.rateable: HorizontalLayout {
+                                spacing: Spacing.small;
+                                alignment: start;
+
+                                Text {
+                                    text: Tr.your-rating;
+                                    color: MaterialPalette.on-surface-variant;
+                                    font-size: Typography.label-medium-size;
+                                    vertical-alignment: center;
+                                }
+
+                                Rating {
+                                    vote: root.vote;
+                                    clicked(n) => {
+                                        if (root.signed-in) { root.set-vote(n); } else { root.sign-in(); }
+                                    }
+                                }
                             }
 
                             Text {

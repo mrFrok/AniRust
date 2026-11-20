@@ -29,6 +29,8 @@ pub(crate) type Job = Box<dyn FnOnce(&Player) + Send>;
 pub struct Status {
     /// Whether a file is loaded.
     pub loaded: bool,
+    /// Failed file loads observed by the background reader.
+    pub load_failures: u64,
     pub state: PlaybackState,
     pub position: Option<Duration>,
     pub duration: Option<Duration>,
@@ -76,8 +78,16 @@ impl Player {
                 std::thread::Builder::new()
                     .name("anirust-mpv-status".into())
                     .spawn(move || {
+                        let mut load_failures = 0_u64;
                         loop {
-                            let status = self.read_status();
+                            while let Some(event) = self.mpv.wait_event(0.0) {
+                                // libmpv2 returns a failed end-file event as Err.
+                                if event.is_err() {
+                                    load_failures = load_failures.wrapping_add(1);
+                                }
+                            }
+                            let mut status = self.read_status();
+                            status.load_failures = load_failures;
                             *self.lock_status() = status;
                             std::thread::sleep(every);
                         }
@@ -137,6 +147,7 @@ impl Player {
         let position = self.position();
         Status {
             loaded: true,
+            load_failures: 0,
             state: self.state(),
             position,
             duration: self.duration(),
@@ -188,5 +199,23 @@ mod tests {
         wait.recv_timeout(Duration::from_secs(5))
             .expect("the queue runs");
         assert!((player.speed().unwrap() - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_missing_local_file_reports_a_failed_load() {
+        let player: &'static Player = Box::leak(Box::new(
+            Player::new(&PlayerConfig::headless()).expect("libmpv starts"),
+        ));
+        player.start_background(Duration::from_millis(20));
+        let missing = std::env::current_exe().unwrap().join("missing.mp4");
+        player.later("open missing file", move |player| {
+            player.open(&crate::MediaSource::new(missing.to_string_lossy()))
+        });
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while player.status().load_failures == 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(player.status().load_failures, 1);
     }
 }

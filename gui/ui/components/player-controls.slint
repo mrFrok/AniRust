@@ -170,6 +170,11 @@ export component SettingChip inherits Rectangle {
     /// red once chosen.
     in property <bool> heavy: false;
     callback clicked;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+    accessible-action-default => { root.clicked(); }
 
     height: 36px;
     width: row.preferred-width;

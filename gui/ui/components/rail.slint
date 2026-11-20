@@ -19,7 +19,8 @@ export component Rail inherits Rectangle {
     /// Which is lit: an index into `items`, or `items.length` for the bottom.
     in property <int> current: 0;
     /// The height of the bar beside it, so the mark sits level with it.
-    in property <length> bar-height: 72px;
+    property <length> bar-height: root.compact ? Spacing.icon-button : 72px;
+    property <bool> compact: root.height < 440px;
 
     callback select(int);
 
@@ -27,6 +28,9 @@ export component Rail inherits Rectangle {
     background: MaterialPalette.surface;
 
     VerticalLayout {
+        y: 0px;
+        height: parent.height;
+
         Rectangle {
             height: root.bar-height;
 
@@ -44,7 +48,7 @@ export component Rail inherits Rectangle {
         VerticalLayout {
             vertical-stretch: 1;
             alignment: start;
-            padding-top: Spacing.small;
+            padding-top: root.compact ? 0px : Spacing.small;
 
             for item[index] in root.items: NavigationItemTemplate {
                 icon: item.icon;
@@ -55,7 +59,7 @@ export component Rail inherits Rectangle {
                 show-badge: item.show-badge;
                 badge: item.badge;
                 navitem-padding-top: 0;
-                navitem-padding-bottom: 4px;
+                navitem-padding-bottom: root.compact ? 0px : Spacing.tight;
                 clicked => { root.select(index); }
             }
         }
@@ -66,7 +70,7 @@ export component Rail inherits Rectangle {
             index: root.items.length;
             selected: root.current == root.items.length;
             navitem-padding-top: 0;
-            navitem-padding-bottom: Spacing.base;
+            navitem-padding-bottom: root.compact ? Spacing.tight : Spacing.base;
             clicked => { root.select(root.items.length); }
         }
     }

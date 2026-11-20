@@ -75,10 +75,7 @@ pub enum Destination {
 }
 
 impl Destination {
-    /// The order the rail puts them in, and the order Rust and the interface
-    /// both count by. The first five are the official client's own, in its
-    /// order. Downloads is last and off the end of the rail: that client has
-    /// no such destination, and a queue is reached from the toolbar instead.
+    /// The order the rail puts them in. Settings is the item at the bottom.
     const ALL: [Self; 7] = [
         Self::Home,
         Self::Browse,

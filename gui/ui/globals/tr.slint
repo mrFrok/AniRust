@@ -71,7 +71,7 @@ export global Tr {
     out property <string> repeat-hint: lang == "ru"
         ? "Серия начнётся заново вместо перехода к следующей. Клавиша R."
         : "The episode starts over instead of going on to the next. Key R.";
-    out property <string> picture-sheet: lang == "ru" ? "Картинка" : "Picture";
+    out property <string> picture-sheet: lang == "ru" ? "Улучшения" : "Enhancements";
     out property <string> neural-engine: lang == "ru" ? "Нейросети" : "Neural networks";
     out property <string> engine-vulkan: lang == "ru" ? "Vulkan · любая видеокарта" : "Vulkan · any GPU";
     out property <string> engine-tensorrt: lang == "ru" ? "TensorRT · NVIDIA RTX" : "TensorRT · NVIDIA RTX";
@@ -103,10 +103,18 @@ export global Tr {
     out property <string> enhance-stop: lang == "ru" ? "Остановить" : "Stop";
     out property <string> enhance-title: lang == "ru" ? "Улучшить серию" : "Improve the episode";
     out property <string> enhance-why: lang == "ru"
-        ? "Нейросети обработают файл без спешки, лучшими моделями, и сохранят новый рядом. Займёт примерно вдвое дольше серии."
-        : "The networks go over the file without hurrying, with their best models, and save a new one beside it. Takes about twice the episode's length.";
+        ? "Новая версия сохранится рядом с оригиналом. Более высокое качество требует больше видеопамяти."
+        : "The new version is saved beside the original. Higher quality uses more GPU memory.";
+    out property <string> processing-profile: lang == "ru" ? "Качество обработки" : "Processing quality";
+    out property <string> enhance-unchanged: lang == "ru" ? "Апскейл недоступен · оставлен оригинал" : "Upscaling unavailable · original kept";
+    out property <string> economy: lang == "ru" ? "Экономное" : "Economy";
+    out property <string> balanced: lang == "ru" ? "Сбалансированное" : "Balanced";
+    out property <string> profile-economy: lang == "ru" ? "Меньше нагрузка · 1 поток" : "Low load · 1 stream";
+    out property <string> profile-balanced: lang == "ru" ? "Умеренная нагрузка · 2 потока" : "Moderate load · 2 streams";
+    out property <string> profile-high: lang == "ru" ? "6 потоков · по умолчанию" : "6 streams · default";
+    out property <string> profile-maximum: lang == "ru" ? "Высокая нагрузка · 8 потоков" : "High load · 8 streams";
     out property <string> enhance-as-is: lang == "ru" ? "Как есть" : "As is";
-    out property <string> enhance-double-size: lang == "ru" ? "×2 нейросетью" : "×2 by the network";
+    out property <string> enhance-double-size: lang == "ru" ? "×2 · Авто" : "×2 · Auto";
     out property <string> enhance-start: lang == "ru" ? "Начать" : "Start";
     out property <string> enhance-running: lang == "ru" ? "Обработка" : "Improving";
     out property <string> enhance-starting: lang == "ru" ? "Загружаю нейросети…" : "Loading the networks…";
@@ -235,6 +243,7 @@ export global Tr {
     out property <string> episodes: lang == "ru" ? "Серии" : "Episodes";
     out property <string> watch: lang == "ru" ? "Смотреть" : "Watch";
     out property <string> continue-watching: lang == "ru" ? "Продолжить" : "Continue";
+    out property <string> continue-episode: lang == "ru" ? "Продолжить серию" : "Continue episode";
     out property <string> subtitles-short: lang == "ru" ? "сабы" : "sub";
     out property <string> episodes-short: lang == "ru" ? "эп." : "eps";
     out property <string> watch-episode: lang == "ru" ? "Смотреть серию" : "Watch episode";
@@ -244,6 +253,12 @@ export global Tr {
         : "Could not load the episode. Try another voice-over or source.";
     out property <string> loading-release: lang == "ru" ? "Загружаем релиз…" : "Loading release…";
     out property <string> search-hint: lang == "ru" ? "Поиск аниме" : "Search anime";
+    out property <string> search-action: lang == "ru" ? "Найти" : "Search";
+    out property <string> clear-search: lang == "ru" ? "Сбросить поиск" : "Clear search";
+    out property <string> genre-filter: lang == "ru" ? "Жанр" : "Genre";
+    out property <string> previous-tabs: lang == "ru" ? "Предыдущие разделы" : "Previous sections";
+    out property <string> next-tabs: lang == "ru" ? "Следующие разделы" : "Next sections";
+    out property <string> playing-now: lang == "ru" ? "Сейчас играет" : "Now playing";
     out property <string> nothing-found: lang == "ru" ? "Ничего не найдено" : "Nothing found";
     out property <string> now-watching: lang == "ru" ? "Сейчас смотрят" : "Being watched now";
     out property <string> search-results: lang == "ru" ? "Результаты поиска" : "Search results";
@@ -564,6 +579,10 @@ export global Tr {
     out property <string> dl-queued: lang == "ru" ? "В очереди" : "Queued";
     out property <string> dl-running: lang == "ru" ? "Скачивается" : "Downloading";
     out property <string> dl-done: lang == "ru" ? "Готово" : "Done";
+    out property <string> dl-improved: lang == "ru" ? "Улучшенная версия" : "Improved version";
+    out property <string> dl-playback-error: lang == "ru"
+        ? "Не удалось открыть видео. Проверьте, что файл на месте и воспроизводится."
+        : "Couldn't open the video. Check that the file still exists and is playable.";
     out property <string> dl-failed: lang == "ru" ? "Ошибка" : "Failed";
     out property <string> download-episode: lang == "ru" ? "Скачать серию" : "Download episode";
 

@@ -19,6 +19,7 @@ import { Tr } from "../globals/tr.slint";
 import { ReleaseCard, CollectionItem, PersonItem } from "../structs.slint";
 import { PersonChip } from "../components/person-chip.slint";
 import { PosterCard } from "../components/release-cards.slint";
+import { QuietButton } from "../components/quiet-button.slint";
 
 /// A genre, as one of a row where exactly one of them is chosen.
 ///
@@ -204,6 +205,7 @@ component CollectionHeader inherits Rectangle {
 }
 
 export component HomePage inherits Rectangle {
+    in property <string> heading;
     in property <[ReleaseCard]> results;
     /// Whether the grid is showing search results rather than a tab.
     in property <bool> searching: false;
@@ -224,9 +226,6 @@ export component HomePage inherits Rectangle {
     in property <string> notice;
     in property <bool> signed-in: false;
     in property <string> account-name;
-    /// How many downloads are still going, for the badge on the button that
-    /// opens the queue. Zero hides it: a badge that always shows is a decal.
-    in property <int> downloads-working: 0;
     /// Unseen notifications, for the bell's badge. Only with an account.
     in property <int> unseen: 0;
     callback open-notifications();
@@ -254,7 +253,6 @@ export component HomePage inherits Rectangle {
     callback open-found-person(int);
     callback open-found-channel(int);
 
-    callback open-downloads();
     callback search(string);
     callback open-release(int);
     callback sign-in();
@@ -277,11 +275,13 @@ export component HomePage inherits Rectangle {
 
     /// The narrowest a tab may be before the strip scrolls instead: room for
     /// the longest label the destinations have, "Смотрят сейчас".
-    property <length> tab-width: 132px;
+    property <length> tab-width: root.tabs.length <= 5 ? 104px : 132px;
 
     property <length> card-width: 160px;
     property <length> card-height: 280px;
     property <length> gutter: Spacing.base;
+    property <bool> genres-open: false;
+    changed heading => { root.genres-open = false; }
 
     VerticalLayout {
         // ---- search ------------------------------------------------------
@@ -294,17 +294,25 @@ export component HomePage inherits Rectangle {
             z: 1;
 
             HorizontalLayout {
+                x: 0px;
+                width: parent.width;
                 padding-left: Spacing.base;
                 padding-right: Spacing.base;
                 spacing: Spacing.base;
 
-                // No wordmark: the mark at the top of the rail already says
-                // whose window this is.
+                if root.width >= 800px: Text {
+                    text: root.heading;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-large-size;
+                    font-weight: Typography.title-large-weight-em;
+                    vertical-alignment: center;
+                }
+
                 field := Rectangle {
                     horizontal-stretch: 1;
                     height: Spacing.touch-target;
                     y: (parent.height - self.height) / 2;
-                    border-radius: Shape.pill;
+                    border-radius: Shape.medium;
                     background: MaterialPalette.surface-container-highest;
                     border-width: input.has-focus ? 1px : 0px;
                     border-color: MaterialPalette.primary;
@@ -334,7 +342,7 @@ export component HomePage inherits Rectangle {
                             horizontal-stretch: 1;
                             background: transparent;
 
-                            if root.query == "" && !input.has-focus: Text {
+                            if root.query == "": Text {
                                 text: Tr.search-hint;
                                 color: MaterialPalette.on-surface-variant;
                                 font-size: Typography.body-large-size;
@@ -344,6 +352,7 @@ export component HomePage inherits Rectangle {
                             }
 
                             input := TextInput {
+                                accessible-label: Tr.search-hint;
                                 text <=> root.query;
                                 color: MaterialPalette.on-surface;
                                 font-size: Typography.body-large-size;
@@ -352,6 +361,15 @@ export component HomePage inherits Rectangle {
                                 width: 100%;
                                 height: 100%;
                                 accepted => { root.search(self.text); }
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            TonalButton {
+                                text: Tr.search-action;
+                                enabled: root.query != "";
+                                clicked => { root.search(root.query); }
                             }
                         }
                     }
@@ -391,33 +409,6 @@ export component HomePage inherits Rectangle {
                         icon: @image-url("../icons/dice.svg");
                         tooltip: Tr.random-release;
                         clicked => { root.open-random(); }
-                    }
-                }
-
-                // The download queue is this client's own addition, so it is
-                // not one of the rail's destinations — it lives here, where it
-                // is out of the way until it has something to say, and says it
-                // with a badge.
-                VerticalLayout {
-                    alignment: center;
-
-                    Rectangle {
-                        width: 40px;
-                        height: 40px;
-
-                        IconButton {
-                            width: 100%;
-                            height: 100%;
-                            icon: @image-url("../icons/download.svg");
-                            tooltip: Tr.nav-downloads;
-                            clicked => { root.open-downloads(); }
-                        }
-
-                        if root.downloads-working > 0: Badge {
-                            x: parent.width - self.width + 4px;
-                            y: -2px;
-                            text: root.downloads-working;
-                        }
                     }
                 }
 
@@ -476,45 +467,73 @@ export component HomePage inherits Rectangle {
             }
         }
 
-        if !root.searching && !root.collection-open && root.tabs.length > 0: tab-strip := Flickable {
-            height: 48px;
-            interactive: self.content-width > self.width;
-            content-width: max(self.width, root.tab-width * root.tabs.length + 2 * Spacing.base);
+        if !root.searching && !root.collection-open && root.tabs.length > 0: tabs-frame := Rectangle {
+            height: Spacing.touch-target;
+            property <bool> scrollable: root.tab-width * root.tabs.length + 2 * Spacing.base > self.width;
+            property <length> arrow-width: self.scrollable ? Spacing.icon-button : 0px;
 
-            SecondaryTabBar {
-                x: Spacing.base;
-                width: tab-strip.content-width - 2 * Spacing.base;
-                height: 100%;
-                items: root.tabs;
+            tab-strip := Flickable {
+                x: tabs-frame.arrow-width;
+                width: tabs-frame.width - 2 * tabs-frame.arrow-width;
+                height: parent.height;
+                interactive: self.content-width > self.width;
+                content-width: max(self.width, root.tab-width * root.tabs.length + 2 * Spacing.base);
 
-                // Pushed, not bound: the bar writes its own index on a click,
-                // and Rust decides which tab a destination opens on.
-                property <int> wanted: root.tab;
-                init => {
-                    self.current-index = root.tab;
-                    tab-strip.reveal(root.tab);
+                SecondaryTabBar {
+                    x: Spacing.base;
+                    width: tab-strip.content-width - 2 * Spacing.base;
+                    height: 100%;
+                    items: root.tabs;
+
+                    // Pushed, not bound: the bar writes its own index on a click,
+                    // and Rust decides which tab a destination opens on.
+                    property <int> wanted: root.tab;
+                    init => {
+                        self.current-index = root.tab;
+                        tab-strip.reveal(root.tab);
+                    }
+                    changed wanted => {
+                        self.current-index = self.wanted;
+                        tab-strip.reveal(self.wanted);
+                    }
+
+                    index-changed(i) => { root.select-tab(i); }
                 }
-                changed wanted => {
-                    self.current-index = self.wanted;
-                    tab-strip.reveal(self.wanted);
-                }
 
-                index-changed(i) => { root.select-tab(i); }
+                /// Scrolls the strip so the tab at `index` is in the middle of it,
+                /// or as near as the ends allow. A selected tab out of sight is a
+                /// question nobody can see the answer to.
+                function reveal(index: int) {
+                    let division = (self.content-width - 2 * Spacing.base) / root.tabs.length;
+                    let centre = Spacing.base + division * (index + 0.5);
+                    self.content-x = clamp(self.width / 2 - centre, self.width - self.content-width, 0px);
+                }
+                changed width => { self.reveal(root.tab); }
             }
 
-            /// Scrolls the strip so the tab at `index` is in the middle of it,
-            /// or as near as the ends allow. A selected tab out of sight is a
-            /// question nobody can see the answer to.
-            function reveal(index: int) {
-                let division = (self.content-width - 2 * Spacing.base) / root.tabs.length;
-                let centre = Spacing.base + division * (index + 0.5);
-                self.content-x = clamp(self.width / 2 - centre, self.width - self.content-width, 0px);
+            if tabs-frame.scrollable: IconButton {
+                icon: @image-url("../icons/back.svg");
+                tooltip: Tr.previous-tabs;
+                enabled: tab-strip.content-x < 0px;
+                x: 0px;
+                width: tabs-frame.arrow-width;
+                height: 100%;
+                clicked => { tab-strip.content-x = min(0px, tab-strip.content-x + root.tab-width); }
+            }
+
+            if tabs-frame.scrollable: IconButton {
+                icon: @image-url("../icons/chevron.svg");
+                tooltip: Tr.next-tabs;
+                enabled: tab-strip.content-x > tab-strip.width - tab-strip.content-width;
+                x: parent.width - self.width;
+                width: tabs-frame.arrow-width;
+                height: 100%;
+                clicked => {
+                    tab-strip.content-x = max(tab-strip.width - tab-strip.content-width, tab-strip.content-x - root.tab-width);
+                }
             }
         }
 
-        // Wrapped rather than scrolled sideways: nineteen chips do not fit on
-        // one line of any window, and a row that runs off the edge hides half
-        // the filter.
         if !root.searching && !root.collection-open && root.can-create-collection: HorizontalLayout {
             padding-left: Spacing.base;
             padding-right: Spacing.base;
@@ -527,7 +546,23 @@ export component HomePage inherits Rectangle {
             }
         }
 
-        if !root.searching && !root.collection-open && root.genres.length > 0: FlexboxLayout {
+        if !root.searching && !root.collection-open && root.genres.length > 0 && !root.chips-are-days: HorizontalLayout {
+            padding-left: Spacing.base;
+            padding-right: Spacing.base;
+            padding-bottom: Spacing.small;
+            spacing: Spacing.small;
+            alignment: start;
+
+            OutlineButton {
+                icon: @image-url("../icons/chevron-down.svg");
+                text: root.genre > 0 && root.genre <= root.genres.length
+                    ? Tr.genre-filter + " · " + root.genres[root.genre - 1] : Tr.all-genres;
+                clicked => { root.genres-open = !root.genres-open; }
+            }
+        }
+
+        if !root.searching && !root.collection-open && root.genres.length > 0
+            && (root.chips-are-days || root.genres-open): FlexboxLayout {
             padding-left: Spacing.base;
             padding-right: Spacing.base;
             flex-wrap: wrap;
@@ -538,13 +573,13 @@ export component HomePage inherits Rectangle {
             GenreChip {
                 text: root.chips-are-days ? Tr.whole-week : Tr.all-genres;
                 selected: root.genre == 0;
-                picked => { root.select-genre(0); }
+                picked => { root.select-genre(0); root.genres-open = false; }
             }
 
             for name[index] in root.genres: GenreChip {
                 text: name;
                 selected: index + 1 == root.genre;
-                picked => { root.select-genre(index + 1); }
+                picked => { root.select-genre(index + 1); root.genres-open = false; }
             }
         }
 
@@ -567,6 +602,12 @@ export component HomePage inherits Rectangle {
                 font-size: Typography.title-medium-size;
                 font-weight: Typography.title-medium-weight-em;
                 horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+
+            if root.searching: QuietButton {
+                text: Tr.clear-search;
+                clicked => { root.query = ""; root.search(""); }
             }
 
             if root.searching && root.loading && root.results.length > 0: Text {

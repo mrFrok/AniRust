@@ -160,7 +160,7 @@ pub async fn fetch_light_upscale(http: reqwest::Client) -> Result<PathBuf, Strin
     tokio::fs::create_dir_all(parent)
         .await
         .map_err(|e| e.to_string())?;
-    let partial = target.with_extension("onnx.partial");
+    let partial = target.with_extension(format!("{}.onnx.partial", std::process::id()));
     tokio::fs::write(&partial, &network)
         .await
         .map_err(|e| e.to_string())?;

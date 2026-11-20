@@ -8,16 +8,25 @@ import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { DownloadItem } from "../structs.slint";
+import { Dropdown } from "../components/release-parts.slint";
 import { QuietButton } from "../components/quiet-button.slint";
 
 component QueueRow inherits Rectangle {
     in property <DownloadItem> item;
+    callback play();
     callback enhance();
     callback stop();
 
     height: 72px;
     border-radius: Shape.medium;
     background: MaterialPalette.surface-container;
+    property <string> status-label: root.item.status == "queued" ? Tr.dl-queued
+        : root.item.status == "running"
+            ? (root.item.enhancing ? Tr.enhance-running : Tr.dl-running)
+        : root.item.status == "done" ? (root.item.enhancing ? Tr.dl-improved : Tr.dl-done)
+        : root.item.status == "unchanged" ? Tr.enhance-unchanged
+        : root.item.enhancing && root.item.detail == "" ? Tr.enhance-stopped
+        : Tr.dl-failed;
 
     VerticalLayout {
         padding: Spacing.medium;
@@ -32,19 +41,6 @@ component QueueRow inherits Rectangle {
                 font-size: Typography.body-large-size;
                 horizontal-stretch: 1;
                 overflow: elide;
-            }
-
-            Text {
-                text: root.item.status == "queued" ? Tr.dl-queued
-                    : root.item.status == "running"
-                        ? (root.item.enhancing ? Tr.enhance-running : Tr.dl-running)
-                    : root.item.status == "done" ? Tr.dl-done
-                    : root.item.enhancing && root.item.detail == "" ? Tr.enhance-stopped
-                    : Tr.dl-failed;
-                color: root.item.status == "failed"
-                    ? MaterialPalette.error
-                    : MaterialPalette.on-surface-variant;
-                font-size: Typography.label-medium-size;
                 vertical-alignment: center;
             }
 
@@ -53,31 +49,43 @@ component QueueRow inherits Rectangle {
                 clicked => { root.enhance(); }
             }
 
+            if root.item.status == "done": FilledButton {
+                icon: @image-url("../icons/play.svg");
+                text: Tr.watch;
+                clicked => { root.play(); }
+            }
+
             if root.item.enhancing && (root.item.status == "running" || root.item.status == "queued"): QuietButton {
                 text: Tr.enhance-stop;
                 clicked => { root.stop(); }
             }
         }
 
-        // The bar takes the detail line's place while running, and steps out
-        // of the way once there is nothing left to watch.
-        // While the networks load there is no fraction yet: the line says
-        // so instead of a bar standing still.
-        if root.item.status == "running" && root.item.detail != "starting": LinearProgressIndicator {
-            progress: root.item.progress;
-        }
+        HorizontalLayout {
+            spacing: Spacing.medium;
 
-        if root.item.status == "running" && root.item.detail == "starting": Text {
-            text: Tr.enhance-starting;
-            color: MaterialPalette.on-surface-variant;
-            font-size: Typography.label-small-size;
-        }
+            Text {
+                text: root.item.detail == "starting" && root.item.status == "running"
+                    ? Tr.enhance-starting : root.status-label;
+                color: root.item.status == "failed"
+                    ? MaterialPalette.error : MaterialPalette.on-surface-variant;
+                font-size: Typography.label-small-size;
+                vertical-alignment: center;
+            }
 
-        if root.item.status != "running": Text {
-            text: root.item.detail != "" ? root.item.detail : root.item.dubber;
-            color: MaterialPalette.on-surface-variant;
-            font-size: Typography.label-small-size;
-            overflow: elide;
+            if root.item.status == "running" && root.item.detail != "starting": VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                LinearProgressIndicator { progress: root.item.progress; }
+            }
+
+            if root.item.status != "running": Text {
+                text: root.item.detail != "" ? root.item.detail : root.item.dubber;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.label-small-size;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
         }
     }
 }
@@ -87,8 +95,13 @@ export component DownloadsPage inherits Rectangle {
     /// What this machine can do to a saved episode.
     in property <bool> can-upscale;
     in property <bool> can-generate;
+    in property <bool> working;
+    in property <bool> playback-error;
+    callback play(int);
     callback clear-finished();
-    callback enhance(int, bool, int);
+    callback enhance(int, bool, int, int);
+    in property <int> saved-profile: 2;
+    property <int> profile: 2;
     callback stop-enhance(int);
 
     /// The row the choice is open for, or -1.
@@ -128,9 +141,17 @@ export component DownloadsPage inherits Rectangle {
 
                 QuietButton {
                     text: Tr.clear-finished;
+                    enabled: !root.working;
                     clicked => { root.clear-finished(); }
                 }
             }
+        }
+
+        if root.playback-error: Text {
+            text: Tr.dl-playback-error;
+            color: MaterialPalette.error;
+            font-size: Typography.body-medium-size;
+            wrap: word-wrap;
         }
 
         if root.items.length == 0: Text {
@@ -153,9 +174,11 @@ export component DownloadsPage inherits Rectangle {
 
                 for item[index] in root.items: QueueRow {
                     item: item;
+                    play => { root.play(index); }
                     enhance => {
                         root.upscale = root.can-upscale;
                         root.rate = root.can-generate ? 2 : 0;
+                        root.profile = root.saved-profile;
                         root.picking = index;
                     }
                     stop => { root.stop-enhance(index); }
@@ -175,7 +198,7 @@ export component DownloadsPage inherits Rectangle {
 
         Rectangle {
             width: min(440px, parent.width - 2 * Spacing.comfortable);
-            height: form.preferred-height;
+            height: min(form.preferred-height, parent.height - 2 * Spacing.base);
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
             border-radius: Shape.extra-large;
@@ -185,82 +208,132 @@ export component DownloadsPage inherits Rectangle {
 
             TouchArea {}
 
-            form := VerticalLayout {
-                padding: Spacing.comfortable;
-                spacing: Spacing.base;
-                alignment: start;
+            ScrollView {
+                content-height: form.preferred-height;
+                form := VerticalLayout {
+                    padding: Spacing.comfortable;
+                    spacing: Spacing.base;
+                    alignment: start;
 
-                Text {
-                    text: Tr.enhance-title;
-                    color: MaterialPalette.on-surface;
-                    font-size: Typography.title-large-size;
-                    font-weight: Typography.title-large-weight-em;
-                }
+                    Text {
+                        text: Tr.enhance-title;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.title-large-size;
+                        font-weight: Typography.title-large-weight-em;
+                    }
 
-                Text {
-                    text: Tr.enhance-why;
-                    color: MaterialPalette.on-surface-variant;
-                    font-size: Typography.body-medium-size;
-                    wrap: word-wrap;
-                }
+                    Text {
+                        text: Tr.enhance-why;
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.body-medium-size;
+                        wrap: word-wrap;
+                    }
 
-                if root.can-upscale: VerticalLayout {
+                VerticalLayout {
                     spacing: Spacing.small;
 
                     Text {
-                        text: Tr.sharpness;
+                        text: Tr.processing-profile;
                         color: MaterialPalette.on-surface;
                         font-size: Typography.title-small-size;
                         font-weight: Typography.title-small-weight-em;
                     }
 
-                    HorizontalLayout {
-                        alignment: start;
+                    for name[index] in [Tr.economy, Tr.balanced, Tr.quality-high, Tr.quality-max]: Rectangle {
+                        height: 52px;
+                        border-radius: Shape.medium;
+                        border-width: root.profile == index ? 1px : 0px;
+                        border-color: root.profile == index ? MaterialPalette.primary : transparent;
+                        background: root.profile == index
+                            ? MaterialPalette.secondary-container
+                            : MaterialPalette.surface-container;
 
-                        SegmentedButton {
-                            items: [{ text: Tr.enhance-as-is }, { text: Tr.enhance-double-size }];
-                            init => { self.current-index = root.upscale ? 1 : 0; }
-                            index-changed(i) => { root.upscale = i == 1; }
+                        HorizontalLayout {
+                            padding-left: Spacing.medium;
+                            padding-right: Spacing.medium;
+                            spacing: Spacing.base;
+
+                            Text {
+                                text: name;
+                                color: MaterialPalette.on-surface;
+                                font-size: Typography.body-medium-size;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+
+                            Text {
+                                text: index == 0 ? Tr.profile-economy
+                                    : index == 1 ? Tr.profile-balanced
+                                    : index == 2 ? Tr.profile-high
+                                    : Tr.profile-maximum;
+                                color: MaterialPalette.on-surface-variant;
+                                font-size: Typography.body-small-size;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.profile = index; }
                         }
                     }
                 }
 
-                if root.can-generate: VerticalLayout {
-                    spacing: Spacing.small;
+                    if root.can-upscale: VerticalLayout {
+                        spacing: Spacing.small;
 
-                    Text {
-                        text: Tr.smoothness;
-                        color: MaterialPalette.on-surface;
-                        font-size: Typography.title-small-size;
-                        font-weight: Typography.title-small-weight-em;
+                        Text {
+                            text: Tr.sharpness;
+                            color: MaterialPalette.on-surface;
+                            font-size: Typography.title-small-size;
+                            font-weight: Typography.title-small-weight-em;
+                        }
+
+                        HorizontalLayout {
+                            alignment: start;
+
+                            SegmentedButton {
+                                items: [{ text: Tr.enhance-as-is }, { text: Tr.enhance-double-size }];
+                                init => { self.current-index = root.upscale ? 1 : 0; }
+                                index-changed(i) => { root.upscale = i == 1; }
+                            }
+                        }
+                    }
+
+                    if root.can-generate: VerticalLayout {
+                        spacing: Spacing.small;
+
+                        Text {
+                            text: Tr.smoothness;
+                            color: MaterialPalette.on-surface;
+                            font-size: Typography.title-small-size;
+                            font-weight: Typography.title-small-weight-em;
+                        }
+
+                        Dropdown {
+                            model: [{ label: Tr.enhance-as-is }, { label: "×2" }, { label: "60 FPS" },
+                                { label: "120 FPS" }, { label: Tr.frame-rate-display }];
+                            current: root.rate;
+                            selected(i) => { root.rate = i; }
+                        }
                     }
 
                     HorizontalLayout {
-                        alignment: start;
+                        spacing: Spacing.small;
+                        alignment: end;
 
-                        SegmentedButton {
-                            items: [{ text: Tr.enhance-as-is }, { text: "×2" }, { text: "60" }];
-                            init => { self.current-index = root.rate; }
-                            index-changed(i) => { root.rate = i; }
+                        QuietButton {
+                            text: Tr.cancel;
+                            clicked => { root.picking = -1; }
                         }
-                    }
-                }
 
-                HorizontalLayout {
-                    spacing: Spacing.small;
-                    alignment: end;
-
-                    QuietButton {
-                        text: Tr.cancel;
-                        clicked => { root.picking = -1; }
-                    }
-
-                    FilledButton {
-                        text: Tr.enhance-start;
-                        enabled: root.upscale || root.rate > 0;
-                        clicked => {
-                            root.enhance(root.picking, root.upscale, root.rate);
-                            root.picking = -1;
+                        FilledButton {
+                            text: Tr.enhance-start;
+                            enabled: root.upscale || root.rate > 0;
+                            clicked => {
+                                root.enhance(root.picking, root.upscale, root.rate, root.profile);
+                                root.picking = -1;
+                            }
                         }
                     }
                 }

@@ -22,7 +22,8 @@
 //! ```
 //!
 //! `state` is `home`, `home-signed-in`, `release` (default), `playing`,
-//! `theatre`, `downloads`, `sign-in`, `failed`, `saved`, `loading`,
+//! `theatre`, `downloads`, `downloads-enhance`, `downloads-playing`,
+//! `sign-in`, `failed`, `saved`, `loading`,
 //! `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`,
 //! `profile-light`, `home-downloading`, `feed`, `feed-latest`,
 //! `feed-signed-out`, `feed-empty`, `feed-channels`, `feed-channel`, `collections`, `collection`,
@@ -32,12 +33,13 @@
 //! `admin-new`, `sign-out`, `app-settings`, `release-announced`,
 //! `release-note`, `franchise`, `profile-teal`,
 //! `profile-teal-glass`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
-//! `comments-signed-out`, `player-hint`, `player-volume`, `update-available`,
+//! `comments-signed-out`, `player-hint`, `player-gpu-hint`, `player-volume`, `update-available`,
 //! `update-downloading`, `light` or `amoled`. Narrow is a width, not a state: pass
 //! one below 900.
 //!
 //! `ANIRUST_SHOT_POINTER=x,y` parks the pointer anywhere, for the states
 //! that only show under it.
+//! `ANIRUST_SHOT_SCALE` sets the window scale while keeping the PNG size in physical pixels.
 //!
 //! `home-hover-account` parks the pointer on the account button, which is the
 //! only way to see what it offers: the action it performs is in a tooltip,
@@ -81,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if state.starts_with("home")
             || state.starts_with("sign-")
             || state.starts_with("restore")
-            || state == "downloads"
+            || state.starts_with("downloads")
             || state == "saved"
             || state == "loading"
             || state == "empty"
@@ -112,8 +114,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_signed_in(true);
         ui.set_account_name("mrfrok".into());
     }
-    if state == "downloads" {
+    if state.starts_with("downloads") {
         ui.set_destination(5);
+        ui.set_enhance_can_generate(true);
+        ui.set_enhance_can_upscale(true);
         ui.set_downloads_working(2);
         ui.set_downloads(slint::ModelRc::new(slint::VecModel::from(vec![
             DownloadItem {
@@ -124,6 +128,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 detail: "/home/you/Видео/AniRust/Демоны старшей школы - 03 [AniLibria].mp4".into(),
                 enhancing: false,
                 can_enhance: true,
+            },
+            DownloadItem {
+                title: "Демоны старшей школы — 3".into(),
+                dubber: "AniLibria".into(),
+                status: "done".into(),
+                progress: 1.0,
+                detail:
+                    "/home/you/Видео/AniRust/Демоны старшей школы - 03 [AniLibria] [AniRust].mkv"
+                        .into(),
+                enhancing: true,
+                can_enhance: false,
             },
             DownloadItem {
                 title: "Демоны старшей школы — 4".into(),
@@ -670,6 +685,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ui.set_qr_device("Pixel 8".into());
         }
     }
+    if let Some(scale_factor) = std::env::var("ANIRUST_SHOT_SCALE")
+        .ok()
+        .and_then(|value| value.parse::<f32>().ok())
+        .filter(|factor| factor.is_finite() && *factor > 0.0)
+    {
+        window.dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor });
+    }
     window.set_size(PhysicalSize::new(width, height));
 
     let mut pixels = vec![slint::Rgb8Pixel { r: 0, g: 0, b: 0 }; (width * height) as usize];
@@ -685,12 +707,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // list learns its own height. Only then does starting an episode mean
     // anything — scrolling to it needs a list that has been laid out.
     draw(&window);
+    if state == "downloads-enhance" {
+        let position = LogicalPosition::new(width as f32 - 204.0, 99.0);
+        let button = slint::platform::PointerEventButton::Left;
+        window.dispatch_event(WindowEvent::PointerPressed { position, button });
+        window.dispatch_event(WindowEvent::PointerReleased { position, button });
+    }
+    if state == "downloads-playing" {
+        let weak = ui.as_weak();
+        ui.on_play_download(move |index| {
+            assert_eq!(index, 1, "Watch should open the enhanced copy");
+            let ui = weak.unwrap();
+            ui.set_local_playback_title("Демоны старшей школы".into());
+            ui.set_episode_label("3 · AniLibria".into());
+            ui.set_state("loading".into());
+            ui.set_playing(true);
+            ui.set_screen("local-playback".into());
+        });
+        let position = LogicalPosition::new(width as f32 - 85.0, 180.0);
+        let button = slint::platform::PointerEventButton::Left;
+        window.dispatch_event(WindowEvent::PointerPressed { position, button });
+        window.dispatch_event(WindowEvent::PointerReleased { position, button });
+        assert_eq!(ui.get_screen(), "local-playback");
+    }
     if state == "playing"
         || state == "theatre"
-        || state == "upscale" || state == "upscale-ultra"
+        || state == "upscale"
+        || state == "upscale-ultra"
         || state == "paused"
         || state == "player-settings"
         || state == "player-hint"
+        || state == "player-gpu-hint"
         || state == "player-volume"
     {
         start_playing(&ui, state == "theatre");
@@ -734,6 +781,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
              intel-compute-runtime (в Debian и Ubuntu — intel-opencl-icd)"
                 .into(),
         );
+    }
+    if state == "player-gpu-hint" {
+        ui.set_hint("Видеокарта не успевает: нейросетевой апскейл выключен".into());
     }
     // The settings sheet, with some sound and subtitle choices made.
     if state == "player-settings" {
