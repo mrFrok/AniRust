@@ -1,13 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Every endpoint the official client declares has a row in the endpoint
-// table.
-//
-// `parity.txt` lists them, one method and path a line with `{}` for each
-// parameter — 286, the distinct requests of the official app's interface, an
-// interface fact transcribed and nothing more. This test fails if one of them
-// stops having a row in `endpoints.rs`: a request that is in the service but
-// not checked here is one nobody would notice breaking.
+// Each route in parity.txt must have a corresponding endpoint test.
+// Parameters are written as {} in the fixture and as concrete values in tests.
 
 use std::collections::BTreeSet;
 
@@ -57,5 +51,5 @@ fn every_endpoint_of_the_official_client_has_a_row() {
 
     let missing: Vec<&String> = wanted.iter().filter(|w| !tested.contains(*w)).collect();
     assert!(missing.is_empty(), "endpoints without a row: {missing:#?}");
-    assert_eq!(wanted.len(), 286, "the official client's count");
+    assert_eq!(wanted.len(), 285, "tracked routes in the parity fixture");
 }

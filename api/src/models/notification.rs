@@ -201,7 +201,7 @@ impl NotificationDelete {
             Self::Friend => "notification/friend/delete",
             Self::ReleaseComment => "notification/releaseComment/delete",
             Self::RelatedRelease => "notification/related/release/delete",
-            Self::ArticleComment => "notification/article/comment/delete",
+            Self::ArticleComment => "notification/articleComment/delete",
             Self::CollectionComment => "notification/collectionComment/delete",
             Self::MyArticleComment => "notification/my/article/comment/delete",
             Self::MyCollectionComment => "notification/my/collection/comment/delete",

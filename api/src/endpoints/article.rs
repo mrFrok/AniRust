@@ -256,19 +256,6 @@ impl Client {
 
     // ---- suggestions ------------------------------------------------------
 
-    /// One suggested post.
-    ///
-    /// `GET article/suggestion/{article_id}`
-    pub async fn suggestion(&self, article_id: i64) -> Result<Article> {
-        let payload: ArticlePayloadResponse = self
-            .send(
-                self.get(format!("article/suggestion/{article_id}"))
-                    .with_token(),
-            )
-            .await?;
-        Ok(payload.article)
-    }
-
     /// The posts readers have suggested to a channel. 0-based.
     ///
     /// `POST article/suggestion/all/{page}` with the channel in the body.

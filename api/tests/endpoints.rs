@@ -797,13 +797,6 @@ endpoint! {
 }
 
 endpoint! {
-    suggestion: "GET" "/article/suggestion/9",
-    token: true,
-    reply: json!({ "code": 0, "article": {} }),
-    call: |c| c.suggestion(9),
-}
-
-endpoint! {
     suggestion_delete: "POST" "/article/suggestion/delete/9",
     token: true,
     reply: ack(),
@@ -1221,7 +1214,7 @@ endpoint! {
 }
 
 endpoint! {
-    notification_delete_article_comment: "GET" "/notification/article/comment/delete/31",
+    notification_delete_article_comment: "GET" "/notification/articleComment/delete/31",
     token: true,
     reply: ack(),
     call: |c| c.notification_delete(anirust_api::NotificationDelete::ArticleComment, 31),

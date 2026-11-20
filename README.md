@@ -78,9 +78,8 @@ only to the official app. Pictures inside posts are kept when a post is
 changed, but not added: they go up through an upload this client has no way
 into.
 
-The official client's interface declares 286 distinct endpoints; **all 286**
-are implemented, each checked against a local server by
-`api/tests/endpoints.rs`, and `api/tests/parity.rs` fails if one goes missing.
+The API parity list tracks 285 routes. Each has a local-server test in
+`api/tests/endpoints.rs`. The parity test checks that every listed route has coverage.
 
 ## The player
 

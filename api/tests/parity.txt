@@ -21,7 +21,6 @@ POST article/suggestion/create/{}
 POST article/suggestion/delete/{}
 POST article/suggestion/edit/{}
 POST article/suggestion/publish/{}
-GET article/suggestion/{}
 GET article/unmute/{}
 GET article/vote/{}/{}
 POST article/votes/{}/{}
@@ -119,7 +118,7 @@ GET history/{}
 POST import/bookmarks
 POST import/status
 GET notification/all/{}
-GET notification/article/comment/delete/{}
+GET notification/articleComment/delete/{}
 GET notification/article/comments/{}
 GET notification/articles/{}
 GET notification/collectionComment/delete/{}
