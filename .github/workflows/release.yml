@@ -112,6 +112,12 @@ jobs:
     with:
       source_ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.sha }}
 
+  linux-aarch64:
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/linux-aarch64.yml
+    with:
+      source_ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.sha }}
+
   # The .deb plays through the system's libmpv: a libmpv of its own would tie
   # it to one Ubuntu's ffmpeg sonames. Frame generation needs a libmpv with
   # the VapourSynth filter, which Debian and Ubuntu do not build.
@@ -369,7 +375,7 @@ jobs:
   # too, so a broken key shows before a tag.
   sign:
     name: Sign
-    needs: [linux, musl, deb, appimage, flatpak, windows, macos]
+    needs: [linux, musl, linux-aarch64, deb, appimage, flatpak, windows, macos]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

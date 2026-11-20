@@ -20,7 +20,8 @@
 # Which package (the same choice as the README's):
 #   Arch and its kin                       the tarball, built on Arch
 #   glibc 2.39 or newer                    the AppImage
-#   x86_64 musl                            the musl tarball, if published
+#   x86_64 or aarch64 musl                 the musl tarball, if published
+#   aarch64 glibc                         the aarch64 tarball, if published
 #   older glibc and other Linux setups     the Flatpak
 #   macOS on Apple silicon                 the disk image, into ~/Applications
 #   NixOS                                  the flake (nix profile install)
@@ -169,7 +170,7 @@ detect_system() {
     esac
     case "$(uname -m)" in
         x86_64 | amd64) ARCH=x86_64 ;;
-        aarch64 | arm64) ARCH=arm64 ;;
+        aarch64 | arm64) if [ "$OS" = macos ]; then ARCH=arm64; else ARCH=aarch64; fi ;;
         *) ARCH="$(uname -m)" ;;
     esac
     if [ -r /etc/os-release ]; then
@@ -239,9 +240,11 @@ gpu_vendors() {
 package_for() { # pm need
     case "$1:$2" in
         apk:mpv) echo mpv-libs ;;
-        xbps:mpv) echo mpv ;;
-        apk:xkb-x11 | xbps:xkb-x11) echo libxkbcommon-x11 ;;
-        apk:ffmpeg | xbps:ffmpeg) echo ffmpeg ;;
+        apt:mpv) echo libmpv2 ;;
+        pacman:mpv | xbps:mpv) echo mpv ;;
+        apk:xkb-x11 | pacman:xkb-x11 | xbps:xkb-x11) echo libxkbcommon-x11 ;;
+        apt:xkb-x11) echo libxkbcommon-x11-0 ;;
+        apk:ffmpeg | apt:ffmpeg | pacman:ffmpeg | xbps:ffmpeg) echo ffmpeg ;;
         pacman:vapoursynth | apt:vapoursynth | dnf:vapoursynth | zypper:vapoursynth | xbps:vapoursynth) echo vapoursynth ;;
         pacman:intel-va | dnf:intel-va | zypper:intel-va | xbps:intel-va | apk:intel-va) echo intel-media-driver ;;
         apt:intel-va) echo intel-media-va-driver ;;
@@ -290,7 +293,13 @@ install_dependencies() { # package
     local kind="$1" pm vendors needs=() wanted=() need pkg
     vendors="$(gpu_vendors)"
     case "$kind" in
-        tarball) if is_musl; then needs+=(mpv xkb-x11 ffmpeg); else needs+=(vapoursynth); fi ;;
+        tarball)
+            if [ "$ARCH" = aarch64 ] || is_musl; then
+                needs+=(mpv xkb-x11 ffmpeg)
+            else
+                needs+=(vapoursynth)
+            fi
+            ;;
         appimage) needs+=(vapoursynth) ;;
     esac
     [ "$kind" = appimage ] && needs+=(fuse)
@@ -322,7 +331,7 @@ install_dependencies() { # package
     echo
     info "The player would like these system packages:"
     for pkg in "${wanted[@]}"; do echo "    $pkg"; done
-    echo "  (libmpv and X11 input on musl, ffmpeg for downloads, VapourSynth and GPU drivers)"
+    echo "  (libmpv for playback, ffmpeg for downloads, X11 input, VapourSynth and GPU drivers)"
     local command
     command="$(install_command "$pm") ${wanted[*]}"
     if ask "Install them with ${BOLD}sudo $command${NC}?"; then
@@ -348,12 +357,17 @@ choose_package() {
     [ -n "$PACKAGE" ] && { echo "$PACKAGE"; return; }
     if [ "$OS" = macos ]; then echo dmg; return; fi
     if is_nixos; then echo nix; return; fi
-    if is_musl; then
-        if [ "$ARCH" = x86_64 ] && fetch "$(asset_url "$(tarball_name).tar.gz.sha256")" /dev/null 2>/dev/null; then
-            echo tarball
-        else
-            echo flatpak
-        fi
+    if [ "$ARCH" = aarch64 ] || is_musl; then
+        case "$ARCH" in
+            x86_64 | aarch64)
+                if fetch "$(asset_url "$(tarball_name).tar.gz.sha256")" /dev/null 2>/dev/null; then
+                    echo tarball
+                    return
+                fi
+                ;;
+        esac
+        [ "$ARCH" != aarch64 ] || err "AniRust $VERSION has no archive for this aarch64 system"
+        echo flatpak
         return
     fi
     if ! is_atomic && is_arch_like; then echo tarball; return; fi
@@ -364,7 +378,7 @@ choose_package() {
 tarball_name() {
     local platform=linux
     if is_musl; then platform=linux-musl; fi
-    echo "anirust-$VERSION-$platform-x86_64"
+    echo "anirust-$VERSION-$platform-$ARCH"
 }
 
 # The desktop entry and icon, the same files the program writes for itself on
@@ -400,7 +414,7 @@ write_marker() { # kind
 }
 
 install_tarball() {
-    [ "$ARCH" = x86_64 ] || err "The Linux packages are built for x86_64 only"
+    case "$ARCH" in x86_64 | aarch64) ;; *) err "The Linux archives are built for x86_64 and aarch64" ;; esac
     local name tmp
     name="$(tarball_name)"
     tmp="$(mktemp -d)"
@@ -423,7 +437,7 @@ install_tarball() {
 }
 
 install_appimage() {
-    [ "$ARCH" = x86_64 ] || err "The Linux packages are built for x86_64 only"
+    [ "$ARCH" = x86_64 ] || err "The AppImage is built for x86_64 only"
     local name="AniRust-$VERSION-x86_64.AppImage" tmp
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"; trap - RETURN' RETURN
@@ -593,7 +607,12 @@ main() {
     echo
     detect_system
     case "$ACTION" in
-        install) resolve_version; do_install "$(choose_package)" ;;
+        install)
+            local kind
+            resolve_version
+            kind="$(choose_package)"
+            do_install "$kind"
+            ;;
         update) do_update ;;
         uninstall) do_uninstall ;;
     esac

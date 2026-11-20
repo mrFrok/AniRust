@@ -178,8 +178,9 @@ with a `.sha256` beside it (`sha256sum -c FILE.sha256`).
 | macOS 15+ on Apple silicon | `anirust-<version>-macos-arm64.dmg` |
 | Arch, CachyOS, Manjaro, openSUSE Tumbleweed | `anirust-<version>-linux-x86_64.tar.gz`, or the PKGBUILD |
 | Ubuntu 24.04+, Debian 13+, Fedora 40+ and other glibc systems that recent | `AniRust-<version>-x86_64.AppImage` |
-| Alpine 3.24+ and Void musl, x86_64 | `anirust-<version>-linux-musl-x86_64.tar.gz` when available |
-| other Linux systems, or for bundled frame generation on musl | `anirust-<version>-x86_64.flatpak` |
+| aarch64 Linux with glibc 2.39+ | `anirust-<version>-linux-aarch64.tar.gz` or `anirust_<version>-1_arm64.deb` on Debian and Ubuntu |
+| Alpine 3.24+ and Void musl, x86_64 or aarch64 | `anirust-<version>-linux-musl-<arch>.tar.gz` when available |
+| other x86_64 Linux systems, or for bundled frame generation on x86_64 musl | `anirust-<version>-x86_64.flatpak` |
 
 - **Windows** — unpack the zip anywhere and run `anirust.exe`. It carries
   libmpv, VapourSynth with the Python it runs on, the RIFE plugin and vs-mlrt
@@ -211,7 +212,10 @@ with a `.sha256` beside it (`sha256sum -c FILE.sha256`).
   `sudo apk add mpv-libs libxkbcommon-x11 ffmpeg` on Alpine or
   `sudo xbps-install -S mpv libxkbcommon-x11 ffmpeg` on Void musl, then unpack the
   archive and run `anirust` inside. Use the Flatpak for bundled VapourSynth,
-  RIFE and vs-mlrt, or for a release without a musl archive.
+  RIFE and vs-mlrt on x86_64, or for an older x86_64 release without a musl archive.
+- **The aarch64 glibc tarball** uses the host's libmpv. On Ubuntu or Debian,
+  install `libmpv2 libxkbcommon-x11-0 ffmpeg`, unpack the archive, and run
+  `anirust`. The arm64 `.deb` installs the required libraries through APT.
 - **The AppImage** — `chmod +x` it and run it; the first start adds it to the
   desktop's applications. One file with its own libmpv (with the filter), RIFE
   and vs-mlrt, built on Ubuntu 24.04. Frame generation uses the host's
@@ -239,8 +243,8 @@ networks on an Intel GPU through Intel's OpenCL: `intel-compute-runtime`
 A `v*` tag starts the GitHub Actions release workflow. It builds the tagged
 source using the default branch's caches and publishes each package with a
 `.sha256` and a `.minisig`. A manual run with an empty release tag keeps the
-packages as workflow artifacts. The musl archive can also be built on its own
-with the **Build musl archive** workflow.
+packages as workflow artifacts. **Build musl archive** and **Build glibc
+packages for aarch64** can also run separately.
 
 ## Reporting problems
 

@@ -1,0 +1,53 @@
+name: Build glibc packages for aarch64
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_ref:
+        type: string
+        required: true
+
+jobs:
+  linux-aarch64:
+    name: Linux archive and .deb (aarch64)
+    runs-on: ubuntu-24.04-arm
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+      - name: System libraries
+        if: hashFiles('packaging/linux/build-native-tarball.sh') != ''
+        id: libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev libxkbcommon-dev libfontconfig-dev
+          versions=$(dpkg-query -W libmpv-dev libxkbcommon-dev libfontconfig-dev libc6-dev | sha256sum)
+          echo "versions=${versions%% *}" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.libraries.outputs.versions != ''
+      - uses: Swatinem/rust-cache@v2
+        if: steps.libraries.outputs.versions != ''
+        with:
+          shared-key: glibc-aarch64-ubuntu-24.04-${{ steps.libraries.outputs.versions }}
+      - name: Build and verify the archive
+        if: steps.libraries.outputs.versions != ''
+        run: sh packaging/linux/build-native-tarball.sh glibc
+      - name: Debian package
+        if: steps.libraries.outputs.versions != ''
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb -p anirust-gui --no-build --output dist/
+          cd dist
+          for package in *_arm64.deb; do
+            test "$(dpkg-deb -f "$package" Architecture)" = arm64
+            sha256sum "$package" > "$package.sha256"
+          done
+      - uses: actions/upload-artifact@v4
+        if: steps.libraries.outputs.versions != ''
+        with:
+          name: glibc-aarch64
+          path: dist/*
+          if-no-files-found: error

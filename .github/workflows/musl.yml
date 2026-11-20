@@ -13,35 +13,54 @@ env:
 
 jobs:
   musl:
-    name: Linux archive (musl x86_64)
-    runs-on: ubuntu-24.04
-    container: alpine:3.24
+    name: Linux archive (musl ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
-      - name: Tools for checkout and caching
-        run: apk add --no-cache git libstdc++ tar zstd
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_ref || github.sha }}
       # Tags from before the musl package still build their original assets.
-      - name: Compiler and system libraries
-        if: hashFiles('packaging/linux/build-musl.sh') != ''
+      # Keep the JavaScript actions on Ubuntu, including on the ARM runner.
+      - name: Prepare the Alpine build container
+        if: hashFiles('packaging/linux/build-native-tarball.sh') != ''
         id: alpine
         run: |
-          apk add --no-cache build-base cargo cmake linux-headers mpv-dev libxkbcommon-dev fontconfig-dev
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          packages=$(apk info -v | LC_ALL=C sort | sha256sum)
+          docker build -t anirust-musl - <<'DOCKERFILE'
+          FROM alpine:3.24
+          RUN apk add --no-cache build-base cargo cmake linux-headers mpv-dev libxkbcommon-dev fontconfig-dev
+          DOCKERFILE
+          packages=$(docker run --rm anirust-musl apk info -v | LC_ALL=C sort | sha256sum)
           echo "packages=${packages%% *}" >> "$GITHUB_OUTPUT"
-      - uses: Swatinem/rust-cache@v2
+          mkdir -p "$RUNNER_TEMP/musl-cache/cargo" "$RUNNER_TEMP/musl-cache/target"
+      - uses: actions/cache@v4
         if: steps.alpine.outputs.packages != ''
         with:
-          shared-key: musl-x86_64-alpine-3.24-${{ steps.alpine.outputs.packages }}-${{ hashFiles('packaging/linux/build-musl.sh') }}
-          cache-bin: false
+          path: |
+            ${{ runner.temp }}/musl-cache/cargo/registry
+            ${{ runner.temp }}/musl-cache/target/release
+            ${{ runner.temp }}/musl-cache/target/.rustc_info.json
+          key: musl-${{ matrix.arch }}-${{ steps.alpine.outputs.packages }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'packaging/linux/build-native-tarball.sh') }}
+          restore-keys: musl-${{ matrix.arch }}-${{ steps.alpine.outputs.packages }}-
       - name: Build and verify the archive
         if: steps.alpine.outputs.packages != ''
-        run: sh packaging/linux/build-musl.sh
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --volume "$GITHUB_WORKSPACE:/src" --workdir /src \
+            --volume "$RUNNER_TEMP/musl-cache:/build" \
+            --env HOME=/build --env CARGO_HOME=/build/cargo --env CARGO_TARGET_DIR=/build/target \
+            --env CARGO_TERM_COLOR \
+            anirust-musl sh packaging/linux/build-native-tarball.sh musl
       - uses: actions/upload-artifact@v4
         if: steps.alpine.outputs.packages != ''
         with:
-          name: musl
-          path: dist/*-linux-musl-x86_64.tar.gz*
+          name: musl-${{ matrix.arch }}
+          path: dist/*-linux-musl-${{ matrix.arch }}.tar.gz*
           if-no-files-found: error

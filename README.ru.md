@@ -177,8 +177,9 @@ VapourSynth, сам VapourSynth и плагин с моделями. libmpv и �
 | macOS 15+ на Apple silicon | `anirust-<версия>-macos-arm64.dmg` |
 | Arch, CachyOS, Manjaro, openSUSE Tumbleweed | `anirust-<версия>-linux-x86_64.tar.gz` или PKGBUILD |
 | Ubuntu 24.04+, Debian 13+, Fedora 40+ и другие системы с не менее свежей glibc | `AniRust-<версия>-x86_64.AppImage` |
-| Alpine 3.24+ и Void musl, x86_64 | `anirust-<версия>-linux-musl-x86_64.tar.gz`, если есть в релизе |
-| другие Linux-системы или готовый комплект для генерации кадров на musl | `anirust-<версия>-x86_64.flatpak` |
+| Linux aarch64 с glibc 2.39+ | `anirust-<версия>-linux-aarch64.tar.gz` или `anirust_<версия>-1_arm64.deb` для Debian и Ubuntu |
+| Alpine 3.24+ и Void musl, x86_64 или aarch64 | `anirust-<версия>-linux-musl-<архитектура>.tar.gz`, если есть в релизе |
+| другие Linux-системы x86_64 или готовый комплект для генерации кадров на x86_64 musl | `anirust-<версия>-x86_64.flatpak` |
 
 - **Windows** — распакуйте zip куда угодно и запустите `anirust.exe`. Внутри
   libmpv, VapourSynth с Python, на котором он работает, плагин RIFE и vs-mlrt
@@ -211,7 +212,12 @@ VapourSynth, сам VapourSynth и плагин с моделями. libmpv и �
   `sudo apk add mpv-libs libxkbcommon-x11 ffmpeg` на Alpine или
   `sudo xbps-install -S mpv libxkbcommon-x11 ffmpeg` на Void musl, затем распакуйте
   архив и запустите `anirust`. Для готового комплекта с VapourSynth, RIFE и
-  vs-mlrt или для релиза без архива musl используйте Flatpak.
+  vs-mlrt на x86_64 или для старого релиза x86_64 без архива musl используйте
+  Flatpak.
+- **Архив aarch64 с glibc** использует системную libmpv. На Ubuntu или
+  Debian установите `libmpv2 libxkbcommon-x11-0 ffmpeg`, распакуйте архив
+  и запустите `anirust`. При установке `.deb` для arm64 APT подтянет
+  обязательные библиотеки.
 - **AppImage** — сделайте файл исполняемым (`chmod +x`) и запустите; при
   первом запуске он сам появится в меню приложений. Один файл со своей libmpv
   (с фильтром), RIFE и vs-mlrt, собранный на Ubuntu 24.04. Для генерации
@@ -239,7 +245,8 @@ Intel и AMD идёт через VA-API: `intel-media-driver` для Intel
 Тег `v*` запускает релизную сборку в GitHub Actions. Она собирает исходники
 из тега с кэшем основной ветки и публикует пакеты с `.sha256` и `.minisig`.
 При ручном запуске с пустым тегом пакеты сохраняются как артефакты сборки.
-Архив musl также можно собрать отдельно через **Build musl archive**.
+Сборки **Build musl archive** и **Build glibc packages for aarch64** можно
+запускать отдельно.
 
 ## Если что-то не так
 

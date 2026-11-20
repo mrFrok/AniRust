@@ -183,7 +183,8 @@ impl Install {
                 } else {
                     "linux"
                 };
-                Some(format!("anirust-{version}-{platform}-x86_64.tar.gz"))
+                let arch = std::env::consts::ARCH;
+                Some(format!("anirust-{version}-{platform}-{arch}.tar.gz"))
             }
             Self::MacApp(_) => Some(format!("anirust-{version}-macos-arm64.dmg")),
             Self::Elsewhere(_) => None,
@@ -814,12 +815,12 @@ mod tests {
         #[cfg(not(target_env = "musl"))]
         assert_eq!(
             Install::Archive(PathBuf::new()).asset_name(v).unwrap(),
-            "anirust-1.1.0-linux-x86_64.tar.gz"
+            format!("anirust-1.1.0-linux-{}.tar.gz", std::env::consts::ARCH)
         );
         #[cfg(target_env = "musl")]
         assert_eq!(
             Install::Archive(PathBuf::new()).asset_name(v).unwrap(),
-            "anirust-1.1.0-linux-musl-x86_64.tar.gz"
+            format!("anirust-1.1.0-linux-musl-{}.tar.gz", std::env::consts::ARCH)
         );
         assert_eq!(Install::Elsewhere(Elsewhere::Flatpak).asset_name(v), None);
     }
