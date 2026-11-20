@@ -1,7 +1,8 @@
-# A tag `v*` builds, signs and publishes every package. A manual run with an
-# existing release tag rebuilds that source using the current workflow.
-# A manual run with no tag keeps the packages as workflow artifacts.
+# Tags dispatch the build on the default branch so releases share its caches.
+# The build checks out the requested tag. A manual run with no tag keeps the
+# packages as workflow artifacts.
 name: Release
+run-name: Release ${{ inputs.release_tag || github.ref_name }}
 
 on:
   push:
@@ -17,6 +18,20 @@ env:
   SOURCE_REF: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.sha }}
 
 jobs:
+  dispatch:
+    name: Start release build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" \
+            --ref "$DEFAULT_BRANCH" -f "release_tag=$GITHUB_REF_NAME"
+
   # The Linux archive, built on Arch: its own libmpv — the one with the
   # VapourSynth filter frame generation needs — is linked against the ffmpeg
   # and libplacebo of the system it is built on, so it is built on the one
@@ -25,14 +40,19 @@ jobs:
   # the system's libmpv, and the .deb below is the better choice.
   linux:
     name: Linux archive (Arch)
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     container: archlinux:base-devel
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 256M
+      CCACHE_COMPILERCHECK: content
     steps:
       - name: Tools and libraries
         run: |
           pacman -Syu --noconfirm --needed \
             git rustup curl unzip 7zip python python-pip \
-            mpv vapoursynth meson ninja cmake \
+            mpv vapoursynth meson ninja cmake ccache \
             wayland-protocols vulkan-headers libxkbcommon fontconfig
           rustup default stable
           pip install --break-system-packages onnx onnxconverter-common
@@ -42,6 +62,11 @@ jobs:
       - name: Mark the checkout safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-arch-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ccache-arch-${{ runner.arch }}-
       # rust-cache brings back what cargo left in target/, but the rest of it
       # — the packaging scripts' sources and builds — half-deleted. Those
       # start from nothing instead.
@@ -56,7 +81,15 @@ jobs:
       # libmpv with the filter, RIFE, and vs-mlrt for TensorRT, OpenVINO and
       # MIGraphX: packaging/linux/build-tarball.sh builds or fetches each.
       - name: Tarball
-        run: packaging/linux/build-tarball.sh
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+        run: |
+          ccache --zero-stats
+          packaging/linux/build-tarball.sh
+      - name: Compiler cache statistics
+        if: always()
+        run: ccache --show-stats
       # vs-mlrt on its own as well, for packages that build the program
       # themselves (packaging/arch/PKGBUILD).
       - name: vs-mlrt archive
@@ -78,6 +111,7 @@ jobs:
   # the VapourSynth filter, which Debian and Ubuntu do not build.
   deb:
     name: Debian package
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -100,7 +134,12 @@ jobs:
   # libmpv, RIFE and vs-mlrt (packaging/linux/build-appimage.sh).
   appimage:
     name: AppImage
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 256M
+      CCACHE_COMPILERCHECK: content
     steps:
       - uses: actions/checkout@v4
         with:
@@ -110,7 +149,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libmpv-dev libxkbcommon-dev libfontconfig-dev \
-            meson ninja-build cmake pkg-config git curl unzip p7zip-full zstd \
+            meson ninja-build cmake ccache pkg-config git curl unzip p7zip-full zstd \
             python3-pip librsvg2-bin \
             libavcodec-dev libavformat-dev libavfilter-dev libavdevice-dev libavutil-dev \
             libswscale-dev libswresample-dev libass-dev libplacebo-dev \
@@ -122,6 +161,11 @@ jobs:
             libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1 libxcursor1 libxi6 libxrandr2
           pip install --break-system-packages onnx onnxconverter-common
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-appimage-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ccache-appimage-${{ runner.arch }}-
       # rust-cache brings back what cargo left in target/, but the rest of it
       # — the packaging scripts' sources and builds — half-deleted. Those
       # start from nothing instead.
@@ -134,7 +178,15 @@ jobs:
             esac
           done
       - name: AppImage
-        run: packaging/linux/build-appimage.sh
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+        run: |
+          ccache --zero-stats
+          packaging/linux/build-appimage.sh
+      - name: Compiler cache statistics
+        if: always()
+        run: ccache --show-stats
       - name: Checksums
         run: cd dist && for f in *.AppImage; do sha256sum "$f" > "$f.sha256"; done
       - uses: actions/upload-artifact@v4
@@ -146,6 +198,7 @@ jobs:
   # (Alpine, Void musl, Chimera) included (packaging/flatpak/).
   flatpak:
     name: Flatpak
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     env:
       APP_ID: io.github.mrfrok.AniRust
@@ -199,6 +252,7 @@ jobs:
 
   windows:
     name: Windows zip
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-2022
     defaults:
       run:
@@ -281,6 +335,7 @@ jobs:
 
   macos:
     name: macOS disk image
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -315,9 +370,9 @@ jobs:
         with:
           ref: ${{ env.SOURCE_REF }}
       - name: Check the release version
-        if: github.event_name == 'push' || inputs.release_tag != ''
+        if: inputs.release_tag != ''
         env:
-          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
           [ -n "$version" ] && [ "$RELEASE_TAG" = "v$version" ] || {
@@ -353,7 +408,7 @@ jobs:
   release:
     name: Publish
     needs: [sign]
-    if: github.event_name == 'push' || inputs.release_tag != ''
+    if: inputs.release_tag != ''
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -364,7 +419,7 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          tag_name: ${{ inputs.release_tag }}
           files: dist/*
           fail_on_unmatched_files: true
           generate_release_notes: true
