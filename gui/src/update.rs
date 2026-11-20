@@ -177,7 +177,14 @@ impl Install {
         match self {
             Self::WindowsSetup => Some(format!("AniRust-{version}-setup.exe")),
             Self::AppImage(_) => Some(format!("AniRust-{version}-x86_64.AppImage")),
-            Self::Archive(_) => Some(format!("anirust-{version}-linux-x86_64.tar.gz")),
+            Self::Archive(_) => {
+                let platform = if cfg!(target_env = "musl") {
+                    "linux-musl"
+                } else {
+                    "linux"
+                };
+                Some(format!("anirust-{version}-{platform}-x86_64.tar.gz"))
+            }
             Self::MacApp(_) => Some(format!("anirust-{version}-macos-arm64.dmg")),
             Self::Elsewhere(_) => None,
         }
@@ -804,9 +811,15 @@ mod tests {
             Install::AppImage(PathBuf::new()).asset_name(v).unwrap(),
             "AniRust-1.1.0-x86_64.AppImage"
         );
+        #[cfg(not(target_env = "musl"))]
         assert_eq!(
             Install::Archive(PathBuf::new()).asset_name(v).unwrap(),
             "anirust-1.1.0-linux-x86_64.tar.gz"
+        );
+        #[cfg(target_env = "musl")]
+        assert_eq!(
+            Install::Archive(PathBuf::new()).asset_name(v).unwrap(),
+            "anirust-1.1.0-linux-musl-x86_64.tar.gz"
         );
         assert_eq!(Install::Elsewhere(Elsewhere::Flatpak).asset_name(v), None);
     }

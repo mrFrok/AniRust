@@ -20,7 +20,8 @@
 # Which package (the same choice as the README's):
 #   Arch and its kin                       the tarball, built on Arch
 #   glibc 2.39 or newer                    the AppImage
-#   older glibc, musl, anything else       the Flatpak
+#   x86_64 musl                            the musl tarball, if published
+#   older glibc and other Linux setups     the Flatpak
 #   macOS on Apple silicon                 the disk image, into ~/Applications
 #   NixOS                                  the flake (nix profile install)
 #
@@ -180,6 +181,7 @@ detect_system() {
 }
 
 is_musl() {
+    case "$(getconf GNU_LIBC_VERSION 2>/dev/null)" in 'glibc '*) return 1 ;; esac
     [ -e "/lib/ld-musl-$(uname -m).so.1" ] || ldd --version 2>&1 | grep -qi musl
 }
 
@@ -226,7 +228,7 @@ package_manager() {
 
 # The PCI vendors of the display devices: 10de NVIDIA, 1002 AMD, 8086 Intel.
 gpu_vendors() {
-    cat /sys/class/drm/*/device/vendor 2>/dev/null | sort -u | tr '\n' ' '
+    cat /sys/class/drm/*/device/vendor 2>/dev/null | sort -u | tr '\n' ' ' || true
 }
 
 # ---------------------------------------------------------------------------
@@ -236,6 +238,10 @@ gpu_vendors() {
 # Prints the packages for one need on one package manager, or nothing.
 package_for() { # pm need
     case "$1:$2" in
+        apk:mpv) echo mpv-libs ;;
+        xbps:mpv) echo mpv ;;
+        apk:xkb-x11 | xbps:xkb-x11) echo libxkbcommon-x11 ;;
+        apk:ffmpeg | xbps:ffmpeg) echo ffmpeg ;;
         pacman:vapoursynth | apt:vapoursynth | dnf:vapoursynth | zypper:vapoursynth | xbps:vapoursynth) echo vapoursynth ;;
         pacman:intel-va | dnf:intel-va | zypper:intel-va | xbps:intel-va | apk:intel-va) echo intel-media-driver ;;
         apt:intel-va) echo intel-media-va-driver ;;
@@ -283,7 +289,10 @@ install_dependencies() { # package
     [ "$OS" = linux ] || return 0
     local kind="$1" pm vendors needs=() wanted=() need pkg
     vendors="$(gpu_vendors)"
-    case "$kind" in tarball | appimage) needs+=(vapoursynth) ;; esac
+    case "$kind" in
+        tarball) if is_musl; then needs+=(mpv xkb-x11 ffmpeg); else needs+=(vapoursynth); fi ;;
+        appimage) needs+=(vapoursynth) ;;
+    esac
     [ "$kind" = appimage ] && needs+=(fuse)
     # The Flatpak's runtime carries its own drivers and VapourSynth.
     if [ "$kind" != flatpak ]; then
@@ -313,8 +322,7 @@ install_dependencies() { # package
     echo
     info "The player would like these system packages:"
     for pkg in "${wanted[@]}"; do echo "    $pkg"; done
-    echo "  (VapourSynth for frame generation; VA-API for hardware decoding; Intel's"
-    echo "   OpenCL for the neural networks on an Intel GPU)"
+    echo "  (libmpv and X11 input on musl, ffmpeg for downloads, VapourSynth and GPU drivers)"
     local command
     command="$(install_command "$pm") ${wanted[*]}"
     if ask "Install them with ${BOLD}sudo $command${NC}?"; then
@@ -325,7 +333,7 @@ install_dependencies() { # package
         if $sudo $command; then
             ok "System packages installed"
         else
-            warn "Some packages did not install; the player works without them, with less"
+            warn "Some system packages could not be installed. Retry with: sudo $command"
         fi
     else
         warn "Skipped. Later: sudo $command"
@@ -340,9 +348,23 @@ choose_package() {
     [ -n "$PACKAGE" ] && { echo "$PACKAGE"; return; }
     if [ "$OS" = macos ]; then echo dmg; return; fi
     if is_nixos; then echo nix; return; fi
-    if ! is_atomic && is_arch_like && ! is_musl; then echo tarball; return; fi
-    if ! is_musl && [ "$(glibc_version)" -ge 239 ]; then echo appimage; return; fi
+    if is_musl; then
+        if [ "$ARCH" = x86_64 ] && fetch "$(asset_url "$(tarball_name).tar.gz.sha256")" /dev/null 2>/dev/null; then
+            echo tarball
+        else
+            echo flatpak
+        fi
+        return
+    fi
+    if ! is_atomic && is_arch_like; then echo tarball; return; fi
+    if [ "$(glibc_version)" -ge 239 ]; then echo appimage; return; fi
     echo flatpak
+}
+
+tarball_name() {
+    local platform=linux
+    if is_musl; then platform=linux-musl; fi
+    echo "anirust-$VERSION-$platform-x86_64"
 }
 
 # The desktop entry and icon, the same files the program writes for itself on
@@ -379,7 +401,8 @@ write_marker() { # kind
 
 install_tarball() {
     [ "$ARCH" = x86_64 ] || err "The Linux packages are built for x86_64 only"
-    local name="anirust-$VERSION-linux-x86_64" tmp
+    local name tmp
+    name="$(tarball_name)"
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"; trap - RETURN' RETURN
     info "Downloading $name.tar.gz…"
@@ -486,12 +509,15 @@ suggest_path() {
 installed_package() { [ -f "$MARKER" ] && sed -n 's/^package=//p' "$MARKER"; }
 installed_version() { [ -f "$MARKER" ] && sed -n 's/^version=//p' "$MARKER"; }
 
-do_install() {
-    local kind="$1"
+resolve_version() {
     if [ -z "$VERSION" ]; then
         info "Looking up the latest release…"
         VERSION="$(latest_version)" || err "Could not find the latest release"
     fi
+}
+
+do_install() {
+    local kind="$1"
     ok "AniRust $VERSION, as $kind"
     case "$kind" in
         tarball) install_tarball ;;
@@ -518,9 +544,7 @@ do_update() {
     kind="$(installed_package || true)"
     [ -n "$kind" ] || err "AniRust was not installed by this script; install it first"
     current="$(installed_version || true)"
-    if [ -z "$VERSION" ]; then
-        VERSION="$(latest_version)" || err "Could not find the latest release"
-    fi
+    resolve_version
     if [ "$current" = "$VERSION" ]; then
         ok "AniRust $current is the latest"
         return
@@ -569,7 +593,7 @@ main() {
     echo
     detect_system
     case "$ACTION" in
-        install) do_install "$(choose_package)" ;;
+        install) resolve_version; do_install "$(choose_package)" ;;
         update) do_update ;;
         uninstall) do_uninstall ;;
     esac

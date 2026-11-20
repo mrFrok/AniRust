@@ -178,7 +178,8 @@ with a `.sha256` beside it (`sha256sum -c FILE.sha256`).
 | macOS 15+ on Apple silicon | `anirust-<version>-macos-arm64.dmg` |
 | Arch, CachyOS, Manjaro, openSUSE Tumbleweed | `anirust-<version>-linux-x86_64.tar.gz`, or the PKGBUILD |
 | Ubuntu 24.04+, Debian 13+, Fedora 40+ and other glibc systems that recent | `AniRust-<version>-x86_64.AppImage` |
-| any other Linux — older glibc, or none at all (Alpine, Void musl, Chimera) | `anirust-<version>-x86_64.flatpak` |
+| Alpine 3.24+ and Void musl, x86_64 | `anirust-<version>-linux-musl-x86_64.tar.gz` when available |
+| other Linux systems, or for bundled frame generation on musl | `anirust-<version>-x86_64.flatpak` |
 
 - **Windows** — unpack the zip anywhere and run `anirust.exe`. It carries
   libmpv, VapourSynth with the Python it runs on, the RIFE plugin and vs-mlrt
@@ -206,6 +207,11 @@ with a `.sha256` beside it (`sha256sum -c FILE.sha256`).
   with `makepkg -si`, libmpv with the filter included; the RIFE plugin comes
   from upstream and vs-mlrt from the release
   (`anirust-<version>-mlrt-linux-x86_64.tar.gz` is that vs-mlrt alone).
+- **The musl tarball** uses the system's libmpv. Install it with
+  `sudo apk add mpv-libs libxkbcommon-x11 ffmpeg` on Alpine or
+  `sudo xbps-install -S mpv libxkbcommon-x11 ffmpeg` on Void musl, then unpack the
+  archive and run `anirust` inside. Use the Flatpak for bundled VapourSynth,
+  RIFE and vs-mlrt, or for a release without a musl archive.
 - **The AppImage** — `chmod +x` it and run it; the first start adds it to the
   desktop's applications. One file with its own libmpv (with the filter), RIFE
   and vs-mlrt, built on Ubuntu 24.04. Frame generation uses the host's
@@ -230,10 +236,11 @@ player decodes on the CPU, and its decoder line reads SW. OpenVINO runs the
 networks on an Intel GPU through Intel's OpenCL: `intel-compute-runtime`
 (`intel-opencl-icd` on Debian and Ubuntu).
 
-Releases are built by GitHub Actions (`.github/workflows/release.yml`): a tag
-`v*` builds every package, each with a `.sha256`, and publishes the release;
-started by hand, the workflow is a dry run that builds everything and publishes
-nothing.
+A `v*` tag starts the GitHub Actions release workflow. It builds the tagged
+source using the default branch's caches and publishes each package with a
+`.sha256` and a `.minisig`. A manual run with an empty release tag keeps the
+packages as workflow artifacts. The musl archive can also be built on its own
+with the **Build musl archive** workflow.
 
 ## Reporting problems
 

@@ -1,0 +1,47 @@
+name: Build musl archive
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_ref:
+        type: string
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  musl:
+    name: Linux archive (musl x86_64)
+    runs-on: ubuntu-24.04
+    container: alpine:3.24
+    steps:
+      - name: Tools for checkout and caching
+        run: apk add --no-cache git libstdc++ tar zstd
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+      # Tags from before the musl package still build their original assets.
+      - name: Compiler and system libraries
+        if: hashFiles('packaging/linux/build-musl.sh') != ''
+        id: alpine
+        run: |
+          apk add --no-cache build-base cargo cmake linux-headers mpv-dev libxkbcommon-dev fontconfig-dev
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          packages=$(apk info -v | LC_ALL=C sort | sha256sum)
+          echo "packages=${packages%% *}" >> "$GITHUB_OUTPUT"
+      - uses: Swatinem/rust-cache@v2
+        if: steps.alpine.outputs.packages != ''
+        with:
+          shared-key: musl-x86_64-alpine-3.24-${{ steps.alpine.outputs.packages }}-${{ hashFiles('packaging/linux/build-musl.sh') }}
+          cache-bin: false
+      - name: Build and verify the archive
+        if: steps.alpine.outputs.packages != ''
+        run: sh packaging/linux/build-musl.sh
+      - uses: actions/upload-artifact@v4
+        if: steps.alpine.outputs.packages != ''
+        with:
+          name: musl
+          path: dist/*-linux-musl-x86_64.tar.gz*
+          if-no-files-found: error

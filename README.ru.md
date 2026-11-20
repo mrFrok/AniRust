@@ -177,7 +177,8 @@ VapourSynth, сам VapourSynth и плагин с моделями. libmpv и �
 | macOS 15+ на Apple silicon | `anirust-<версия>-macos-arm64.dmg` |
 | Arch, CachyOS, Manjaro, openSUSE Tumbleweed | `anirust-<версия>-linux-x86_64.tar.gz` или PKGBUILD |
 | Ubuntu 24.04+, Debian 13+, Fedora 40+ и другие системы с не менее свежей glibc | `AniRust-<версия>-x86_64.AppImage` |
-| любой другой Linux — со старой glibc или вовсе без неё (Alpine, Void musl, Chimera) | `anirust-<версия>-x86_64.flatpak` |
+| Alpine 3.24+ и Void musl, x86_64 | `anirust-<версия>-linux-musl-x86_64.tar.gz`, если есть в релизе |
+| другие Linux-системы или готовый комплект для генерации кадров на musl | `anirust-<версия>-x86_64.flatpak` |
 
 - **Windows** — распакуйте zip куда угодно и запустите `anirust.exe`. Внутри
   libmpv, VapourSynth с Python, на котором он работает, плагин RIFE и vs-mlrt
@@ -206,6 +207,11 @@ VapourSynth, сам VapourSynth и плагин с моделями. libmpv и �
   `makepkg -si`, вместе с libmpv с фильтром; плагин RIFE он берёт из апстрима,
   а vs-mlrt — из релиза (`anirust-<версия>-mlrt-linux-x86_64.tar.gz` — это
   только vs-mlrt).
+- **Архив для musl** использует системную libmpv. Установите её командой
+  `sudo apk add mpv-libs libxkbcommon-x11 ffmpeg` на Alpine или
+  `sudo xbps-install -S mpv libxkbcommon-x11 ffmpeg` на Void musl, затем распакуйте
+  архив и запустите `anirust`. Для готового комплекта с VapourSynth, RIFE и
+  vs-mlrt или для релиза без архива musl используйте Flatpak.
 - **AppImage** — сделайте файл исполняемым (`chmod +x`) и запустите; при
   первом запуске он сам появится в меню приложений. Один файл со своей libmpv
   (с фильтром), RIFE и vs-mlrt, собранный на Ubuntu 24.04. Для генерации
@@ -230,10 +236,10 @@ Intel и AMD идёт через VA-API: `intel-media-driver` для Intel
 считает сети на видеокарте Intel через OpenCL от Intel:
 `intel-compute-runtime` (`intel-opencl-icd` в Debian и Ubuntu).
 
-Релизы собирает GitHub Actions (`.github/workflows/release.yml`): тег `v*`
-собирает все пакеты, к каждому — `.sha256`, и публикует релиз; запущенный
-вручную, workflow делает пробный прогон — собирает всё и ничего не
-публикует.
+Тег `v*` запускает релизную сборку в GitHub Actions. Она собирает исходники
+из тега с кэшем основной ветки и публикует пакеты с `.sha256` и `.minisig`.
+При ручном запуске с пустым тегом пакеты сохраняются как артефакты сборки.
+Архив musl также можно собрать отдельно через **Build musl archive**.
 
 ## Если что-то не так
 
