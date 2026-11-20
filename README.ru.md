@@ -174,7 +174,7 @@ VapourSynth, сам VapourSynth и плагин с моделями. libmpv и �
 | Система | Что взять |
 | --- | --- |
 | Windows 10 и 11 | `anirust-<версия>-windows-x86_64.zip` |
-| macOS 14+ на Apple silicon | `anirust-<версия>-macos-arm64.dmg` |
+| macOS 15+ на Apple silicon | `anirust-<версия>-macos-arm64.dmg` |
 | Arch, CachyOS, Manjaro, openSUSE Tumbleweed | `anirust-<версия>-linux-x86_64.tar.gz` или PKGBUILD |
 | Ubuntu 24.04+, Debian 13+, Fedora 40+ и другие системы с не менее свежей glibc | `AniRust-<версия>-x86_64.AppImage` |
 | любой другой Linux — со старой glibc или вовсе без неё (Alpine, Void musl, Chimera) | `anirust-<версия>-x86_64.flatpak` |

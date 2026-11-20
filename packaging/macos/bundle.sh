@@ -26,8 +26,7 @@ done
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/AniRust.icns"
 rm -rf "$iconset"
 
-# The oldest macOS it runs on is the one the release builds on (macos-14):
-# Homebrew's libraries, bundled below, are built for that and no older.
+# The bundled Homebrew libraries require macOS 15.
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -41,7 +40,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>anirust</string>
   <key>CFBundleIconFile</key><string>AniRust</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>

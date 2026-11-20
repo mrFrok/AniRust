@@ -175,7 +175,7 @@ with a `.sha256` beside it (`sha256sum -c FILE.sha256`).
 | System | Take |
 | --- | --- |
 | Windows 10 and 11 | `anirust-<version>-windows-x86_64.zip` |
-| macOS 14+ on Apple silicon | `anirust-<version>-macos-arm64.dmg` |
+| macOS 15+ on Apple silicon | `anirust-<version>-macos-arm64.dmg` |
 | Arch, CachyOS, Manjaro, openSUSE Tumbleweed | `anirust-<version>-linux-x86_64.tar.gz`, or the PKGBUILD |
 | Ubuntu 24.04+, Debian 13+, Fedora 40+ and other glibc systems that recent | `AniRust-<version>-x86_64.AppImage` |
 | any other Linux — older glibc, or none at all (Alpine, Void musl, Chimera) | `anirust-<version>-x86_64.flatpak` |
