@@ -1,0 +1,67 @@
+# Copyright © SixtyFPS GmbH <info@slint.dev>
+# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
+
+[package]
+name = "i-slint-renderer-femtovg"
+description = "FemtoVG based renderer for Slint"
+categories = ["gui", "rendering", "wasm"]
+keywords = ["femtovg", "opengl", "wgpu", "gui", "ui"]
+authors.workspace = true
+edition = "2024"
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[features]
+image-pixel-format-gray8 = ["i-slint-core/image-pixel-format-gray8"]
+image-pixel-format-rgb565 = ["i-slint-core/image-pixel-format-rgb565"]
+default = []
+opengl = []
+# wgpu-30 enables the wgpu backend for internal use (e.g. linuxkms DRM rendering).
+# unstable-wgpu-30 additionally exposes public API integration (GraphicsAPI, texture import).
+wgpu = ["wgpu-30"]
+wgpu-30 = ["dep:wgpu-30", "femtovg/wgpu", "i-slint-core/wgpu-30"]
+unstable-wgpu-30 = ["wgpu-30", "i-slint-core/unstable-wgpu-30"]
+
+[dependencies]
+i-slint-core = { workspace = true, features = ["default", "box-shadow-cache", "shared-fontique", "shared-parley"] }
+i-slint-core-macros = { workspace = true, features = ["default"] }
+i-slint-common = { workspace = true, features = ["default", "shared-fontique"] }
+
+const-field-offset = { version = "0.2.1", path = "../../../helper_crates/const-field-offset" }
+
+lyon_path = { workspace = true }
+pin-weak = "1"
+femtovg = { version = "0.28", default-features = false, features = ["swash"] }
+imgref = { version = "1.6.1" }
+rgb = { version = "0.8.27" }
+
+glow = { workspace = true }
+
+wgpu-30 = { workspace = true, optional = true, default-features = true }
+
+[target.'cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))'.dependencies]
+web-sys = { workspace = true, features = ["console", "WebGlContextAttributes", "WebGlTexture", "CanvasRenderingContext2d", "HtmlInputElement", "HtmlCanvasElement", "Window", "Document", "Element", "WebGl2RenderingContext", "WebglLoseContext"] }
+wasm-bindgen = { version = "0.2" }
+# Enable wgpu-core's WebGL2 backend so the wgpu init helper can fall back to
+# it transparently when no BROWSER_WEBGPU adapter is available (e.g. in
+# headless Chromium without a usable WebGPU device).
+wgpu-30 = { workspace = true, optional = true, features = ["webgl"] }
+
+# The browser decodes images on the web; decode with the image and resvg crates elsewhere.
+[target.'cfg(any(not(target_arch = "wasm32"), target_os = "emscripten"))'.dependencies]
+i-slint-core = { workspace = true, features = ["image-decoders", "svg"] }
+
+[dev-dependencies]
+slint = { path = "../../../api/rs/slint", default-features = false, features = ["std", "compat-1-2"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(slint_nightly_test)"] }
+
+[package.metadata.docs.rs]
+rustdoc-args = ["--generate-link-to-definition"]

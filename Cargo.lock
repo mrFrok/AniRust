@@ -222,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "anirust-api"
-version = "1.0.2"
+version = "1.1.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -236,7 +236,7 @@ dependencies = [
 
 [[package]]
 name = "anirust-cli"
-version = "1.0.2"
+version = "1.1.0"
 dependencies = [
  "anirust-api",
  "anirust-download",
@@ -255,7 +255,7 @@ dependencies = [
 
 [[package]]
 name = "anirust-download"
-version = "1.0.2"
+version = "1.1.0"
 dependencies = [
  "anirust-extract",
  "futures",
@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "anirust-extract"
-version = "1.0.2"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -284,7 +284,7 @@ dependencies = [
 
 [[package]]
 name = "anirust-gui"
-version = "1.0.2"
+version = "1.1.0"
 dependencies = [
  "anirust-api",
  "anirust-download",
@@ -320,7 +320,7 @@ dependencies = [
 
 [[package]]
 name = "anirust-player"
-version = "1.0.2"
+version = "1.1.0"
 dependencies = [
  "dirs",
  "libloading 0.9.0",
@@ -2620,8 +2620,6 @@ dependencies = [
 [[package]]
 name = "i-slint-renderer-femtovg"
 version = "1.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af1892857762af5466d723f41febf4f80f92d1455de839ca9a76c955bf8793b9"
 dependencies = [
  "const-field-offset",
  "femtovg",

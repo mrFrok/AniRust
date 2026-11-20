@@ -2,10 +2,16 @@
 # Crates are added as their phase lands, so the workspace never carries an
 # empty package: extract (phase 2), player (phase 3), core + gui (phase 4).
 members = ["api", "extract", "player", "download", "cli", "gui"]
+exclude = ["vendor/i-slint-renderer-femtovg"]
 resolver = "3"
 
+[patch.crates-io]
+# Backport the Slint 1.19 glyph alignment fix until it ships in a release.
+# https://github.com/slint-ui/slint/pull/15003
+i-slint-renderer-femtovg = { path = "vendor/i-slint-renderer-femtovg" }
+
 [workspace.package]
-version = "1.0.2"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.90"
 license = "GPL-3.0-or-later"
@@ -14,10 +20,10 @@ repository = "https://github.com/mrfrok/AniRust"
 homepage = "https://github.com/mrfrok/AniRust"
 
 [workspace.dependencies]
-anirust-api = { path = "api", version = "1.0.2" }
-anirust-extract = { path = "extract", version = "1.0.2" }
-anirust-player = { path = "player", version = "1.0.2" }
-anirust-download = { path = "download", version = "1.0.2" }
+anirust-api = { path = "api", version = "1.1.0" }
+anirust-extract = { path = "extract", version = "1.1.0" }
+anirust-player = { path = "player", version = "1.1.0" }
+anirust-download = { path = "download", version = "1.1.0" }
 
 # Async runtime
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
