@@ -1,16 +1,20 @@
-# A tag `v*` builds every package and publishes a release with them, each
-# with a .sha256 beside it. Started by hand (workflow_dispatch) it is a dry
-# run: everything is built and kept as workflow artifacts, nothing is
-# published.
+# A tag `v*` builds, signs and publishes every package. A manual run with an
+# existing release tag rebuilds that source using the current workflow.
+# A manual run with no tag keeps the packages as workflow artifacts.
 name: Release
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag (leave blank for a dry run)
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
+  SOURCE_REF: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.sha }}
 
 jobs:
   # The Linux archive, built on Arch: its own libmpv — the one with the
@@ -33,6 +37,8 @@ jobs:
           rustup default stable
           pip install --break-system-packages onnx onnxconverter-common
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
       - name: Mark the checkout safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: Swatinem/rust-cache@v2
@@ -75,6 +81,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
       - uses: dtolnay/rust-toolchain@stable
       - run: sudo apt-get update && sudo apt-get install -y libmpv-dev libxkbcommon-dev libfontconfig-dev
       - uses: Swatinem/rust-cache@v2
@@ -95,6 +103,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Build tools and libraries
         run: |
@@ -141,6 +151,8 @@ jobs:
       APP_ID: io.github.mrfrok.AniRust
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
       - name: Flatpak, the runtime and the networks
         run: |
           sudo apt-get update
@@ -193,6 +205,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: ilammy/msvc-dev-cmd@v1
@@ -267,9 +281,11 @@ jobs:
 
   macos:
     name: macOS disk image
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
       - uses: dtolnay/rust-toolchain@stable
       - run: brew install mpv dylibbundler librsvg
       - uses: Swatinem/rust-cache@v2
@@ -296,6 +312,18 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
+      - name: Check the release version
+        if: github.event_name == 'push' || inputs.release_tag != ''
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          [ -n "$version" ] && [ "$RELEASE_TAG" = "v$version" ] || {
+            echo "The release tag must match the Cargo workspace version"
+            exit 1
+          }
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -325,7 +353,7 @@ jobs:
   release:
     name: Publish
     needs: [sign]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' || inputs.release_tag != ''
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -336,5 +364,7 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
           files: dist/*
+          fail_on_unmatched_files: true
           generate_release_notes: true
