@@ -183,7 +183,7 @@ detect_system() {
 
 is_musl() {
     case "$(getconf GNU_LIBC_VERSION 2>/dev/null)" in 'glibc '*) return 1 ;; esac
-    [ -e "/lib/ld-musl-$(uname -m).so.1" ] || ldd --version 2>&1 | grep -qi musl
+    [ -e "/lib/ld-musl-$(uname -m).so.1" ] || { ldd --version 2>&1 || true; } | grep -qi musl
 }
 
 # glibc's version as a number: 2.39 -> 239.
