@@ -1,0 +1,48 @@
+name: Refresh release installer
+run-name: Refresh installer ${{ inputs.release_tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Current stable release tag
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-release-installer
+
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Sign and replace the installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          version=$(awk -F '"' '/^version = / {print $2; exit}' Cargo.toml)
+          latest=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          [[ "$RELEASE_TAG" == "v$version" && "$RELEASE_TAG" == "$latest" ]]
+          test -n "$MINISIGN_SECRET_KEY"
+          bash -n install.sh
+          sudo apt-get update && sudo apt-get install -y minisign
+
+          temp=$(mktemp -d)
+          trap 'rm -rf "$temp"' EXIT
+          (umask 077; printf '%s\n' "$MINISIGN_SECRET_KEY" > "$temp/key")
+          cp install.sh packaging/minisign.pub "$temp/"
+          cd "$temp"
+          sha256sum install.sh > install.sh.sha256
+          minisign -S -s key -m install.sh -t "AniRust $version: install.sh"
+          minisign -V -p minisign.pub -m install.sh -q
+          gh release upload "$RELEASE_TAG" install.sh install.sh.sha256 install.sh.minisig \
+            -R "$GITHUB_REPOSITORY" --clobber

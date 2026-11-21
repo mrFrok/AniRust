@@ -185,6 +185,16 @@ or later, it installs `AniRust.app` in `~/Applications`. Run the same script wit
 Download and run `AniRust-<version>-setup.exe` on Windows 10 or 11 x86_64, then
 open AniRust from the Start menu. [Latest release](https://github.com/mrFrok/AniRust/releases/latest)
 
+### Package managers
+
+- **Arch Linux**. Install [anirust-bin](https://aur.archlinux.org/packages/anirust-bin)
+  for the prebuilt release or [anirust](https://aur.archlinux.org/packages/anirust)
+  to build from source.
+- **Homebrew**. Run `brew install --cask mrfrok/anirust/anirust` on Apple silicon
+  Macs. On Linux, use `brew install --formula mrfrok/anirust/anirust`.
+- **Nix with flakes enabled**. Run `nix profile install github:mrFrok/AniRust#anirust`
+  on x86_64 or aarch64 Linux.
+
 ### Manual downloads
 
 Release files include a `.sha256` checksum and a `.minisig` signature.

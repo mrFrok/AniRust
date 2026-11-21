@@ -516,7 +516,7 @@ install_dmg() {
 }
 
 suggest_path() {
-    case ":$PATH:" in *":$BIN_DIR:"*) return ;; esac
+    case ":$PATH:" in *":$BIN_DIR:"*) return 0 ;; esac
     echo
     warn "$BIN_DIR is not in PATH, so \`anirust\` will not be found by name."
     echo "  Add this to your shell's profile: export PATH=\"$BIN_DIR:\$PATH\""
