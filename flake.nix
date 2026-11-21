@@ -20,7 +20,7 @@
             cargoLock.lockFile = ./Cargo.lock;
             cargoBuildFlags = [ "-p" "anirust-gui" "-p" "anirust-cli" ];
             nativeBuildInputs = with pkgs; [ pkg-config cmake makeWrapper ];
-            buildInputs = with pkgs; [ mpv-unwrapped fontconfig libxkbcommon ];
+            buildInputs = with pkgs; [ aws-lc mpv-unwrapped fontconfig libxkbcommon ];
 
             postInstall = ''
               install -Dm644 packaging/linux/io.github.mrfrok.AniRust.desktop \
