@@ -21,8 +21,10 @@ recipes, the Homebrew tap files and the validated WinGet manifests.
   Tags that include the flake can also be used as the profile input ref.
 - **Flatpak** is built by the release workflow and shipped in GitHub Releases.
 - **WinGet** uses the released x64 Inno Setup executable, its SHA-256 and the
-  installer product code. On Windows, run `winget validate --manifest <dir>`
-  on the generated version directory. Submit that directory in a pull request
-  to `microsoft/winget-pkgs`. Microsoft runs its own validation before the
+  installer product code. To submit manually, run `winget validate --manifest
+  <dir>` on Windows and open a pull request with the generated version directory
+  in `microsoft/winget-pkgs`. To submit from Actions, set `PUBLISH_WINGET` to
+  `true` and save a classic GitHub token with `public_repo` scope as
+  `WINGET_CREATE_GITHUB_TOKEN`. Microsoft runs its own validation before the
   package becomes searchable as `mrFrok.AniRust`.
-  [Microsoft submission guide](https://learn.microsoft.com/en-us/windows/package-manager/package/repository)
+  [Microsoft submission guide](https://learn.microsoft.com/en-us/windows/package-manager/package/repository) · [WingetCreate token setup](https://github.com/microsoft/winget-create/blob/main/doc/token.md)

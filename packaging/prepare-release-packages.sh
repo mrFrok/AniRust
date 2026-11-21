@@ -77,7 +77,7 @@ cask "anirust" do
   homepage "https://github.com/$repo"
 
   depends_on arch: :arm64
-  depends_on macos: ">= :sequoia"
+  depends_on macos: :sequoia
 
   app "AniRust.app"
 end

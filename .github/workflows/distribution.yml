@@ -18,6 +18,8 @@ on:
         required: false
       HOMEBREW_TAP_DEPLOY_KEY:
         required: false
+      WINGET_CREATE_GITHUB_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -126,3 +128,39 @@ jobs:
             -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
             commit -m "Update AniRust to ${RELEASE_TAG#v}"
           git push
+
+  winget:
+    name: Submit a WinGet package update
+    needs: prepare
+    if: vars.PUBLISH_WINGET == 'true' && needs.prepare.outputs.is_latest == 'true'
+    runs-on: windows-2025
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distribution-${{ inputs.release_tag }}
+          path: distribution
+      - name: Submit the checked manifests
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+        run: |
+          if (!$env:WINGET_CREATE_GITHUB_TOKEN) { throw 'Set WINGET_CREATE_GITHUB_TOKEN before enabling WinGet publishing' }
+          $version = $env:RELEASE_TAG.TrimStart('v')
+          $repository = 'microsoft/winget-pkgs'
+          $manifest = "manifests/m/mrFrok/AniRust/$version"
+          $title = "mrFrok.AniRust version $version"
+          gh api "repos/$repository/contents/$manifest" --silent 2>$null
+          if ($LASTEXITCODE -eq 0) { return }
+          $open = gh pr list --repo $repository --search "in:title $title" --json title | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Could not check for an existing WinGet pull request' }
+          if ($title -in $open.title) { return }
+
+          $tool = Join-Path $env:RUNNER_TEMP 'wingetcreate.exe'
+          Invoke-WebRequest 'https://github.com/microsoft/winget-create/releases/download/v1.28.1.0/wingetcreate.exe' -OutFile $tool
+          if ((Get-FileHash $tool -Algorithm SHA256).Hash -ne '63d980ba79e97042395bd6eb5992c2db9e01e9e7a8a22958a95c288f27310413') {
+            throw 'WingetCreate does not match its published SHA-256'
+          }
+          & $tool submit --no-open --prtitle $title "distribution/winget/$manifest"
+          if ($LASTEXITCODE -ne 0) { throw 'WinGet submission failed' }
