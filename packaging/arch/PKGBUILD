@@ -30,14 +30,15 @@ url='https://github.com/mrfrok/AniRust'
 license=('GPL-3.0-or-later')
 # mpv brings every library the bundled libmpv links: ffmpeg, libplacebo,
 # libass and the rest.
-depends=('mpv' 'gcc-libs' 'glibc' 'fontconfig' 'freetype2' 'libxkbcommon' 'wayland' 'libx11' 'libglvnd')
+depends=('mpv' 'gcc-libs' 'glibc' 'fontconfig' 'freetype2' 'libxkbcommon' 'libxkbcommon-x11'
+         'wayland' 'libx11' 'libxcursor' 'libxi' 'libxrandr' 'libglvnd')
 optdepends=('xdg-desktop-portal: file chooser for pictures and bookmarks'
             'gnome-keyring: a place for the session token (or any Secret Service)'
             'vapoursynth: frame generation with RIFE'
             'intel-media-driver: hardware decoding on Intel GPUs'
             'intel-compute-runtime: the neural networks on Intel GPUs, through OpenVINO'
             'migraphx: the neural networks on AMD GPUs')
-makedepends=('cargo' 'git' 'meson' 'ninja' 'vapoursynth')
+makedepends=('cargo' 'git' 'cmake' 'meson' 'ninja' 'vapoursynth')
 options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
         "mpv-$_mpv.tar.gz::https://github.com/mpv-player/mpv/archive/refs/tags/v$_mpv.tar.gz"

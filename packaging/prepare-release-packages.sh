@@ -163,3 +163,11 @@ ReleaseNotesUrl: https://github.com/$repo/releases/tag/$tag
 ManifestType: defaultLocale
 ManifestVersion: 1.12.0
 EOF
+
+schema_base=https://raw.githubusercontent.com/microsoft/winget-cli/master/schemas/JSON/manifests/v1.12.0
+for schema in version installer defaultLocale; do
+  fetch "$schema_base/manifest.$schema.1.12.0.json" > "$scratch/$schema.json"
+done
+check-jsonschema --schemafile "$scratch/version.json" "$winget/$winget_id.yaml"
+check-jsonschema --schemafile "$scratch/installer.json" "$winget/$winget_id.installer.yaml"
+check-jsonschema --schemafile "$scratch/defaultLocale.json" "$winget/$winget_id.locale.en-US.yaml"

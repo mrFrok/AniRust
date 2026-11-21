@@ -34,7 +34,7 @@ jobs:
       is_latest: ${{ steps.latest.outputs.is_latest }}
     steps:
       - name: Tools
-        run: pacman -Syu --noconfirm --needed git curl jq github-cli ruby
+        run: pacman -Syu --noconfirm --needed git curl jq github-cli ruby check-jsonschema
       - uses: actions/checkout@v4
         with:
           persist-credentials: false

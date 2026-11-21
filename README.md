@@ -254,7 +254,8 @@ A `v*` tag starts the GitHub Actions release workflow. It builds the tagged
 source using the default branch's caches and publishes each package with a
 `.sha256` and a `.minisig`. A manual run with an empty release tag keeps the
 packages as workflow artifacts. **Build musl archive** and **Build glibc
-packages for aarch64** can also run separately.
+packages for aarch64** can also run separately. See [Distribution packages](packaging/README.md)
+for the AUR, Homebrew, Nix and WinGet workflows.
 
 ## Reporting problems
 
