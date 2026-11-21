@@ -29,7 +29,13 @@ jobs:
       # on the tag.
       - name: Packaging scripts
         run: |
-          for f in packaging/*.sh packaging/*/*.sh; do sh -n "$f"; done
+          for f in packaging/*.sh packaging/*/*.sh; do
+            case "$(head -n 1 "$f")" in
+              '#!/usr/bin/env bash'|'#!/bin/bash') bash -n "$f" ;;
+              '#!/usr/bin/env sh'|'#!/bin/sh') sh -n "$f" ;;
+              *) echo "Unsupported shell in $f" >&2; exit 1 ;;
+            esac
+          done
           python3 -m py_compile packaging/mlrt/*.py
       # The installer people pipe into bash: ShellCheck, which the runner
       # image carries, at every severity.
