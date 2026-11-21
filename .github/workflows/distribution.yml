@@ -1,0 +1,128 @@
+name: Distribution packages
+run-name: Distribution ${{ inputs.release_tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published stable tag (for example v1.1.1)
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      release_tag:
+        required: true
+        type: string
+    secrets:
+      AUR_SSH_PRIVATE_KEY:
+        required: false
+      HOMEBREW_TAP_DEPLOY_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: distribution-packages
+
+jobs:
+  prepare:
+    name: Prepare AUR, Homebrew and Winget files
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    outputs:
+      is_latest: ${{ steps.latest.outputs.is_latest }}
+    steps:
+      - name: Tools
+        run: pacman -Syu --noconfirm --needed git curl jq github-cli ruby
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Generate checksummed packages
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          useradd -m builder
+          mkdir -p distribution
+          chown builder distribution
+          sudo --preserve-env=GH_TOKEN -u builder \
+            bash packaging/prepare-release-packages.sh "$RELEASE_TAG" distribution
+      - name: Check the current stable release
+        id: latest
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          if [ "$latest" = "$RELEASE_TAG" ]; then echo 'is_latest=true' >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distribution-${{ inputs.release_tag }}
+          path: distribution/
+          include-hidden-files: true
+          if-no-files-found: error
+
+  aur:
+    name: Publish AUR packages
+    needs: prepare
+    if: vars.PUBLISH_AUR == 'true' && needs.prepare.outputs.is_latest == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distribution-${{ inputs.release_tag }}
+          path: distribution
+      - name: Update the package repositories
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          test -n "$AUR_SSH_PRIVATE_KEY"
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$ssh_dir/key"
+          chmod 600 "$ssh_dir/key"
+          printf '%s\n' 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' > "$ssh_dir/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $ssh_dir/key -o IdentitiesOnly=yes -o UserKnownHostsFile=$ssh_dir/known_hosts -o StrictHostKeyChecking=yes"
+          for package in anirust anirust-bin; do
+            git -c init.defaultBranch=master clone "ssh://aur@aur.archlinux.org/$package.git" "$package"
+            cp "distribution/aur/$package/PKGBUILD" "distribution/aur/$package/.SRCINFO" "$package/"
+            git -C "$package" add -- PKGBUILD .SRCINFO
+            if git -C "$package" diff --cached --quiet; then continue; fi
+            git -C "$package" -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m "Update to ${RELEASE_TAG#v}"
+            git -C "$package" push origin HEAD:master
+          done
+
+  homebrew:
+    name: Publish the Homebrew tap
+    needs: prepare
+    if: vars.PUBLISH_HOMEBREW == 'true' && needs.prepare.outputs.is_latest == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distribution-${{ inputs.release_tag }}
+          path: distribution
+      - uses: actions/checkout@v4
+        with:
+          repository: mrFrok/homebrew-anirust
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          path: tap
+      - name: Update the formula and cask
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          install -Dm644 distribution/homebrew/Casks/anirust.rb tap/Casks/anirust.rb
+          install -Dm644 distribution/homebrew/Formula/anirust.rb tap/Formula/anirust.rb
+          cd tap
+          git add -- Casks/anirust.rb Formula/anirust.rb
+          if git diff --cached --quiet; then exit 0; fi
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "Update AniRust to ${RELEASE_TAG#v}"
+          git push

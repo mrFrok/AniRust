@@ -61,10 +61,22 @@ fi
 dylibbundler -od -b -x "$app/Contents/MacOS/anirust" \
   -d "$app/Contents/Frameworks" -p @executable_path/../Frameworks/
 
-# The rewritten Mach-O files need fresh signatures before the app is sealed.
-for lib in "$app/Contents/Frameworks/"*.dylib; do
-  [ -f "$lib" ] || continue
-  codesign --force --sign - "$lib"
+# dylibbundler can rewrite several different rpaths to the same directory.
+# macOS rejects duplicate LC_RPATH commands, so leave one copy of each path.
+for binary in "$app/Contents/MacOS/anirust" "$app/Contents/Frameworks/"*.dylib; do
+  [ -f "$binary" ] || continue
+  load_commands=$(otool -l "$binary")
+  printf '%s\n' "$load_commands" | awk '
+    $1 == "cmd" { rpath = ($2 == "LC_RPATH") }
+    rpath && $1 == "path" {
+      sub(/^[[:space:]]*path /, "")
+      sub(/ \(offset [0-9]+\)$/, "")
+      if (seen[$0]++) print
+    }
+  ' | while IFS= read -r duplicate; do
+    install_name_tool -delete_rpath "$duplicate" "$binary"
+  done
+  codesign --force --sign - "$binary"
 done
 codesign --force --sign - "$app"
 codesign --verify --deep --strict "$app"

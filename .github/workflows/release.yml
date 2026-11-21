@@ -357,7 +357,15 @@ jobs:
       - run: brew install mpv dylibbundler librsvg
       - uses: Swatinem/rust-cache@v2
       - name: Build and pack
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
+          # v1.1.1 was tagged before the fix for duplicate Mach-O rpaths.
+          # Keep the tagged application source and take only its bundler fix.
+          if [[ "$RELEASE_TAG" == v1.1.1 ]]; then
+            git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+            git show FETCH_HEAD:packaging/macos/bundle.sh > packaging/macos/bundle.sh
+          fi
           export LIBRARY_PATH="$(brew --prefix)/lib:$LIBRARY_PATH"
           cargo build --release --locked -p anirust-gui -p anirust-cli
           packaging/fetch-rife.sh macos-arm64 target/rife-macos
@@ -435,3 +443,10 @@ jobs:
           files: dist/*
           fail_on_unmatched_files: true
           generate_release_notes: true
+
+  distribution:
+    needs: [release]
+    uses: ./.github/workflows/distribution.yml
+    with:
+      release_tag: ${{ inputs.release_tag }}
+    secrets: inherit
