@@ -28,6 +28,7 @@
               install -Dm644 packaging/icons/anirust.svg \
                 "$out/share/icons/hicolor/scalable/apps/io.github.mrfrok.AniRust.svg"
               wrapProgram "$out/bin/anirust" \
+                --run 'export ANIRUST_LAUNCHER="$0"' \
                 --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath windowLibraries} \
                 --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.ffmpeg ]}
               wrapProgram "$out/bin/anirust-cli" \

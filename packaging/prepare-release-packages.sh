@@ -100,7 +100,9 @@ class Anirust < Formula
 
   def install
     system "cargo", "build", "--release", "--locked", "-p", "anirust-gui", "-p", "anirust-cli"
-    bin.install "target/release/anirust", "target/release/anirust-cli"
+    libexec.install "target/release/anirust"
+    (bin/"anirust").write_env_script libexec/"anirust", ANIRUST_LAUNCHER: opt_bin/"anirust"
+    bin.install "target/release/anirust-cli"
     (share/"applications").install "packaging/linux/$app_id.desktop"
     (share/"icons/hicolor/scalable/apps").install "packaging/icons/anirust.svg" => "$app_id.svg"
   end
