@@ -1,7 +1,7 @@
 ; The Windows installer, AniRust-<version>-setup.exe, built with Inno Setup
 ; from the folder the release stages for the zip:
 ;
-;   iscc /DVersion=1.1.0 /DSource=stage\anirust-1.1.0-windows-x86_64 packaging\windows\anirust.iss
+;   iscc /DVersion=1.1.1 /DSource=stage\anirust-1.1.1-windows-x86_64 packaging\windows\anirust.iss
 ;
 ; It installs for the user who runs it, without administrator rights, into
 ; %LOCALAPPDATA%\Programs\AniRust, adds the program to the Start menu and to

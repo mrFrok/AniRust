@@ -55,8 +55,6 @@ export component MainWindow inherits Window {
         Scheme.appearance = root.appearance;
         Scheme.accent = root.accent;
         Scheme.translucent = root.translucent;
-        Scheme.glass-base = root.glass-base;
-        Scheme.glass-raised = root.glass-raised;
         MaterialPalette.schemes = root.schemes;
         root.measure();
     }
@@ -69,13 +67,6 @@ export component MainWindow inherits Window {
     in property <Accent> accent: Accent.violet;
     changed accent => { Scheme.accent = root.accent; }
     in property <bool> translucent: false;
-    /// The see-through switch is offered; on Linux the window is always
-    /// see-through and the compositor sets how much.
-    in property <bool> translucent-choice: true;
-    in property <float> glass-base: 0.4;
-    in property <float> glass-raised: 0.55;
-    changed glass-base => { Scheme.glass-base = root.glass-base; }
-    changed glass-raised => { Scheme.glass-raised = root.glass-raised; }
     changed translucent => { Scheme.translucent = root.translucent; }
     callback select-accent(int);
     callback set-translucent(bool);
@@ -736,7 +727,6 @@ export component MainWindow inherits Window {
             appearance: root.appearance-choice;
             accent: root.accent-index;
             translucent: root.translucent;
-            translucent-choice: root.translucent-choice;
             remember-player: root.remember-player;
             check-updates: root.check-updates;
             update-state: root.update-state;

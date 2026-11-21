@@ -2,7 +2,7 @@
 # Wraps the release build in AniRust.app with libmpv and everything it
 # links copied inside, and puts it in a disk image under dist/.
 #
-#   packaging/macos/bundle.sh 1.1.0
+#   packaging/macos/bundle.sh 1.1.1
 #
 # Needs `dylibbundler` (Homebrew) and the tools macOS ships: sips, iconutil,
 # hdiutil, rsvg-convert from librsvg for the icon.
@@ -61,5 +61,15 @@ fi
 dylibbundler -od -b -x "$app/Contents/MacOS/anirust" \
   -d "$app/Contents/Frameworks" -p @executable_path/../Frameworks/
 
-hdiutil create -volname AniRust -srcfolder "$app" -ov -format UDZO \
-  "$root/dist/anirust-$version-macos-arm64.dmg"
+# The rewritten Mach-O files need fresh signatures before the app is sealed.
+for lib in "$app/Contents/Frameworks/"*.dylib; do
+  [ -f "$lib" ] || continue
+  codesign --force --sign - "$lib"
+done
+codesign --force --sign - "$app"
+codesign --verify --deep --strict "$app"
+"$app/Contents/MacOS/anirust" --version
+
+image="$root/dist/anirust-$version-macos-arm64.dmg"
+hdiutil create -volname AniRust -srcfolder "$app" -ov -format UDZO "$image"
+hdiutil verify "$image"

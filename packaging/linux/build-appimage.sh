@@ -64,7 +64,8 @@ export PATH APPIMAGE_EXTRACT_AND_RUN
 # The windowing libraries winit loads with dlopen, which ldd — and so
 # linuxdeploy — never sees. libGL, libEGL, libvulkan, libxcb, libX11-xcb and
 # the wayland libraries stay out on purpose: they must match the host's GPU
-# driver, and the AppImage exclude list forbids bundling them.
+# driver. linuxdeploy can still pull libvulkan in through libplacebo, so its
+# copy is moved out of the library search path below.
 DLOPENED="libxkbcommon.so.0 libxkbcommon-x11.so.0 libxcb-xkb.so.1 libXcursor.so.1 libXi.so.6 libXrandr.so.2"
 set --
 for lib in $DLOPENED; do
@@ -93,9 +94,21 @@ linuxdeploy \
     --icon-file "$icons/io.github.mrfrok.AniRust.png" \
     --icon-file "$icons/io.github.mrfrok.AniRust.svg"
 
+# Keep the loader available for machines without one. With it in usr/lib,
+# libmpv loads the bundled version even on systems with a Vulkan driver.
+# That can crash RIFE's Vulkan initialization with newer drivers.
+if [ -f "$appdir/usr/lib/libvulkan.so.1" ]; then
+    fallback="$appdir/usr/lib/anirust/vulkan-loader"
+    mkdir -p "$fallback"
+    cp -L "$appdir/usr/lib/libvulkan.so.1" "$fallback/libvulkan.so.1"
+    rm -f "$appdir/usr/lib/libvulkan.so" "$appdir/usr/lib"/libvulkan.so.*
+fi
+rm -f "$appdir/AppRun"
+install -m755 "$root/packaging/linux/appimage-launcher.sh" "$appdir/AppRun"
+
 # The plugins go in after the libraries: they link to the vendors' runtimes
-# (TensorRT-RTX, OpenVINO, ROCm) and to Vulkan, which are the host's or
-# fetched by the player, never bundled, and linuxdeploy would stop on them.
+# (TensorRT-RTX, OpenVINO, ROCm), which come from the host or are fetched by
+# the player. linuxdeploy would stop on those missing libraries.
 # Where the program looks for them: ../lib/anirust from its own folder.
 mkdir -p "$appdir/usr/lib/anirust/mlrt"
 cp -r "$rife" "$appdir/usr/lib/anirust/rife"
@@ -105,4 +118,5 @@ linuxdeploy-plugin-appimage --appdir "$appdir"
 mkdir -p "$root/dist"
 name="AniRust-$version-$arch.AppImage"
 mv ./*.AppImage "$root/dist/$name"
+"$root/dist/$name" --version
 echo "dist/$name"

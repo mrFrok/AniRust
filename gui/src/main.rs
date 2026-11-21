@@ -74,10 +74,12 @@ const SETTINGS_DESTINATION: i32 = 6;
 const PROFILE_DESTINATION: i32 = 4;
 
 fn main() -> Result<()> {
-    // The machine test, started by the program itself: no window, its result
-    // on standard output, its log on standard error.
     let mut args = std::env::args().skip(1);
     let first = args.next();
+    if first.as_deref() == Some("--version") {
+        println!("AniRust {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     if first.as_deref() == Some(enhance::FLAG) {
         tracing_subscriber::fmt()
             .with_env_filter("anirust=info,anirust_player=info")
@@ -86,6 +88,7 @@ fn main() -> Result<()> {
         enhance::child_main(&args.collect::<Vec<_>>());
         return Ok(());
     }
+    // The machine test runs without a window and prints its results to stdout.
     if first.as_deref() == Some(bench::FLAG) {
         tracing_subscriber::fmt()
             .with_env_filter("anirust=info,anirust_player=info")
@@ -344,18 +347,7 @@ fn wire_preferences(window: &MainWindow, held: &Rc<Cell<preferences::Preferences
     show_language(window, preferences.language);
     show_appearance(window, preferences.appearance);
     show_accent(window, preferences.accent);
-    // On Linux the window is always see-through, its own background fully
-    // so: how much shows through, and how blurred, is the compositor's to
-    // say, as for every other window there. Cards and panels keep a light
-    // ground so they stand apart. Elsewhere it is a switch.
-    if cfg!(target_os = "linux") {
-        window.set_translucent_choice(false);
-        window.set_glass_base(0.0);
-        window.set_glass_raised(0.3);
-        window.set_translucent(true);
-    } else {
-        window.set_translucent(preferences.translucent);
-    }
+    window.set_translucent(preferences.translucent);
     window.set_remember_player(preferences.player.remember);
 
     window.on_select_language({

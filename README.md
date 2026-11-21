@@ -6,8 +6,7 @@ real player built on mpv.
 [![Release](https://img.shields.io/github/v/release/mrFrok/AniRust)](https://github.com/mrFrok/AniRust/releases/latest)
 [![CI](https://github.com/mrFrok/AniRust/actions/workflows/ci.yml/badge.svg)](https://github.com/mrFrok/AniRust/actions/workflows/ci.yml)
 
-**[Download](https://github.com/mrFrok/AniRust/releases/latest)** for Windows,
-macOS or Linux — which file to take is under [Installing](#installing).
+**[Install AniRust](#installing)** on Windows, macOS or Linux.
 
 *[Русская версия](README.ru.md)*
 
@@ -168,13 +167,31 @@ can be switched off.
 
 ## Installing
 
-Every release is on the
-[releases page](https://github.com/mrFrok/AniRust/releases/latest), each file
-with a `.sha256` beside it (`sha256sum -c FILE.sha256`).
+### Linux and macOS
+
+Run this command in a terminal with `curl` and `bash`.
+
+```sh
+curl -fsSL https://github.com/mrFrok/AniRust/releases/latest/download/install.sh | bash
+```
+
+The script picks the package for your system and verifies the download. On Linux,
+it adds AniRust to your applications menu. On Apple silicon Macs running macOS 15
+or later, it installs `AniRust.app` in `~/Applications`. Run the same script with
+`bash -s -- --update` or `bash -s -- --uninstall` to update or remove it.
+
+### Windows
+
+Download and run `AniRust-<version>-setup.exe` on Windows 10 or 11 x86_64, then
+open AniRust from the Start menu. [Latest release](https://github.com/mrFrok/AniRust/releases/latest)
+
+### Manual downloads
+
+Release files include a `.sha256` checksum and a `.minisig` signature.
+[All downloads](https://github.com/mrFrok/AniRust/releases/latest)
 
 | System | Take |
 | --- | --- |
-| Windows 10 and 11 | `anirust-<version>-windows-x86_64.zip` |
 | macOS 15+ on Apple silicon | `anirust-<version>-macos-arm64.dmg` |
 | Arch, CachyOS, Manjaro, openSUSE Tumbleweed | `anirust-<version>-linux-x86_64.tar.gz`, or the PKGBUILD |
 | Ubuntu 24.04+, Debian 13+, Fedora 40+ and other glibc systems that recent | `AniRust-<version>-x86_64.AppImage` |
@@ -182,13 +199,6 @@ with a `.sha256` beside it (`sha256sum -c FILE.sha256`).
 | Alpine 3.24+ and Void musl, x86_64 or aarch64 | `anirust-<version>-linux-musl-<arch>.tar.gz` when available |
 | other x86_64 Linux systems, or for bundled frame generation on x86_64 musl | `anirust-<version>-x86_64.flatpak` |
 
-- **Windows** — unpack the zip anywhere and run `anirust.exe`. It carries
-  libmpv, VapourSynth with the Python it runs on, the RIFE plugin and vs-mlrt
-  for TensorRT and OpenVINO, so frame generation and the networks need nothing
-  installed. AMD cards run the networks through Vulkan on Windows: MIGraphX is
-  Linux-only here. The
-  program is not signed, so SmartScreen may stop its first start: "More info",
-  then "Run anyway".
 - **macOS** — open the disk image and copy AniRust to Applications. It carries
   libmpv and the RIFE plugin, which runs through Vulkan on Metal. Apple has not
   notarised it, so macOS refuses the first start: allow it under System
