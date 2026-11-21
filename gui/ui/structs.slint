@@ -37,6 +37,7 @@ export struct ReleaseCard {
 
 /// One entry in the download queue.
 export struct DownloadItem {
+    index: int,
     title: string,
     dubber: string,
     /// One of: queued, running, done, failed.
@@ -48,6 +49,7 @@ export struct DownloadItem {
     enhancing: bool,
     /// Whether "Improve" is offered on it.
     can-enhance: bool,
+    can-delete: bool,
 }
 
 /// One episode in the list.

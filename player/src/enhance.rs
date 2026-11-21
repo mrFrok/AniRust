@@ -20,6 +20,9 @@ use libmpv2::Mpv;
 use crate::frames::{self, Enhancement, Networks};
 use crate::{Error, Result};
 
+/// The offline neural upscalers can double sources through 1080p.
+pub const NEURAL_MAX_HEIGHT: u32 = 1080;
+
 /// Offline processing presets, from minimum memory use to highest quality.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Profile {
@@ -100,8 +103,10 @@ pub struct Job<'a> {
     pub source: &'a Path,
     /// A Matroska file holding the picture alone.
     pub video_out: &'a Path,
-    pub networks: Networks<'a>,
+    pub networks: Option<Networks<'a>>,
     pub enhancement: Enhancement,
+    /// Output height for an explicit resize, after the neural filters.
+    pub target_height: Option<u32>,
     pub encoder: Encoder,
     pub profile: Profile,
     pub upscaler: frames::Upscaler<'a>,
@@ -112,8 +117,48 @@ pub struct Job<'a> {
     pub display_fps: Option<f64>,
 }
 
+/// Reads the decoded height and the nominal source rate without loading models.
+pub fn source_video(source: &Path) -> Result<(u32, Option<f64>)> {
+    let mpv = Mpv::with_initializer(|init| {
+        init.set_property("config", false)?;
+        init.set_property("terminal", false)?;
+        init.set_property("vo", "null")?;
+        init.set_property("audio", "no")?;
+        init.set_property("sid", "no")?;
+        init.set_property("pause", true)?;
+        init.set_property("idle", "yes")?;
+        for option in ["osc", "ytdl", "load-scripts"] {
+            let _ = init.set_property(option, false);
+        }
+        Ok(())
+    })?;
+    mpv.command("loadfile", &[&source.to_string_lossy()])?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while std::time::Instant::now() < deadline {
+        if let Ok(height) = mpv.get_property::<i64>("video-dec-params/h")
+            && let Ok(height) = u32::try_from(height)
+            && height > 0
+        {
+            let fps = mpv
+                .get_property::<f64>("container-fps")
+                .ok()
+                .filter(|fps| fps.is_finite() && *fps > 0.0);
+            return Ok((height, fps));
+        }
+        if let Some(event) = mpv.wait_event(0.1)
+            && matches!(event?, libmpv2::events::Event::EndFile(_))
+        {
+            break;
+        }
+    }
+    Err(Error::Filter(
+        "could not read the source video dimensions".into(),
+    ))
+}
+
 /// Writes `source`'s picture through `enhancement` to `video_out`, a
-/// Matroska file holding the picture alone.
+/// Matroska file holding the picture alone. Returns its nominal frame rate
+/// for the remux when the rate is known.
 ///
 /// Blocks until the episode is through, `cancel` is set, or something fails;
 /// run it off the UI thread. `scratch` is a folder of the job's own for the
@@ -122,26 +167,40 @@ pub fn picture(
     job: &Job<'_>,
     cancel: &Arc<AtomicBool>,
     mut report: impl FnMut(Progress),
-) -> Result<()> {
+) -> Result<Option<f64>> {
     let Job {
-        source,
         video_out,
         networks,
         enhancement,
-        encoder,
+        target_height,
         profile,
         upscaler,
         scratch,
         display_fps,
+        ..
     } = *job;
+    // libavfilter can do a plain resize even if VapourSynth is absent.
+    if let Some(height) = target_height.filter(|_| enhancement.is_empty()) {
+        let filter = format!("lavfi=[zscale=w=-2:h={height}:filter=spline36]");
+        match encode_picture(job, &filter, None, cancel, &mut report) {
+            Ok(()) if source_video(video_out).is_ok_and(|(actual, _)| actual == height) => {
+                return Ok(source_video(job.source).ok().and_then(|(_, fps)| fps));
+            }
+            Err(Error::Cancelled) => return Err(Error::Cancelled),
+            _ => {
+                let _ = std::fs::remove_file(video_out);
+            }
+        }
+    }
+
     frames::point_at_bundled_vapoursynth();
     let io = |source| Error::Io {
         path: scratch.to_owned(),
         source,
     };
     std::fs::create_dir_all(scratch).map_err(io)?;
-    std::fs::create_dir_all(frames::engines_dir()).map_err(io)?;
-    if let Networks::Mlrt(mlrt) = networks {
+    if let Some(Networks::Mlrt(mlrt)) = networks {
+        std::fs::create_dir_all(frames::engines_dir()).map_err(io)?;
         frames::copy_offline_models(&mlrt.dir, enhancement, upscaler).map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
                 Error::Filter(format!("missing model: {error}"))
@@ -152,17 +211,23 @@ pub fn picture(
     }
     let script = scratch.join("enhance.vpy");
     let error_file = scratch.join("enhance-error.txt");
+    let rate_file = scratch.join("enhance-rate.txt");
     let _ = std::fs::remove_file(&error_file);
+    let _ = std::fs::remove_file(&rate_file);
     std::fs::write(
         &script,
-        frames::script_with_streams(
+        frames::script_with_options(
             networks,
             enhancement,
             display_fps,
             &error_file,
             upscaler,
-            1080,
-            Some(profile.streams()),
+            NEURAL_MAX_HEIGHT,
+            Some(frames::OfflineScript {
+                streams: profile.streams(),
+                target_height,
+                rate_file: &rate_file,
+            }),
         ),
     )
     .map_err(io)?;
@@ -173,6 +238,34 @@ pub fn picture(
         frames::mpv_quoted(&script.to_string_lossy()),
         (streams * 2).max(8)
     );
+    encode_picture(job, &filter, Some(&error_file), cancel, &mut report)?;
+    if let Some(height) = target_height
+        && source_video(video_out)?.0 != height
+    {
+        return Err(Error::Filter(format!(
+            "encoded picture did not reach {height}p"
+        )));
+    }
+    let rate = std::fs::read_to_string(&rate_file)
+        .ok()
+        .and_then(|rate| rate.parse().ok());
+    Ok(rate)
+}
+
+fn encode_picture(
+    job: &Job<'_>,
+    filter: &str,
+    error_file: Option<&Path>,
+    cancel: &AtomicBool,
+    report: &mut impl FnMut(Progress),
+) -> Result<()> {
+    let Job {
+        source,
+        video_out,
+        encoder,
+        profile,
+        ..
+    } = *job;
     let output = video_out.to_string_lossy().into_owned();
     let mpv = Mpv::with_initializer(|init| {
         init.set_property("config", false)?;
@@ -183,7 +276,7 @@ pub fn picture(
         init.set_property("hwdec", "no")?;
         init.set_property("audio", "no")?;
         init.set_property("sid", "no")?;
-        init.set_property("vf", filter.as_str())?;
+        init.set_property("vf", filter)?;
         init.set_property("o", output.as_str())?;
         init.set_property("of", "matroska")?;
         init.set_property("ovc", encoder.name())?;
@@ -207,8 +300,8 @@ pub fn picture(
             let _ = std::fs::remove_file(video_out);
             return Err(Error::Cancelled);
         }
-        if let Some(note) = std::fs::read_to_string(&error_file)
-            .ok()
+        if let Some(note) = error_file
+            .and_then(|path| std::fs::read_to_string(path).ok())
             .filter(|text| !text.trim().is_empty())
         {
             let _ = mpv.command("stop", &[]);
@@ -235,6 +328,12 @@ pub fn picture(
     }
     // Dropping mpv finishes and closes the file it wrote.
     drop(mpv);
+    if let Some(note) = error_file
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .filter(|text| !text.trim().is_empty())
+    {
+        return Err(Error::Filter(note));
+    }
     Ok(())
 }
 

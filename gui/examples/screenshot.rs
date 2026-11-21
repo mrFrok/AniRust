@@ -22,7 +22,8 @@
 //! ```
 //!
 //! `state` is `home`, `home-signed-in`, `release` (default), `playing`,
-//! `theatre`, `downloads`, `downloads-enhance`, `downloads-playing`,
+//! `theatre`, `downloads`, `downloads-enhance`, `downloads-enhance-resolution`,
+//! `downloads-enhance-fps`, `downloads-enhance-keyboard`, `downloads-enhance-mouse`, `downloads-playing`,
 //! `sign-in`, `failed`, `saved`, `loading`,
 //! `refreshing`, `empty`, `nothing`, `profile`, `profile-signed-in`,
 //! `profile-light`, `home-downloading`, `feed`, `feed-latest`,
@@ -121,6 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_downloads_working(2);
         ui.set_downloads(slint::ModelRc::new(slint::VecModel::from(vec![
             DownloadItem {
+                index: 0,
                 title: "Демоны старшей школы — 3".into(),
                 dubber: "AniLibria".into(),
                 status: "done".into(),
@@ -128,8 +130,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 detail: "/home/you/Видео/AniRust/Демоны старшей школы - 03 [AniLibria].mp4".into(),
                 enhancing: false,
                 can_enhance: true,
+                can_delete: true,
             },
             DownloadItem {
+                index: 1,
                 title: "Демоны старшей школы — 3".into(),
                 dubber: "AniLibria".into(),
                 status: "done".into(),
@@ -139,8 +143,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .into(),
                 enhancing: true,
                 can_enhance: false,
+                can_delete: true,
             },
             DownloadItem {
+                index: 2,
                 title: "Демоны старшей школы — 4".into(),
                 dubber: "AniLibria".into(),
                 status: "running".into(),
@@ -148,8 +154,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 detail: "".into(),
                 enhancing: false,
                 can_enhance: false,
+                can_delete: false,
             },
             DownloadItem {
+                index: 3,
                 title: "Демоны старшей школы — 5".into(),
                 dubber: "AniLibria".into(),
                 status: "queued".into(),
@@ -157,6 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 detail: "".into(),
                 enhancing: false,
                 can_enhance: false,
+                can_delete: false,
             },
         ])));
     }
@@ -707,11 +716,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // list learns its own height. Only then does starting an episode mean
     // anything — scrolling to it needs a list that has been laid out.
     draw(&window);
-    if state == "downloads-enhance" {
-        let position = LogicalPosition::new(width as f32 - 204.0, 99.0);
+    if state.starts_with("downloads-enhance") {
+        let position = LogicalPosition::new(width as f32 - 350.0, 99.0);
         let button = slint::platform::PointerEventButton::Left;
         window.dispatch_event(WindowEvent::PointerPressed { position, button });
         window.dispatch_event(WindowEvent::PointerReleased { position, button });
+
+        use slint::platform::Key;
+        draw(&window);
+        let mut press = |key: Key| {
+            window.dispatch_event(WindowEvent::KeyPressed { text: key.into() });
+            window.dispatch_event(WindowEvent::KeyReleased { text: key.into() });
+            draw(&window);
+        };
+        let accept = Rc::new(std::cell::Cell::new(None));
+        let accepted = Rc::clone(&accept);
+        ui.on_enhance_download(move |i, resolution, fps, profile| {
+            accepted.set(Some((i, resolution, fps, profile)));
+        });
+        match state.as_str() {
+            "downloads-enhance-resolution" => press(Key::Return),
+            "downloads-enhance-fps" => {
+                press(Key::Tab);
+                press(Key::Return);
+            }
+            "downloads-enhance-keyboard" => {
+                press(Key::Return);
+                press(Key::DownArrow);
+                press(Key::DownArrow);
+                press(Key::Return);
+                press(Key::Tab);
+                press(Key::Return);
+                press(Key::DownArrow);
+                press(Key::Return);
+                for _ in 0..6 {
+                    press(Key::Tab);
+                }
+                press(Key::Return);
+                assert_eq!(accept.get(), Some((0, 3, 3, 2)));
+            }
+            "downloads-enhance-mouse" => {
+                let position =
+                    LogicalPosition::new(width as f32 / 2.0 + 195.0, height as f32 / 2.0 + 138.0);
+                window.dispatch_event(WindowEvent::PointerMoved { position });
+                window.dispatch_event(WindowEvent::PointerPressed { position, button });
+                window.dispatch_event(WindowEvent::PointerReleased { position, button });
+                assert_eq!(accept.get(), Some((0, 1, 2, 2)));
+            }
+            _ => {}
+        }
     }
     if state == "downloads-playing" {
         let weak = ui.as_weak();
@@ -724,7 +777,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ui.set_playing(true);
             ui.set_screen("local-playback".into());
         });
-        let position = LogicalPosition::new(width as f32 - 85.0, 180.0);
+        let position = LogicalPosition::new(width as f32 - 228.0, 180.0);
         let button = slint::platform::PointerEventButton::Left;
         window.dispatch_event(WindowEvent::PointerPressed { position, button });
         window.dispatch_event(WindowEvent::PointerReleased { position, button });

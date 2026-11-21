@@ -669,8 +669,8 @@ pub fn script_with(
     upscaler: Upscaler<'_>,
     upscale_limit: u32,
 ) -> String {
-    script_with_streams(
-        networks,
+    script_with_options(
+        Some(networks),
         enhancement,
         display_fps,
         error_file,
@@ -680,40 +680,67 @@ pub fn script_with(
     )
 }
 
-pub(crate) fn script_with_streams(
-    networks: Networks<'_>,
+pub(crate) struct OfflineScript<'a> {
+    pub streams: u8,
+    pub target_height: Option<u32>,
+    pub rate_file: &'a Path,
+}
+
+pub(crate) fn script_with_options(
+    networks: Option<Networks<'_>>,
     enhancement: Enhancement,
     display_fps: Option<f64>,
     error_file: &Path,
     upscaler: Upscaler<'_>,
     upscale_limit: u32,
-    streams: Option<u8>,
+    offline: Option<OfflineScript<'_>>,
 ) -> String {
     let mut body = String::new();
+    let target_height = offline.as_ref().and_then(|job| job.target_height);
 
     // ---- the engine ----
     match networks {
-        Networks::Vulkan(install) => {
+        Some(Networks::Vulkan(install)) => {
             body.push_str(&format!(
                 "    if not hasattr(core, \"rife\"):\n        core.std.LoadPlugin({})\n",
                 python_string(&install.plugin)
             ));
         }
-        Networks::Mlrt(mlrt) => body.push_str(&mlrt.setup(streams)),
+        Some(Networks::Mlrt(mlrt)) => {
+            body.push_str(&mlrt.setup(offline.as_ref().map(|job| job.streams)));
+        }
+        None => {}
     }
 
     // ---- the picture, in the networks' format ----
-    let upscale = enhancement.upscale && matches!(networks, Networks::Mlrt(_));
+    let upscale = enhancement.upscale && matches!(networks, Some(Networks::Mlrt(_)));
     let max_height = enhancement
         .frames
         .map_or(0, |generation| generation.max_height);
     // A source the network will double stays at its size for RIFE: it is no
     // taller than RIFE's limit, and doubled, it is meant to stay large.
-    body.push_str(&format!(
-        r#"    clip = video_in
-    source = Fraction(container_fps).limit_denominator(1001) if container_fps > 0 else Fraction(24000, 1001)
-    clip = core.std.AssumeFPS(clip, fpsnum=source.numerator, fpsden=source.denominator)
+    if let Some(height) = target_height {
+        body.push_str(&format!(
+            r#"    target_height = {height}
+    alignment = max(2, 1 << video_in.format.subsampling_w)
+    target_width = max(alignment, round(video_in.width * target_height / video_in.height / alignment) * alignment)
+"#,
+        ));
+    }
+    body.push_str(
+        r#"    source = Fraction(container_fps).limit_denominator(1001) if container_fps > 0 else Fraction(24000, 1001)
     rate = source
+"#,
+    );
+    if enhancement.is_empty() && target_height.is_some() {
+        // A plain resize stays in the original format and colour space.
+        body.push_str(
+            "    clip = core.resize.Spline36(video_in, width=target_width, height=target_height)\n",
+        );
+    } else {
+        body.push_str(&format!(
+        r#"    clip = video_in
+    clip = core.std.AssumeFPS(clip, fpsnum=source.numerator, fpsden=source.denominator)
     original = clip.format.id
     matrix = "709" if clip.height >= 600 else "170m"
     upscale = {upscale} and clip.height <= {limit}
@@ -728,8 +755,8 @@ pub(crate) fn script_with_streams(
         limit = upscale_limit,
     ));
 
-    if let Some(generation) = enhancement.frames {
-        let target = match (generation.rate, display_fps) {
+        if let (Some(generation), Some(networks)) = (enhancement.frames, networks) {
+            let target = match (generation.rate, display_fps) {
             (TargetRate::Double, _) => "source * 2".to_owned(),
             (TargetRate::Sixty, _) => "Fraction(60)".to_owned(),
             (TargetRate::HundredTwenty, _) => "Fraction(120)".to_owned(),
@@ -748,10 +775,10 @@ pub(crate) fn script_with_streams(
                     .to_owned()
             }
         };
-        body.push_str(&format!(
-            "    target = {target}\n    if target > source * Fraction(11, 10):\n"
-        ));
-        match networks {
+            body.push_str(&format!(
+                "    target = {target}\n    if target > source * Fraction(11, 10):\n"
+            ));
+            match networks {
             Networks::Vulkan(install) => body.push_str(&format!(
                 r#"        clip = core.rife.RIFE(clip, model_path={model}, fps_num=target.numerator, fps_den=target.denominator, sc=True)
         rate = target
@@ -776,26 +803,39 @@ pub(crate) fn script_with_streams(
                 model = generation.model.mlrt_name(),
             )),
         }
-    }
+        }
 
-    // Doubled after the frames are made, not before: RIFE then draws on a
-    // quarter of the pixels, and the network doubles the made frames as
-    // well as the drawn ones. Twice as fast as the other way round — on a
-    // 4070 Ti SUPER, 720p doubled and at ×2 goes from 0.65 of the episode's
-    // pace to 1.46.
-    if upscale {
-        body.push_str(&match upscaler {
+        // Doubled after the frames are made, not before: RIFE then draws on a
+        // quarter of the pixels, and the network doubles the made frames as
+        // well as the drawn ones. Twice as fast as the other way round — on a
+        // 4070 Ti SUPER, 720p doubled and at ×2 goes from 0.65 of the episode's
+        // pace to 1.46.
+        if upscale {
+            body.push_str(&match upscaler {
             Upscaler::RealEsrgan => "    if upscale:\n        clip = vsmlrt.RealESRGAN(clip, model=vsmlrt.RealESRGANv2Model.animevideo_xsx2, backend=backend)\n".to_owned(),
             Upscaler::Light(network) => format!(
                 "    if upscale:\n        clip = vsmlrt.inference(clip, network_path={}, backend=backend)\n",
                 python_string(network)
             ),
         });
-    }
+        }
 
+        if target_height.is_some() {
+            body.push_str("    clip = core.resize.Spline36(clip, width=target_width, height=target_height, format=original, matrix_s=matrix)\n");
+        } else {
+            body.push_str(
+                "    clip = core.resize.Bilinear(clip, format=original, matrix_s=matrix)\n",
+            );
+        }
+    }
+    if let Some(job) = offline {
+        body.push_str(&format!(
+            "    with open({}, \"w\", encoding=\"utf-8\") as f:\n        f.write(str(float(rate)))\n",
+            python_string(job.rate_file)
+        ));
+    }
     body.push_str(
-        r#"    clip = core.resize.Bilinear(clip, format=original, matrix_s=matrix)
-    clip = core.std.AssumeFPS(clip, fpsnum=rate.numerator, fpsden=rate.denominator)
+        r#"    clip = core.std.AssumeFPS(clip, fpsnum=rate.numerator, fpsden=rate.denominator)
     clip.set_output()
 "#,
     );

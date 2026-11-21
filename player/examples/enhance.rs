@@ -47,8 +47,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &enhance::Job {
             source: input.as_ref(),
             video_out: output.as_ref(),
-            networks: Networks::Mlrt(&mlrt),
+            networks: Some(Networks::Mlrt(&mlrt)),
             enhancement,
+            target_height: None,
             encoder: if has("--x265") {
                 Encoder::X265
             } else {

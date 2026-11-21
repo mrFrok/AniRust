@@ -387,10 +387,11 @@ export component MainWindow inherits Window {
     in property <bool> enhance-can-upscale: false;
     in property <bool> enhance-can-generate: false;
     in property <int> enhance-profile: 2;
-    callback enhance-download(int, bool, int, int);
+    callback enhance-download(int, int, int, int);
     in property <bool> download-playback-error: false;
     in property <string> local-playback-title;
     callback play-download(int);
+    callback delete-download(int, string) -> bool;
     callback stop-enhance(int);
     callback bench-start();
     callback bench-apply();
@@ -675,12 +676,13 @@ export component MainWindow inherits Window {
             items: root.downloads;
             playback-error: root.download-playback-error;
             play(i) => { root.play-download(i); }
+            delete-file(i, path) => { root.delete-download(i, path) }
             working: root.downloads-working > 0;
             can-upscale: root.enhance-can-upscale;
             can-generate: root.enhance-can-generate;
             clear-finished => { root.clear-finished-downloads(); }
             saved-profile: root.enhance-profile;
-            enhance(i, upscale, rate, profile) => { root.enhance-download(i, upscale, rate, profile); }
+            enhance(i, resolution, rate, profile) => { root.enhance-download(i, resolution, rate, profile); }
             stop-enhance(i) => { root.stop-enhance(i); }
         }
 
@@ -1306,6 +1308,8 @@ export component MainWindow inherits Window {
     // for; the three that have no counterpart there — skipping an opening,
     // upscaling, interpolation — take letters YouTube leaves free.
     keys := FocusScope {
+        // Browsing controls keep their own pointer focus, including sheets.
+        focus-on-click: root.screen != "home";
         key-pressed(event) => {
             if (root.notifications-open && event.text == Key.Escape) {
                 root.close-notifications();

@@ -25,11 +25,47 @@ use anirust_player::frames::{Upscaler, light_upscale};
 /// The flag the program is started with to run one job.
 pub const FLAG: &str = "--enhance";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Resolution {
+    Original,
+    Double,
+    P1440,
+    P2160,
+}
+
+impl Resolution {
+    pub const ALL: [Self; 4] = [Self::Original, Self::Double, Self::P1440, Self::P2160];
+
+    fn height(self) -> Option<u32> {
+        match self {
+            Self::Original | Self::Double => None,
+            Self::P1440 => Some(1440),
+            Self::P2160 => Some(2160),
+        }
+    }
+
+    fn argument(self) -> &'static str {
+        match self {
+            Self::Original => "0",
+            Self::Double => "1",
+            Self::P1440 => "1440",
+            Self::P2160 => "2160",
+        }
+    }
+
+    pub fn marker(self) -> &'static str {
+        match self {
+            Self::Original | Self::Double => " [AniRust]",
+            Self::P1440 => " [AniRust 1440p]",
+            Self::P2160 => " [AniRust 2160p]",
+        }
+    }
+}
+
 /// What to do to the picture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Choice {
-    /// Real-ESRGAN doubling the picture. vs-mlrt only.
-    pub upscale: bool,
+    pub resolution: Resolution,
     pub profile: Profile,
     /// Frame generation: 0 none, 1 ×2, 2 sixty, 3 a hundred and twenty, 4
     /// the screen's rate.
@@ -53,11 +89,14 @@ fn backend(engine: usize) -> Option<Backend> {
 
 /// Where the improved episode goes: beside the original, marked.
 #[must_use]
-pub fn destination_for(source: &Path) -> PathBuf {
-    let stem = source
+pub fn destination_for(source: &Path, resolution: Resolution) -> PathBuf {
+    let mut name = source
         .file_stem()
-        .map_or_else(|| "episode".into(), |stem| stem.to_string_lossy());
-    source.with_file_name(format!("{stem} [AniRust].mkv"))
+        .unwrap_or("episode".as_ref())
+        .to_os_string();
+    name.push(resolution.marker());
+    name.push(".mkv");
+    source.with_file_name(name)
 }
 
 /// How a job ended.
@@ -80,7 +119,7 @@ pub fn run_apart(
 ) -> Outcome {
     run_to(
         source,
-        &destination_for(source),
+        &destination_for(source, choice.resolution),
         choice,
         engine,
         stop,
@@ -99,7 +138,7 @@ fn run_to(
     let Ok(exe) = std::env::current_exe() else {
         return Outcome::Failed("no path to the program".into());
     };
-    let models: &[&str] = if choice.upscale {
+    let models: &[&str] = if choice.resolution != Resolution::Original {
         &["esrgan", "light", "off"]
     } else {
         &["off"]
@@ -108,16 +147,17 @@ fn run_to(
         if stop.load(Ordering::Relaxed) {
             return Outcome::Stopped;
         }
-        if model == "off" && choice.rate == 0 {
+        if model == "off" && choice.rate == 0 && choice.resolution.height().is_none() {
             return Outcome::Unchanged;
         }
         let name = format!("job-{}", std::process::id());
         let staged = destination.with_extension(format!("{}.partial.mkv", std::process::id()));
+        let picture = picture_path(&staged);
         let child = std::process::Command::new(&exe)
             .arg(FLAG)
             .arg(source)
             .arg(&staged)
-            .arg(u8::from(choice.upscale).to_string())
+            .arg(choice.resolution.argument())
             .arg(choice.rate.to_string())
             .arg(engine.to_string())
             .arg(choice.display_millihz.to_string())
@@ -147,12 +187,13 @@ fn run_to(
 
         let mut error = None;
         let mut unchanged = false;
+        let mut fps = None;
         loop {
             if stop.load(Ordering::Relaxed) {
                 let _ = child.kill();
                 let _ = child.wait();
                 let _ = std::fs::remove_file(&staged);
-                let _ = std::fs::remove_file(picture_path(&staged));
+                let _ = std::fs::remove_file(&picture);
                 return Outcome::Stopped;
             }
             match receive.recv_timeout(std::time::Duration::from_millis(200)) {
@@ -163,6 +204,8 @@ fn run_to(
                         unchanged = true;
                     } else if let Some(done) = line.strip_prefix("p ") {
                         report(done.parse().ok());
+                    } else if let Some(rate) = line.strip_prefix("fps ") {
+                        fps = rate.parse().ok();
                     } else if let Some(message) = line.strip_prefix("error ") {
                         error = Some(message.to_owned());
                     }
@@ -173,17 +216,28 @@ fn run_to(
         }
 
         let status = child.wait();
-        let _ = std::fs::remove_file(picture_path(&staged));
+        if stop.load(Ordering::Relaxed) {
+            let _ = std::fs::remove_file(&picture);
+            return Outcome::Stopped;
+        }
         if status.as_ref().is_ok_and(|s| s.success()) && error.is_none() {
             if unchanged {
-                let _ = std::fs::remove_file(&staged);
                 return Outcome::Unchanged;
             }
-            match std::fs::rename(&staged, destination) {
+            let merged = merge(&picture, source, &staged, fps, stop);
+            let _ = std::fs::remove_file(&picture);
+            if stop.load(Ordering::Relaxed) {
+                let _ = std::fs::remove_file(&staged);
+                return Outcome::Stopped;
+            }
+            match merged.and_then(|()| {
+                std::fs::rename(&staged, destination).map_err(|error| error.to_string())
+            }) {
                 Ok(()) => return Outcome::Done(destination.to_owned()),
-                Err(e) => error = Some(e.to_string()),
+                Err(failure) => error = Some(failure),
             }
         }
+        let _ = std::fs::remove_file(&picture);
         let _ = std::fs::remove_file(&staged);
         if model != "off"
             && status
@@ -210,15 +264,41 @@ fn picture_path(destination: &Path) -> PathBuf {
     destination.with_extension("picture.mkv")
 }
 
+fn merge(
+    picture: &Path,
+    source: &Path,
+    destination: &Path,
+    fps: Option<f64>,
+    stop: &AtomicBool,
+) -> Result<(), String> {
+    let ffmpeg = anirust_download::Ffmpeg::find().map_err(|error| error.to_string())?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| error.to_string())?;
+    runtime
+        .block_on(ffmpeg.merge(picture, source, destination, fps, stop))
+        .map_err(|error| error.to_string())
+}
+
 /// The child's side. Prints `starting`, then `p <fraction>` as it goes, and
 /// `error <message>` when it fails.
 pub fn child_main(args: &[String]) {
-    let [source, destination, upscale, rate, engine, rest @ ..] = args else {
-        println!("error usage: {FLAG} <source> <destination> <upscale> <rate> <engine> [millihz]");
+    let [source, destination, resolution, rate, engine, rest @ ..] = args else {
+        println!(
+            "error usage: {FLAG} <source> <destination> <0|1|1440|2160> <rate> <engine> [millihz]"
+        );
+        std::process::exit(2);
+    };
+    let Some(resolution) = Resolution::ALL
+        .into_iter()
+        .find(|mode| mode.argument() == resolution)
+    else {
+        println!("error invalid enhancement resolution");
         std::process::exit(2);
     };
     let choice = Choice {
-        upscale: upscale == "1",
+        resolution,
         profile: rest
             .get(1)
             .and_then(|s| s.parse::<usize>().ok())
@@ -272,16 +352,36 @@ fn child_job(
     engine: usize,
     model: &str,
 ) -> Result<(), String> {
+    let (target_height, try_upscaler) = if choice.resolution == Resolution::Original {
+        (None, false)
+    } else {
+        let (height, _) = enhance::source_video(source).map_err(|error| error.to_string())?;
+        let target_height = choice.resolution.height().filter(|&target| height < target);
+        let enlarge = choice.resolution == Resolution::Double || target_height.is_some();
+        (
+            target_height,
+            enlarge && height <= enhance::NEURAL_MAX_HEIGHT && model != "off",
+        )
+    };
+    if !try_upscaler && target_height.is_none() && choice.rate == 0 {
+        println!("unchanged");
+        return Ok(());
+    }
     let mlrt = backend(engine).and_then(Mlrt::for_offline);
-    let rife = RifeInstall::find();
-    let networks = match (&mlrt, &rife) {
-        (Some(mlrt), _) => Networks::Mlrt(mlrt),
-        (None, Some(rife)) => Networks::Vulkan(rife),
-        (None, None) if choice.rate == 0 => {
-            println!("unchanged");
-            return Ok(());
-        }
-        (None, None) => return Err("the networks are not installed".into()),
+    if try_upscaler && mlrt.is_none() {
+        model_failed("no neural upscaling backend is installed");
+    }
+    let rife = (choice.rate > 0 && mlrt.is_none())
+        .then(RifeInstall::find)
+        .flatten();
+    let networks = if try_upscaler || choice.rate > 0 {
+        Some(match (&mlrt, &rife) {
+            (Some(mlrt), _) => Networks::Mlrt(mlrt),
+            (None, Some(rife)) => Networks::Vulkan(rife),
+            (None, None) => return Err("the frame generation networks are not installed".into()),
+        })
+    } else {
+        None
     };
     // Nothing to hurry for: the cleaner network, on the full picture.
     let enhancement = Enhancement {
@@ -302,7 +402,7 @@ fn child_job(
                 max_height: 0,
             }),
         },
-        upscale: model != "off" && mlrt.is_some(),
+        upscale: try_upscaler,
     };
     let nvidia = gpus::vendors().is_some_and(|vendors| vendors.contains(&0x10de));
     let picture = picture_path(destination);
@@ -317,6 +417,7 @@ fn child_job(
                 video_out: &picture,
                 networks,
                 enhancement,
+                target_height,
                 encoder,
                 upscaler,
                 profile: choice.profile,
@@ -351,18 +452,13 @@ fn child_job(
         }
         run(Encoder::X265, upscaler)
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| error.to_string())?;
-    if !enhancement.upscale && choice.rate == 0 {
-        println!("unchanged");
-        return Ok(());
-    }
     let upscaler = if model == "light" && enhancement.upscale {
         light = match light_upscale::installed() {
             Some(path) => path,
-            None => runtime
+            None => tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| error.to_string())?
                 .block_on(crate::runtimes::fetch_light_upscale(crate::reqwest_client()))
                 .unwrap_or_else(|error| model_failed(&error)),
         };
@@ -370,17 +466,15 @@ fn child_job(
     } else {
         Upscaler::RealEsrgan
     };
-    if let Err(error) = encode(upscaler) {
-        if enhancement.upscale && matches!(error, anirust_player::Error::Filter(_)) {
+    match encode(upscaler) {
+        Ok(Some(fps)) => println!("fps {fps}"),
+        Ok(None) => {}
+        Err(error) if enhancement.upscale && matches!(error, anirust_player::Error::Filter(_)) => {
             model_failed(&error.to_string());
         }
-        return Err(error.to_string());
+        Err(error) => return Err(error.to_string()),
     }
-
-    let ffmpeg = anirust_download::Ffmpeg::find().map_err(|error| error.to_string())?;
-    let merged = runtime.block_on(ffmpeg.merge(&picture, source, destination));
-    let _ = std::fs::remove_file(&picture);
-    merged.map_err(|error| error.to_string())
+    Ok(())
 }
 
 fn model_failed(error: &str) -> ! {
@@ -395,7 +489,10 @@ mod tests {
     #[test]
     fn the_improved_episode_sits_beside_the_original() {
         assert_eq!(
-            destination_for(Path::new("/v/AniRust/Show - 03 [AniLibria].mp4")),
+            destination_for(
+                Path::new("/v/AniRust/Show - 03 [AniLibria].mp4"),
+                Resolution::Double
+            ),
             PathBuf::from("/v/AniRust/Show - 03 [AniLibria] [AniRust].mkv")
         );
     }

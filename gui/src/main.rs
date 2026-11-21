@@ -1555,7 +1555,7 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
     window.on_enhance_download({
         let app = Rc::clone(app);
         let weak = weak.clone();
-        move |index, upscale, rate, profile| {
+        move |index, resolution, rate, profile| {
             let Some(window) = weak.upgrade() else { return };
             let profile = profile.clamp(0, 3) as usize;
             let mut prefs = app.prefs.get();
@@ -1567,7 +1567,7 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
             window.set_enhance_profile(profile as i32);
             let choice = enhance::Choice {
                 profile: anirust_player::enhance::Profile::ALL[profile],
-                upscale,
+                resolution: enhance::Resolution::ALL[resolution.clamp(0, 3) as usize],
                 rate: rate.clamp(0, 4) as usize,
                 display_millihz: desktop::refresh_rate(window.window())
                     .map_or(0, |hz| (hz * 1000.0).round() as u32),
@@ -1581,6 +1581,19 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
         move |index| {
             let Some(window) = weak.upgrade() else { return };
             downloads::stop_enhance(&window, &app.queue, index.max(0) as usize);
+        }
+    });
+
+    window.on_delete_download({
+        let app = Rc::clone(app);
+        let weak = weak.clone();
+        move |index, path| {
+            let Some(window) = weak.upgrade() else {
+                return false;
+            };
+            usize::try_from(index).is_ok_and(|index| {
+                downloads::remove_saved(&window, &app.queue, index, path.as_str())
+            })
         }
     });
 

@@ -8,7 +8,10 @@
 //! whole thing takes about as long as reading the file.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 #[derive(Debug, thiserror::Error)]
@@ -24,6 +27,9 @@ pub enum FfmpegError {
 
     #[error("ffmpeg failed: {0}")]
     Failed(String),
+
+    #[error("cancelled")]
+    Cancelled,
 }
 
 /// Where ffmpeg is, once.
@@ -110,9 +116,13 @@ impl Ffmpeg {
         picture: &Path,
         original: &Path,
         destination: &Path,
+        fps: Option<f64>,
+        stop: &AtomicBool,
     ) -> Result<(), FfmpegError> {
-        let output = Command::new(&self.program)
+        let mut command = Command::new(&self.program);
+        command
             .arg("-y")
+            .arg("-nostdin")
             .arg("-loglevel")
             .arg("error")
             .arg("-i")
@@ -120,12 +130,30 @@ impl Ffmpeg {
             .arg("-i")
             .arg(original)
             .args([
-                "-map", "0:v:0", "-map", "1:a?", "-map", "1:s?", "-map", "1:t?",
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a?",
+                "-map",
+                "1:s?",
+                "-map",
+                "1:t?",
+                "-map_metadata",
+                "1",
+                "-map_chapters",
+                "1",
             ])
-            .args(["-c", "copy"])
+            .args(["-c", "copy"]);
+        // Set the nominal rate when Matroska's millisecond packet durations
+        // rounded it. Stream copy leaves the timestamps intact.
+        if let Some(fps) = fps {
+            command.arg("-r:v:0").arg(fps.to_string());
+        }
+        let mut child = command
             .arg(destination)
-            .output()
-            .await
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
             .map_err(|error| {
                 if error.kind() == std::io::ErrorKind::NotFound {
                     FfmpegError::NotFound
@@ -134,11 +162,32 @@ impl Ffmpeg {
                 }
             })?;
 
-        if output.status.success() {
+        let mut stderr = child.stderr.take().expect("ffmpeg stderr is piped");
+        let diagnostics = async {
+            let mut output = Vec::new();
+            stderr.read_to_end(&mut output).await?;
+            Ok::<_, std::io::Error>(output)
+        };
+        let mut poll = tokio::time::interval(Duration::from_millis(100));
+        let cancelled = async {
+            while !stop.load(Ordering::Relaxed) {
+                poll.tick().await;
+            }
+        };
+        let (status, stderr) = tokio::select! {
+            result = async { tokio::try_join!(child.wait(), diagnostics) } => {
+                result.map_err(FfmpegError::Spawn)?
+            }
+            () = cancelled => {
+                let _ = child.kill().await;
+                return Err(FfmpegError::Cancelled);
+            }
+        };
+        if status.success() {
             return Ok(());
         }
 
-        let message = String::from_utf8_lossy(&output.stderr);
+        let message = String::from_utf8_lossy(&stderr);
         Err(FfmpegError::Failed(
             message.lines().last().unwrap_or("no output").to_owned(),
         ))

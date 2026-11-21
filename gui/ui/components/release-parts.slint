@@ -25,6 +25,8 @@ export component Dropdown inherits Rectangle {
     in property <int> current: 0;
     /// Shown before the list has arrived.
     in property <string> placeholder;
+    in property <string> label;
+    in property <bool> enabled: true;
     callback selected(int);
 
     /// Beyond this the list scrolls rather than running off the window.
@@ -32,9 +34,18 @@ export component Dropdown inherits Rectangle {
     property <length> max-popup-height: 320px;
 
     height: Spacing.touch-target;
+    forward-focus: keys;
+    accessible-role: combobox;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-value: root.model.length > 0 ? root.model[root.current].label : root.placeholder;
+    accessible-expandable: root.enabled && root.model.length > 1;
+    accessible-expanded: root.popup-focused;
+    accessible-action-expand => { root.open(); }
     border-radius: Shape.medium;
-    border-width: 1px;
-    border-color: MaterialPalette.outline-variant;
+    border-width: keys.has-focus || root.popup-focused ? 2px : 1px;
+    border-color: keys.has-focus || root.popup-focused
+        ? MaterialPalette.primary : MaterialPalette.outline-variant;
     background: touch.has-hover
         ? MaterialPalette.surface-container-high
         : MaterialPalette.surface-container;
@@ -77,11 +88,35 @@ export component Dropdown inherits Rectangle {
         }
     }
 
-    touch := TouchArea {
-        mouse-cursor: pointer;
-        clicked => {
-            if (root.model.length > 1) {
-                popup.show();
+    property <bool> popup-focused;
+    property <int> highlighted: 0;
+
+    function open() {
+        if (root.enabled && root.model.length > 1) {
+            root.highlighted = root.current;
+            popup.show();
+        }
+    }
+
+    keys := FocusScope {
+        width: 100%;
+        height: 100%;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == " "
+                || event.text == Key.DownArrow || event.text == Key.UpArrow) {
+                root.open();
+                return accept;
+            }
+            reject
+        }
+
+        touch := TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: pointer;
+            clicked => {
+                keys.focus();
+                root.open();
             }
         }
     }
@@ -92,60 +127,90 @@ export component Dropdown inherits Rectangle {
         width: root.width;
         height: min(root.max-popup-height, root.model.length * root.row-height + 2 * Spacing.small);
         close-policy: close-on-click-outside;
+        forward-focus: popup-keys;
 
-        Rectangle {
-            background: MaterialPalette.surface-container-high;
-            border-radius: Shape.medium;
-            border-width: 1px;
-            border-color: MaterialPalette.outline-variant;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #00000066;
+        popup-keys := FocusScope {
+            width: 100%;
+            height: 100%;
+            focus-changed-event => { root.popup-focused = self.has-focus; }
+            key-pressed(event) => {
+                if (event.text == Key.Escape) {
+                    popup.close();
+                    return accept;
+                }
+                if (event.text == Key.Return || event.text == " ") {
+                    root.selected(root.highlighted);
+                    popup.close();
+                    return accept;
+                }
+                if (event.text == Key.DownArrow || event.text == Key.UpArrow) {
+                    root.highlighted = clamp(root.highlighted + (event.text == Key.DownArrow ? 1 : -1),
+                        0, root.model.length - 1);
+                    options.content-y = clamp(options.content-y,
+                        min(0px, options.visible-height - (root.highlighted + 1) * root.row-height),
+                        -root.highlighted * root.row-height);
+                    return accept;
+                }
+                reject
+            }
 
-            ScrollView {
-                x: 0;
-                y: Spacing.small;
-                width: 100%;
-                height: parent.height - 2 * Spacing.small;
-                content-height: root.model.length * root.row-height;
+            Rectangle {
+                background: MaterialPalette.surface-container-high;
+                border-radius: Shape.medium;
+                border-width: 1px;
+                border-color: MaterialPalette.outline-variant;
+                drop-shadow-blur: 24px;
+                drop-shadow-color: #00000066;
 
-                VerticalLayout {
-                    alignment: start;
+                options := ScrollView {
+                    x: 0;
+                    y: Spacing.small;
+                    width: 100%;
+                    height: parent.height - 2 * Spacing.small;
+                    content-height: root.model.length * root.row-height;
 
-                    for option[index] in root.model: Rectangle {
-                        height: root.row-height;
-                        background: index == root.current
-                            ? MaterialPalette.secondary-container
-                            : (option-touch.has-hover
-                                ? MaterialPalette.surface-container-highest
-                                : transparent);
+                    VerticalLayout {
+                        alignment: start;
 
-                        HorizontalLayout {
-                            padding-left: Spacing.base;
-                            padding-right: Spacing.base;
-                            spacing: Spacing.small;
+                        for option[index] in root.model: Rectangle {
+                            height: root.row-height;
+                            background: index == root.highlighted
+                                ? MaterialPalette.secondary-container
+                                : (option-touch.has-hover
+                                    ? MaterialPalette.surface-container-highest
+                                    : transparent);
 
-                            Text {
-                                text: option.label;
-                                color: MaterialPalette.on-surface;
-                                font-size: Typography.body-medium-size;
-                                vertical-alignment: center;
-                                horizontal-stretch: 1;
-                                overflow: elide;
+                            HorizontalLayout {
+                                padding-left: Spacing.base;
+                                padding-right: Spacing.base;
+                                spacing: Spacing.small;
+
+                                Text {
+                                    text: option.label;
+                                    color: MaterialPalette.on-surface;
+                                    font-size: Typography.body-medium-size;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+
+                                Text {
+                                    text: detail(option);
+                                    color: MaterialPalette.on-surface-variant;
+                                    font-size: Typography.label-medium-size;
+                                    vertical-alignment: center;
+                                }
                             }
 
-                            Text {
-                                text: detail(option);
-                                color: MaterialPalette.on-surface-variant;
-                                font-size: Typography.label-medium-size;
-                                vertical-alignment: center;
-                            }
-                        }
-
-                        option-touch := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => {
-                                root.selected(index);
-                                popup.close();
+                            option-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                changed has-hover => {
+                                    if self.has-hover { root.highlighted = index; }
+                                }
+                                clicked => {
+                                    root.selected(index);
+                                    popup.close();
+                                }
                             }
                         }
                     }
@@ -203,7 +268,8 @@ export component EpisodeRow inherits Rectangle {
             alignment: center;
             IconButton {
                 icon: @image-url("../icons/play.svg");
-                tooltip: Tr.watch-episode + " " + root.episode.position;
+                accessible-label: Tr.watch-episode + " " + root.episode.position;
+                Tooltip { text: @markdown("\{Tr.watch-episode} \{root.episode.position}"); }
                 clicked => { root.clicked(); }
             }
         }

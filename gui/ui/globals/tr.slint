@@ -102,11 +102,13 @@ export global Tr {
     out property <string> enhance: lang == "ru" ? "Улучшить" : "Improve";
     out property <string> enhance-stop: lang == "ru" ? "Остановить" : "Stop";
     out property <string> enhance-title: lang == "ru" ? "Улучшить серию" : "Improve the episode";
-    out property <string> enhance-why: lang == "ru"
-        ? "Новая версия сохранится рядом с оригиналом. Более высокое качество требует больше видеопамяти."
-        : "The new version is saved beside the original. Higher quality uses more GPU memory.";
+    out property <string> enhance-resolution: lang == "ru" ? "Разрешение" : "Resolution";
+    out property <string> enhance-fps: lang == "ru" ? "Частота кадров" : "Frame rate";
+    out property <string> enhance-resize-hint: lang == "ru"
+        ? "Для 2K и 4K возможно обычное масштабирование"
+        : "2K and 4K may use standard scaling";
     out property <string> processing-profile: lang == "ru" ? "Качество обработки" : "Processing quality";
-    out property <string> enhance-unchanged: lang == "ru" ? "Апскейл недоступен · оставлен оригинал" : "Upscaling unavailable · original kept";
+    out property <string> enhance-unchanged: lang == "ru" ? "Разрешение не изменилось · сохранён оригинал" : "Resolution unchanged · original kept";
     out property <string> economy: lang == "ru" ? "Экономное" : "Economy";
     out property <string> balanced: lang == "ru" ? "Сбалансированное" : "Balanced";
     out property <string> profile-economy: lang == "ru" ? "Меньше нагрузка · 1 поток" : "Low load · 1 stream";
@@ -117,7 +119,7 @@ export global Tr {
     out property <string> enhance-double-size: lang == "ru" ? "×2 · Авто" : "×2 · Auto";
     out property <string> enhance-start: lang == "ru" ? "Начать" : "Start";
     out property <string> enhance-running: lang == "ru" ? "Обработка" : "Improving";
-    out property <string> enhance-starting: lang == "ru" ? "Загружаю нейросети…" : "Loading the networks…";
+    out property <string> enhance-starting: lang == "ru" ? "Подготовка…" : "Preparing…";
     out property <string> enhance-stopped: lang == "ru" ? "Остановлено" : "Stopped";
 
     // ---- the first-run test of this machine ------------------------------
@@ -580,6 +582,13 @@ export global Tr {
     out property <string> dl-running: lang == "ru" ? "Скачивается" : "Downloading";
     out property <string> dl-done: lang == "ru" ? "Готово" : "Done";
     out property <string> dl-improved: lang == "ru" ? "Улучшенная версия" : "Improved version";
+    out property <string> dl-delete-title: lang == "ru" ? "Удалить видеофайл?" : "Delete video file?";
+    out property <string> dl-delete-confirm: lang == "ru"
+        ? "Файл будет удалён с диска."
+        : "The file will be deleted from disk.";
+    out property <string> dl-delete-error: lang == "ru"
+        ? "Не удалось удалить файл. Проверьте, что он не используется."
+        : "Couldn't delete the file. Check whether it is in use.";
     out property <string> dl-playback-error: lang == "ru"
         ? "Не удалось открыть видео. Проверьте, что файл на месте и воспроизводится."
         : "Couldn't open the video. Check that the file still exists and is playable.";

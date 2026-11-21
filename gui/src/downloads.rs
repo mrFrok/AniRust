@@ -13,7 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -24,7 +24,7 @@ use slint::{ComponentHandle, VecModel};
 use anirust_download::{Download, Ffmpeg, Progress};
 use anirust_extract::{Registry, ResolvedStream};
 
-use crate::enhance::{self, Choice, Outcome};
+use crate::enhance::{self, Choice, Outcome, Resolution};
 use crate::{DownloadItem, MainWindow, tasks};
 
 /// What a queued episode needs to be fetched.
@@ -46,6 +46,7 @@ pub enum Status {
     Done,
     Unchanged,
     Failed,
+    Removed,
 }
 
 impl Status {
@@ -56,6 +57,7 @@ impl Status {
             Self::Done => "done",
             Self::Unchanged => "unchanged",
             Self::Failed => "failed",
+            Self::Removed => "removed",
         }
     }
 }
@@ -87,7 +89,9 @@ impl SavedEpisode {
         let stem = path.file_stem()?.to_str()?;
         let stem = match path.extension()?.to_str()? {
             "mp4" => stem,
-            "mkv" => stem.strip_suffix(" [AniRust]")?,
+            "mkv" => Resolution::ALL
+                .iter()
+                .find_map(|mode| stem.strip_suffix(mode.marker()))?,
             _ => return None,
         };
         let (stem, dubber) = stem
@@ -215,6 +219,50 @@ impl Queue {
             })
             .clone()
     }
+
+    fn enhancement_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
+        self.entries
+            .iter()
+            .filter(|entry| matches!(entry.status, Status::Queued | Status::Running))
+            .filter_map(|entry| entry.enhance.as_ref())
+            .flat_map(|(source, choice)| {
+                [
+                    source.clone(),
+                    enhance::destination_for(source, choice.resolution),
+                ]
+            })
+    }
+
+    fn remove_saved(&mut self, index: usize, expected_path: &str) -> bool {
+        let Some(entry) = self.entries.get(index) else {
+            return false;
+        };
+        let Some(path) = entry.path.clone() else {
+            return false;
+        };
+        if entry.status != Status::Done
+            || path.to_string_lossy() != expected_path
+            || path.parent() != Some(self.directory().as_path())
+            || self.enhancement_paths().any(|used| used == path)
+        {
+            return false;
+        }
+        if let Err(error) = std::fs::remove_file(&path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(%error, path = %path.display(), "deleting the saved episode failed");
+            return false;
+        }
+        // Running jobs keep their indices while a completed file is removed.
+        for entry in &mut self.entries {
+            if entry.path.as_ref() == Some(&path) {
+                entry.path = None;
+                entry.status = Status::Removed;
+            }
+        }
+        self.save();
+        true
+    }
 }
 
 /// Adds an episode to the queue and starts it if nothing else is running.
@@ -235,7 +283,9 @@ pub fn enqueue(
             &job.dubber,
         ));
         let already = queue.entries.iter().any(|entry| {
-            (entry.job.url == job.url && entry.status != Status::Failed)
+            (entry.enhance.is_none()
+                && entry.job.url == job.url
+                && !matches!(entry.status, Status::Failed | Status::Removed))
                 || (entry.path.as_ref() == Some(&destination) && destination.is_file())
         });
         if already {
@@ -396,13 +446,30 @@ pub fn saved_episode(queue: &RefCell<Queue>, index: usize) -> Option<(PathBuf, S
     ))
 }
 
+pub fn remove_saved(
+    window: &MainWindow,
+    queue: &Rc<RefCell<Queue>>,
+    index: usize,
+    expected_path: &str,
+) -> bool {
+    let removed = queue.borrow_mut().remove_saved(index, expected_path);
+    if removed {
+        show(window, queue);
+    }
+    removed
+}
+
 /// Pushes the queue onto the screen.
 pub fn show(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
     let queue = queue.borrow();
+    let enhancement_paths: HashSet<_> = queue.enhancement_paths().collect();
     let items: Vec<DownloadItem> = queue
         .entries
         .iter()
-        .map(|entry| DownloadItem {
+        .enumerate()
+        .filter(|(_, entry)| entry.status != Status::Removed)
+        .map(|(index, entry)| DownloadItem {
+            index: index as i32,
             title: format!("{} — {}", entry.job.release, entry.job.position).into(),
             dubber: entry.job.dubber.as_str().into(),
             status: entry.status.name().into(),
@@ -420,8 +487,12 @@ pub fn show(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
                 && entry
                     .path
                     .as_ref()
-                    .is_some_and(|p| !p.extension().is_some_and(|ext| ext == "mkv"))
-                && (queue.can_upscale || queue.can_generate),
+                    .is_some_and(|p| !p.extension().is_some_and(|ext| ext == "mkv")),
+            can_delete: entry.status == Status::Done
+                && entry
+                    .path
+                    .as_ref()
+                    .is_some_and(|path| !enhancement_paths.contains(path)),
         })
         .collect();
 
@@ -489,6 +560,10 @@ pub fn enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>, index: usize, ch
         let Some(source) = entry.path.clone() else {
             return;
         };
+        let destination = enhance::destination_for(&source, choice.resolution);
+        if queue.enhancement_paths().any(|path| path == destination) {
+            return;
+        }
         let job = entry.job.clone();
         queue.entries.push(Entry {
             job,
@@ -524,7 +599,7 @@ pub fn stop_enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>, index: usiz
                 entry.status = Status::Failed;
                 entry.detail = String::new();
             }
-            Status::Done | Status::Unchanged | Status::Failed => {}
+            Status::Done | Status::Unchanged | Status::Failed | Status::Removed => {}
         }
     }
     show(window, queue);
@@ -571,6 +646,15 @@ fn pump_enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
                 let mut queue = queue_handle.borrow_mut();
                 if ended {
                     queue.enhancing = false;
+                }
+                // A successful re-run replaces the saved variant at the same path.
+                if let Message::End(Outcome::Done(path)) = &message {
+                    for previous in &mut queue.entries {
+                        if previous.path.as_ref() == Some(path) {
+                            previous.status = Status::Removed;
+                            previous.path = None;
+                        }
+                    }
                 }
                 let entry = &mut queue.entries[at];
                 match message {
@@ -635,7 +719,7 @@ mod tests {
             std::env::temp_dir().join(format!("anirust-download-history-{}", std::process::id()));
         std::fs::create_dir(&dir).unwrap();
         let original = dir.join("Show - 03 [Dub].mp4");
-        let improved = enhance::destination_for(&original);
+        let improved = enhance::destination_for(&original, Resolution::Double);
         std::fs::write(&original, []).unwrap();
         std::fs::write(&improved, []).unwrap();
 
@@ -658,6 +742,75 @@ mod tests {
         queue.save();
         assert!(restored(&dir).is_empty());
         assert!(original.exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn deleting_one_copy_keeps_other_files_and_running_jobs() {
+        let dir = std::env::temp_dir().join(format!("anirust-delete-{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let original = dir.join("Show - 03 [Dub].mp4");
+        let improved = enhance::destination_for(&original, Resolution::P1440);
+        let alternative = enhance::destination_for(&original, Resolution::P2160);
+        std::fs::write(&original, []).unwrap();
+        std::fs::write(&improved, []).unwrap();
+        std::fs::write(&alternative, []).unwrap();
+        let mut queue = Queue {
+            entries: restored(&dir),
+            directory: Some(dir.clone()),
+            running: true,
+            ..Queue::default()
+        };
+        let index = queue
+            .entries
+            .iter()
+            .position(|entry| entry.path.as_ref() == Some(&improved))
+            .unwrap();
+        let mut running = SavedEpisode::from_legacy_file(original.clone())
+            .unwrap()
+            .into_entry();
+        running.status = Status::Running;
+        running.path = None;
+        running.enhance = Some((
+            original.clone(),
+            Choice {
+                resolution: Resolution::P2160,
+                profile: anirust_player::enhance::Profile::Economy,
+                rate: 0,
+                display_millihz: 0,
+            },
+        ));
+        let running_index = queue.entries.len();
+        queue.entries.push(running);
+
+        let index_of = |path: &Path| {
+            queue
+                .entries
+                .iter()
+                .position(|entry| entry.path.as_deref() == Some(path))
+                .unwrap()
+        };
+        let original_index = index_of(&original);
+        let alternative_index = index_of(&alternative);
+        assert!(!queue.remove_saved(original_index, &original.to_string_lossy()));
+        assert!(!queue.remove_saved(alternative_index, &alternative.to_string_lossy()));
+        assert!(!queue.remove_saved(index, &original.to_string_lossy()));
+        assert!(queue.remove_saved(index, &improved.to_string_lossy()));
+        assert!(!improved.exists());
+        assert!(original.is_file());
+        assert!(queue.entries[running_index].status == Status::Running);
+        let after_restart = restored(&dir);
+        assert_eq!(after_restart.len(), 2);
+        assert!(
+            after_restart
+                .iter()
+                .any(|entry| entry.path.as_deref() == Some(original.as_path()))
+        );
+        assert!(
+            after_restart
+                .iter()
+                .any(|entry| entry.path.as_deref() == Some(alternative.as_path()))
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
