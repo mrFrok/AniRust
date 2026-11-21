@@ -98,10 +98,10 @@ It is heavy: on an RTX 4070 Ti SUPER, RIFE 4.6 makes 74 frames a second at 720p
 and 46 at 1080p, so sources taller than 720 lines are brought down for it and
 the upscaling after it brings them back. It needs three things, none of them
 linked, so the program runs without them: a libmpv with the VapourSynth filter,
-VapourSynth itself, and the plugin with its models. Every package but the
-`.deb` carries the libmpv and the plugin, and the Flatpak and the Windows zip
-VapourSynth as well; elsewhere VapourSynth is installed once (see
-[Installing](#installing)). When
+VapourSynth itself, and the plugin with its models. The AppImage, Flatpak,
+Windows packages, macOS disk image and x86_64 Arch archive carry the libmpv
+and the plugin. The Flatpak and Windows also include VapourSynth. See the
+package details under [Installing](#installing) for system dependencies. When
 one is missing the menu says so, and if the filter fails, mpv plays on without
 it and the log says why.
 
