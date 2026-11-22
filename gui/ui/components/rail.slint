@@ -2,14 +2,100 @@
 //
 // The column of destinations down the left edge.
 //
-// Built here rather than taken from the component set's rail, which starts
-// its items 44px down: ours have to start below the 72px bar the search sits
-// in, with the program's mark level with that bar, and one destination —
-// the settings — kept at the bottom, apart from the rest.
+// The phone client puts these along the bottom, an icon over its name in a
+// single line of eleven-pixel labels. On a desktop there is room to stand the
+// same items up, so the rail is that column: the mark at the top, the
+// destinations under it, settings kept apart at the foot.
+//
+// The chosen destination gets the soft coral capsule behind its icon and a
+// coral name — the same pair the phone client uses for its selected tab —
+// rather than a filled bar. It says where you are without shouting.
 
 import { MaterialPalette, NavigationItem } from "@material";
-import { NavigationItemTemplate } from "../../material-1.19.0/ui/components/navigation_bar.slint";
-import { Spacing } from "../globals/shape.slint";
+import { Spacing, Motion } from "../globals/shape.slint";
+import { Tint } from "../globals/tint.slint";
+
+/// One destination: an icon in its capsule, and the name under it.
+component RailItem inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> selected;
+    in property <bool> compact;
+    in property <bool> show-badge: false;
+    in property <string> badge;
+    callback clicked();
+
+    width: 100%;
+    height: root.compact ? 46px : 66px;
+    background: transparent;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-item-selected: root.selected;
+    accessible-action-default => { root.clicked(); }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 3px;
+
+        Rectangle {
+            height: root.compact ? 26px : 32px;
+
+            Rectangle {
+                width: 60px;
+                height: 100%;
+                border-radius: 16px;
+                background: root.selected ? Tint.coral-bg
+                    : touch.has-hover ? MaterialPalette.surface-container
+                    : transparent;
+                animate background { duration: Motion.standard-duration; easing: Motion.standard; }
+
+                Image {
+                    source: root.icon;
+                    colorize: root.selected ? Tint.coral-ink : MaterialPalette.on-surface-variant;
+                    width: 22px;
+                    height: 22px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+
+            if root.show-badge: Rectangle {
+                x: (parent.width + 60px - self.width) / 2 + 6px;
+                y: -1px;
+                height: 16px;
+                width: max(16px, badge-label.preferred-width + 8px);
+                border-radius: 8px;
+                background: MaterialPalette.primary;
+
+                badge-label := Text {
+                    text: root.badge;
+                    color: MaterialPalette.on-primary;
+                    font-size: 10px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: 100%;
+                    height: 100%;
+                }
+            }
+        }
+
+        Text {
+            text: root.text;
+            color: root.selected ? Tint.coral-ink : MaterialPalette.on-surface-variant;
+            font-size: 12px;
+            font-weight: root.selected ? 600 : 500;
+            horizontal-alignment: center;
+            width: 100%;
+            overflow: elide;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
 
 export component Rail inherits Rectangle {
     /// The destinations from the top.
@@ -19,13 +105,17 @@ export component Rail inherits Rectangle {
     /// Which is lit: an index into `items`, or `items.length` for the bottom.
     in property <int> current: 0;
     /// The height of the bar beside it, so the mark sits level with it.
-    property <length> bar-height: root.compact ? Spacing.icon-button : 72px;
-    property <bool> compact: root.height < 440px;
+    property <length> bar-height: root.compact ? Spacing.icon-button : 76px;
+    property <bool> compact: root.height < 540px;
 
     callback select(int);
 
-    width: 80px;
+    width: Spacing.navigation-rail;
     background: MaterialPalette.surface;
+    // The rail and the page are told apart by a hairline, not by two shades
+    // of the same surface: with a white page a tonal difference disappears.
+    border-width: 1px;
+    border-color: MaterialPalette.outline-variant;
 
     VerticalLayout {
         y: 0px;
@@ -39,9 +129,9 @@ export component Rail inherits Rectangle {
             // loud thing in the chrome.
             Image {
                 source: @image-url("../icons/mark.svg");
-                colorize: MaterialPalette.on-surface;
-                width: 28px;
-                height: 28px;
+                colorize: MaterialPalette.primary;
+                width: 32px;
+                height: 32px;
             }
         }
 
@@ -50,27 +140,28 @@ export component Rail inherits Rectangle {
             alignment: start;
             padding-top: root.compact ? 0px : Spacing.small;
 
-            for item[index] in root.items: NavigationItemTemplate {
-                icon: item.icon;
-                selected-icon: item.selected-icon;
+            for item[index] in root.items: RailItem {
                 text: item.text;
-                index: index;
+                icon: item.icon;
                 selected: index == root.current;
+                compact: root.compact;
                 show-badge: item.show-badge;
                 badge: item.badge;
-                navitem-padding-top: 0;
-                navitem-padding-bottom: root.compact ? 0px : Spacing.tight;
                 clicked => { root.select(index); }
             }
         }
 
-        NavigationItemTemplate {
-            icon: root.bottom.icon;
+        Rectangle {
+            height: 1px;
+            background: MaterialPalette.outline-variant;
+        }
+
+        RailItem {
             text: root.bottom.text;
-            index: root.items.length;
+            icon: root.bottom.icon;
             selected: root.current == root.items.length;
-            navitem-padding-top: 0;
-            navitem-padding-bottom: root.compact ? Spacing.tight : Spacing.base;
+            compact: root.compact;
+            height: root.compact ? 46px : 58px;
             clicked => { root.select(root.items.length); }
         }
     }

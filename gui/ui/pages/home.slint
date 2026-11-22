@@ -11,15 +11,16 @@
 // cards never have to know how many fit across, and nothing has to read the
 // width it is being given to work it out.
 
-import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, SecondaryTabBar, FilterChip, NavigationItem, OutlineButton, CircularProgressIndicator, IconButton, Badge, TextButton, TonalButton } from "@material";
+import { MaterialPalette, FilterChip, CircularProgressIndicator, IconButton, Badge, TextButton, ScrollView } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
+import { Tint } from "../globals/tint.slint";
 import { ReleaseCard, CollectionItem, PersonItem } from "../structs.slint";
 import { PersonChip } from "../components/person-chip.slint";
 import { PosterCard } from "../components/release-cards.slint";
 import { QuietButton } from "../components/quiet-button.slint";
+import { TextTabs, SearchField, RoundIconButton, TintPill, EmptyState } from "../components/ui-kit.slint";
 
 /// A genre, as one of a row where exactly one of them is chosen.
 ///
@@ -212,7 +213,7 @@ export component HomePage inherits Rectangle {
     in property <bool> loading: false;
     in-out property <string> query;
     /// The tabs of the current destination, and which is selected.
-    in property <[NavigationItem]> tabs: [];
+    in property <[string]> tabs: [];
     in property <int> tab: 0;
     /// Genre names the catalogue knows, supplied by Rust because they are data
     /// rather than interface text. Index 0 of the chip row is "all", which is
@@ -225,7 +226,14 @@ export component HomePage inherits Rectangle {
     /// Shown instead of the grid when there is a reason it is empty.
     in property <string> notice;
     in property <bool> signed-in: false;
+    /// Enough room for the page title beside the search and for the featured
+    /// release to put the poster next to its words. Decided by the window,
+    /// not measured here: a page reading its own width is a layout loop.
+    in property <bool> wide: false;
+    in property <bool> feature-first;
     in property <string> account-name;
+    in property <image> avatar;
+    in property <bool> avatar-loaded: false;
     /// Unseen notifications, for the bell's badge. Only with an account.
     in property <int> unseen: 0;
     callback open-notifications();
@@ -273,21 +281,35 @@ export component HomePage inherits Rectangle {
     horizontal-stretch: 1;
     vertical-stretch: 1;
 
-    /// The narrowest a tab may be before the strip scrolls instead: room for
-    /// the longest label the destinations have, "Смотрят сейчас".
-    property <length> tab-width: root.tabs.length <= 5 ? 104px : 132px;
-
-    property <length> card-width: 160px;
-    property <length> card-height: 280px;
-    property <length> gutter: Spacing.base;
+    /// A poster's box, and the gap between two of them.
+    ///
+    /// Handed in by the window rather than read from this page's own width:
+    /// a page whose preferred width is computed from a child, and a child
+    /// whose width is computed from the page, is a binding loop — and Slint
+    /// detects it at run time, not at compile time. The window knows its own
+    /// width without asking its children.
+    in property <length> card-width: 168px;
+    /// Portrait proportions — a poster is two thirds as wide as it is tall —
+    /// plus the two lines of title and the line of facts under it.
+    property <length> card-height: root.card-width * 1.5 + 78px;
+    property <length> gutter: Spacing.comfortable;
+    /// Page edges grow with the card, so a wide screen gets air rather than
+    /// more cards. Derived from the card width, which comes from outside.
+    property <length> page-padding: root.wide ? Spacing.loose : Spacing.page;
+    property <bool> featured: root.feature-first && !root.searching
+        && !root.collection-open && !root.chips-are-days && root.results.length > 0;
+    property <length> featured-height: root.wide ? 224px : 188px;
     property <bool> genres-open: false;
     changed heading => { root.genres-open = false; }
 
     VerticalLayout {
         // ---- search ------------------------------------------------------
+        //
+        // The phone client's bar: one round field with a magnifier, then the
+        // few things that are always reachable — the bell, a random release,
+        // the account. Enter searches; there is no button to hunt for.
         Rectangle {
-            height: 72px;
-            background: MaterialPalette.surface;
+            height: 76px;
             // Painted after its siblings, so that what hangs below it — the
             // account button's tooltip — is not drawn over by the tabs and
             // the genres, which come after it in the column.
@@ -296,82 +318,33 @@ export component HomePage inherits Rectangle {
             HorizontalLayout {
                 x: 0px;
                 width: parent.width;
-                padding-left: Spacing.base;
-                padding-right: Spacing.base;
-                spacing: Spacing.base;
+                padding-left: root.page-padding;
+                padding-right: root.page-padding;
+                spacing: Spacing.small;
 
-                if root.width >= 800px: Text {
+                if root.wide: Text {
                     text: root.heading;
                     color: MaterialPalette.on-surface;
-                    font-size: Typography.title-large-size;
-                    font-weight: Typography.title-large-weight-em;
+                    font-size: Typography.headline-small-size;
+                    font-weight: 600;
                     vertical-alignment: center;
                 }
 
-                field := Rectangle {
+                // Pushes the search to the right on a wide window, where a
+                // field floating in the middle of the bar reads as a gap
+                // rather than as the one control the bar is for.
+                if root.wide: Rectangle { horizontal-stretch: 1; }
+
+                VerticalLayout {
                     horizontal-stretch: 1;
-                    height: Spacing.touch-target;
-                    y: (parent.height - self.height) / 2;
-                    border-radius: Shape.medium;
-                    background: MaterialPalette.surface-container-highest;
-                    border-width: input.has-focus ? 1px : 0px;
-                    border-color: MaterialPalette.primary;
+                    max-width: 560px;
+                    alignment: center;
 
-                    HorizontalLayout {
-                        padding-left: Spacing.base;
-                        padding-right: Spacing.base;
-                        spacing: Spacing.small;
-
-                        // In its own box, because a fixed-size image in a
-                        // row sits at the top of it rather than on the row's
-                        // centre line.
-                        Rectangle {
-                            width: 18px;
-                            background: transparent;
-
-                            Image {
-                                source: @image-url("../icons/search.svg");
-                                colorize: MaterialPalette.on-surface-variant;
-                                width: 18px;
-                                height: 18px;
-                                y: (parent.height - self.height) / 2;
-                            }
-                        }
-
-                        Rectangle {
-                            horizontal-stretch: 1;
-                            background: transparent;
-
-                            if root.query == "": Text {
-                                text: Tr.search-hint;
-                                color: MaterialPalette.on-surface-variant;
-                                font-size: Typography.body-large-size;
-                                vertical-alignment: center;
-                                width: 100%;
-                                height: 100%;
-                            }
-
-                            input := TextInput {
-                                accessible-label: Tr.search-hint;
-                                text <=> root.query;
-                                color: MaterialPalette.on-surface;
-                                font-size: Typography.body-large-size;
-                                vertical-alignment: center;
-                                single-line: true;
-                                width: 100%;
-                                height: 100%;
-                                accepted => { root.search(self.text); }
-                            }
-                        }
-
-                        VerticalLayout {
-                            alignment: center;
-                            TonalButton {
-                                text: Tr.search-action;
-                                enabled: root.query != "";
-                                clicked => { root.search(root.query); }
-                            }
-                        }
+                    SearchField {
+                        width: 100%;
+                        placeholder: Tr.search-hint;
+                        text <=> root.query;
+                        searched(q) => { root.search(q); }
                     }
                 }
 
@@ -381,19 +354,17 @@ export component HomePage inherits Rectangle {
                     alignment: center;
 
                     Rectangle {
-                        width: 40px;
-                        height: 40px;
+                        width: 44px;
+                        height: 44px;
 
-                        IconButton {
-                            width: 100%;
-                            height: 100%;
+                        RoundIconButton {
                             icon: @image-url("../icons/bell.svg");
                             tooltip: Tr.notifications;
                             clicked => { root.open-notifications(); }
                         }
 
                         if root.unseen > 0: Badge {
-                            x: parent.width - self.width + 4px;
+                            x: parent.width - self.width + 2px;
                             y: -2px;
                             text: root.unseen > 99 ? "99+" : root.unseen;
                         }
@@ -405,25 +376,61 @@ export component HomePage inherits Rectangle {
                 VerticalLayout {
                     alignment: center;
 
-                    IconButton {
+                    RoundIconButton {
                         icon: @image-url("../icons/dice.svg");
                         tooltip: Tr.random-release;
                         clicked => { root.open-random(); }
                     }
                 }
 
-                // Signed in, the name leads to the profile, where signing
-                // out is — asked about there, never a click away from here.
-                VerticalLayout {
+                // Signed in, the account is its own picture, as in the phone
+                // client: one round thing at the edge of the bar, and the
+                // profile behind it. Signing out is asked about there.
+                if root.signed-in: VerticalLayout {
                     alignment: center;
 
-                    OutlineButton {
-                        text: root.signed-in ? root.account-name : Tr.sign-in;
-                        tooltip: root.signed-in ? Tr.my-profile : "";
+                    Rectangle {
+                        width: 40px;
+                        height: 40px;
+                        border-radius: 20px;
+                        clip: true;
+                        background: MaterialPalette.surface-container-high;
+                        accessible-role: button;
+                        accessible-label: Tr.my-profile;
 
-                        clicked => {
-                            if (root.signed-in) { root.open-profile(); } else { root.sign-in(); }
+                        Image {
+                            source: root.avatar;
+                            image-fit: cover;
+                            width: 100%;
+                            height: 100%;
+                            visible: root.avatar-loaded;
                         }
+
+                        Image {
+                            source: @image-url("../icons/person.svg");
+                            colorize: MaterialPalette.on-surface-variant;
+                            width: 20px;
+                            height: 20px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            visible: !root.avatar-loaded;
+                        }
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.open-profile(); }
+                        }
+                    }
+                }
+
+                if !root.signed-in: VerticalLayout {
+                    alignment: center;
+
+                    TintPill {
+                        text: Tr.sign-in;
+                        wash: Tint.coral-bg;
+                        ink: Tint.coral-ink;
+                        clicked => { root.sign-in(); }
                     }
                 }
             }
@@ -467,108 +474,68 @@ export component HomePage inherits Rectangle {
             }
         }
 
-        if !root.searching && !root.collection-open && root.tabs.length > 0: tabs-frame := Rectangle {
-            height: Spacing.touch-target;
-            property <bool> scrollable: root.tab-width * root.tabs.length + 2 * Spacing.base > self.width;
-            property <length> arrow-width: self.scrollable ? Spacing.icon-button : 0px;
+        // ---- tabs --------------------------------------------------------
+        //
+        // Hidden while searching: the tabs name a part of the catalogue, and a
+        // search is not one of them. The phone client's pattern — a row of
+        // labels with a coral underline under the chosen one — rather than a
+        // segmented bar: it says where you are without boxing in every word.
+        if !root.searching && !root.collection-open && root.tabs.length > 0: HorizontalLayout {
+            padding-left: root.page-padding;
+            padding-right: root.page-padding;
 
-            tab-strip := Flickable {
-                x: tabs-frame.arrow-width;
-                width: tabs-frame.width - 2 * tabs-frame.arrow-width;
-                height: parent.height;
-                interactive: self.content-width > self.width;
-                content-width: max(self.width, root.tab-width * root.tabs.length + 2 * Spacing.base);
-
-                SecondaryTabBar {
-                    x: Spacing.base;
-                    width: tab-strip.content-width - 2 * Spacing.base;
-                    height: 100%;
-                    items: root.tabs;
-
-                    // Pushed, not bound: the bar writes its own index on a click,
-                    // and Rust decides which tab a destination opens on.
-                    property <int> wanted: root.tab;
-                    init => {
-                        self.current-index = root.tab;
-                        tab-strip.reveal(root.tab);
-                    }
-                    changed wanted => {
-                        self.current-index = self.wanted;
-                        tab-strip.reveal(self.wanted);
-                    }
-
-                    index-changed(i) => { root.select-tab(i); }
-                }
-
-                /// Scrolls the strip so the tab at `index` is in the middle of it,
-                /// or as near as the ends allow. A selected tab out of sight is a
-                /// question nobody can see the answer to.
-                function reveal(index: int) {
-                    let division = (self.content-width - 2 * Spacing.base) / root.tabs.length;
-                    let centre = Spacing.base + division * (index + 0.5);
-                    self.content-x = clamp(self.width / 2 - centre, self.width - self.content-width, 0px);
-                }
-                changed width => { self.reveal(root.tab); }
-            }
-
-            if tabs-frame.scrollable: IconButton {
-                icon: @image-url("../icons/back.svg");
-                tooltip: Tr.previous-tabs;
-                enabled: tab-strip.content-x < 0px;
-                x: 0px;
-                width: tabs-frame.arrow-width;
-                height: 100%;
-                clicked => { tab-strip.content-x = min(0px, tab-strip.content-x + root.tab-width); }
-            }
-
-            if tabs-frame.scrollable: IconButton {
-                icon: @image-url("../icons/chevron.svg");
-                tooltip: Tr.next-tabs;
-                enabled: tab-strip.content-x > tab-strip.width - tab-strip.content-width;
-                x: parent.width - self.width;
-                width: tabs-frame.arrow-width;
-                height: 100%;
-                clicked => {
-                    tab-strip.content-x = max(tab-strip.width - tab-strip.content-width, tab-strip.content-x - root.tab-width);
-                }
+            TextTabs {
+                horizontal-stretch: 1;
+                items: root.tabs;
+                current: root.tab;
+                select(i) => { root.select-tab(i); }
             }
         }
 
         if !root.searching && !root.collection-open && root.can-create-collection: HorizontalLayout {
-            padding-left: Spacing.base;
-            padding-right: Spacing.base;
-            padding-bottom: Spacing.small;
+            padding-left: root.page-padding;
+            padding-right: root.page-padding;
+            padding-top: Spacing.small;
             alignment: start;
 
-            TonalButton {
+            TintPill {
                 text: Tr.new-collection;
+                icon: @image-url("../icons/collection.svg");
+                has-icon: true;
                 clicked => { root.new-collection(); }
             }
         }
 
         if !root.searching && !root.collection-open && root.genres.length > 0 && !root.chips-are-days: HorizontalLayout {
-            padding-left: Spacing.base;
-            padding-right: Spacing.base;
-            padding-bottom: Spacing.small;
-            spacing: Spacing.small;
+            padding-left: root.page-padding;
+            padding-right: root.page-padding;
+            padding-top: Spacing.small;
             alignment: start;
 
-            OutlineButton {
-                icon: @image-url("../icons/chevron-down.svg");
+            // The genre chooser is a filter, so it wears the filter's icon and
+            // stays quiet until it is in use. A chosen genre turns it coral.
+            TintPill {
                 text: root.genre > 0 && root.genre <= root.genres.length
-                    ? Tr.genre-filter + " · " + root.genres[root.genre - 1] : Tr.all-genres;
+                    ? root.genres[root.genre - 1] : Tr.all-genres;
+                icon: @image-url("../icons/filters.svg");
+                has-icon: true;
+                trailing: @image-url("../icons/chevron-down.svg");
+                has-trailing: true;
+                wash: root.genre > 0 ? Tint.coral-bg : MaterialPalette.surface-container;
+                ink: root.genre > 0 ? Tint.coral-ink : MaterialPalette.on-surface;
+                inner-height: 40px;
                 clicked => { root.genres-open = !root.genres-open; }
             }
         }
 
         if !root.searching && !root.collection-open && root.genres.length > 0
             && (root.chips-are-days || root.genres-open): FlexboxLayout {
-            padding-left: Spacing.base;
-            padding-right: Spacing.base;
+            padding-left: root.page-padding;
+            padding-right: root.page-padding;
             flex-wrap: wrap;
             alignment: start;
             spacing: Spacing.small;
-            padding-bottom: Spacing.small;
+            padding-top: Spacing.small;
 
             GenreChip {
                 text: root.chips-are-days ? Tr.whole-week : Tr.all-genres;
@@ -653,21 +620,19 @@ export component HomePage inherits Rectangle {
             }
         }
 
-        if !root.loading && root.results.length == 0: Text {
-            text: root.notice != ""
+        if !root.loading && root.results.length == 0: EmptyState {
+            vertical-stretch: 1;
+            icon: root.searching ? @image-url("../icons/search.svg") : @image-url("../icons/compass.svg");
+            title: root.notice != ""
                 ? root.notice
                 : (root.searching ? Tr.nothing-found : Tr.nothing-here);
-            color: MaterialPalette.on-surface-variant;
-            font-size: Typography.body-large-size;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            wrap: word-wrap;
-            vertical-stretch: 1;
+            detail: root.searching ? Tr.nothing-found-hint : "";
         }
 
         if root.results.length > 0: grid := ScrollView {
             vertical-stretch: 1;
-            content-height: wall.preferred-height + (root.loading-more ? 72px : 0px);
+            horizontal-scrollbar-policy: always-off;
+            content-height: wall.y + wall.preferred-height + (root.loading-more ? 72px : root.gutter);
 
             // Within a screen of the end, the next page is asked for. Rust
             // keeps it to one request at a time and stops at the last page.
@@ -679,20 +644,135 @@ export component HomePage inherits Rectangle {
                 }
             }
 
+            if root.featured: Rectangle {
+                x: root.page-padding;
+                y: Spacing.base;
+                width: grid.visible-width - 2 * root.page-padding;
+                height: root.featured-height;
+                border-radius: Shape.extra-large;
+                clip: true;
+                background: MaterialPalette.surface-container-low;
+                border-width: 1px;
+                border-color: MaterialPalette.outline-variant;
+
+                if root.results[0].poster-loaded: Image {
+                    source: root.results[0].poster;
+                    image-fit: cover;
+                    width: 100%;
+                    height: 100%;
+                    opacity: 0.35;
+                }
+
+                Rectangle {
+                    background: @linear-gradient(90deg,
+                        MaterialPalette.surface-container-low 0%,
+                        MaterialPalette.surface-container-low.with-alpha(0.84) 42%,
+                        MaterialPalette.surface-container-low.with-alpha(0.2) 100%);
+                }
+
+                HorizontalLayout {
+                    padding: root.wide ? 24px : 20px;
+                    spacing: Spacing.comfortable;
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 8px;
+
+                        if root.results[0].score != "": Text {
+                            text: "★ " + root.results[0].score;
+                            color: Tint.amber-ink;
+                            font-size: 14px;
+                            font-weight: 600;
+                        }
+
+                        Text {
+                            text: root.results[0].title;
+                            color: MaterialPalette.on-surface;
+                            font-size: root.wide ? 28px : 22px;
+                            font-weight: 600;
+                            wrap: word-wrap;
+                            max-lines: 2;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: root.results[0].subtitle;
+                            color: MaterialPalette.on-surface-variant;
+                            font-size: 14px;
+                            overflow: elide;
+                        }
+
+                        HorizontalLayout {
+                            padding-top: 8px;
+                            alignment: start;
+
+                            TintPill {
+                                text: Tr.open-release;
+                                icon: @image-url("../icons/play.svg");
+                                has-icon: true;
+                                wash: MaterialPalette.primary;
+                                ink: MaterialPalette.on-primary;
+                                inner-height: 48px;
+                                clicked => { root.open-release(0); }
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+
+                        Rectangle {
+                            width: root.wide ? 112px : 92px;
+                            height: root.wide ? 168px : 138px;
+                            border-radius: Shape.poster;
+                            clip: true;
+                            background: MaterialPalette.surface-container-high;
+                            drop-shadow-blur: 24px;
+                            drop-shadow-color: #00000040;
+
+                            if root.results[0].poster-loaded: Image {
+                                source: root.results[0].poster;
+                                image-fit: cover;
+                                width: 100%;
+                                height: 100%;
+                            }
+
+                            if !root.results[0].poster-loaded: Image {
+                                source: @image-url("../icons/poster.svg");
+                                colorize: MaterialPalette.on-surface-variant.with-alpha(0.35);
+                                width: 32px;
+                                height: 32px;
+                            }
+                        }
+                    }
+                }
+
+                // Anywhere but the button opens the release too.
+                TouchArea {
+                    z: -1;
+                    mouse-cursor: pointer;
+                    clicked => { root.open-release(0); }
+                }
+            }
+
             wall := FlexboxLayout {
-                y: root.gutter;
-                width: 100%;
-                padding-left: Spacing.base;
-                padding-right: Spacing.base;
+                y: root.featured ? Spacing.base + root.featured-height + root.gutter : root.gutter;
+                width: grid.visible-width;
+                height: self.preferred-height;
+                padding-left: root.page-padding;
+                padding-right: root.page-padding;
                 flex-wrap: wrap;
+                cross-axis-line-alignment: start;
                 alignment: start;
                 spacing: root.gutter;
 
-                for card[index] in root.results: PosterCard {
-                    card: card;
+                for row in root.results.length - (root.featured ? 1 : 0): PosterCard {
+                    property <int> index: row + (root.featured ? 1 : 0);
+                    card: root.results[self.index];
                     width: root.card-width;
                     height: root.card-height;
-                    clicked => { root.open-release(index); }
+                    clicked => { root.open-release(self.index); }
                 }
             }
 
@@ -701,7 +781,7 @@ export component HomePage inherits Rectangle {
                 width: 36px;
                 height: 36px;
                 x: (parent.width - self.width) / 2;
-                y: wall.preferred-height + 18px;
+                y: wall.y + wall.preferred-height + 18px;
             }
         }
     }

@@ -35,8 +35,13 @@
 //! `release-note`, `franchise`, `profile-teal`,
 //! `profile-teal-glass`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
 //! `comments-signed-out`, `player-hint`, `player-gpu-hint`, `player-volume`, `update-available`,
-//! `update-downloading`, `light` or `amoled`. Narrow is a width, not a state: pass
+//! `update-downloading`, `light`, `dark` or `amoled`. `release-light` and
+//! `release-dark` put the release screen in that appearance. Narrow is a width, not a state: pass
 //! one below 900.
+//!
+//! `ANIRUST_SHOT_APPEARANCE=light|dark|amoled|system` puts any state in that
+//! appearance, so a screen does not need a second state name to be checked in
+//! both halves of the palette.
 //!
 //! `ANIRUST_SHOT_POINTER=x,y` parks the pointer anywhere, for the states
 //! that only show under it.
@@ -557,8 +562,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // The appearances that can be seen without a desktop to ask: the browsing
     // screen is the one with the most of the palette on it at once.
-    if state == "light" || state == "profile-light" {
+    if state == "light" || state == "profile-light" || state == "release-light" {
         ui.set_appearance(Appearance::Light);
+    }
+    if state == "dark" || state == "release-dark" {
+        ui.set_appearance(Appearance::Dark);
+    }
+    // Any state can be looked at in either appearance, so a second pass of
+    // every screen does not need a second name for each.
+    if let Ok(wanted) = std::env::var("ANIRUST_SHOT_APPEARANCE") {
+        ui.set_appearance(match wanted.as_str() {
+            "light" => Appearance::Light,
+            "dark" => Appearance::Dark,
+            "amoled" => Appearance::Amoled,
+            _ => Appearance::System,
+        });
     }
     if state == "amoled" {
         ui.set_appearance(Appearance::Amoled);

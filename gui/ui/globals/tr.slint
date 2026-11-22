@@ -243,7 +243,9 @@ export global Tr {
     out property <string> voice-overs: lang == "ru" ? "Озвучка" : "Voice-over";
     out property <string> source: lang == "ru" ? "Источник" : "Source";
     out property <string> episodes: lang == "ru" ? "Серии" : "Episodes";
+    out property <string> synopsis: lang == "ru" ? "Описание" : "Synopsis";
     out property <string> watch: lang == "ru" ? "Смотреть" : "Watch";
+    out property <string> open-release: lang == "ru" ? "Открыть" : "Open";
     out property <string> continue-watching: lang == "ru" ? "Продолжить" : "Continue";
     out property <string> continue-episode: lang == "ru" ? "Продолжить серию" : "Continue episode";
     out property <string> subtitles-short: lang == "ru" ? "сабы" : "sub";
@@ -262,6 +264,9 @@ export global Tr {
     out property <string> next-tabs: lang == "ru" ? "Следующие разделы" : "Next sections";
     out property <string> playing-now: lang == "ru" ? "Сейчас играет" : "Now playing";
     out property <string> nothing-found: lang == "ru" ? "Ничего не найдено" : "Nothing found";
+    out property <string> nothing-found-hint: lang == "ru"
+        ? "Попробуйте другое название или выберите жанр"
+        : "Try another name, or pick a genre";
     out property <string> now-watching: lang == "ru" ? "Сейчас смотрят" : "Being watched now";
     out property <string> search-results: lang == "ru" ? "Результаты поиска" : "Search results";
 
@@ -660,12 +665,17 @@ export global Tr {
     out property <string> sign-in-to-profile: lang == "ru"
         ? "Войдите, чтобы видеть свои списки и синхронизировать прогресс"
         : "Sign in to see your lists and sync your progress";
+    out property <string> account-signed-in: lang == "ru"
+        ? "Списки и прогресс синхронизируются с аккаунтом"
+        : "Lists and progress sync with the account";
 
     out property <string> appearance: lang == "ru" ? "Оформление" : "Appearance";
+    out property <string> playback: lang == "ru" ? "Воспроизведение" : "Playback";
+    out property <string> accent: lang == "ru" ? "Акцентный цвет" : "Accent colour";
     out property <string> appearance-why: lang == "ru"
         ? "AMOLED — это тёмная тема, в которой фон гаснет полностью: на OLED-экране такие пиксели не светятся вовсе."
         : "AMOLED is the dark theme with the background taken to black: on an OLED panel those pixels are switched off rather than lit.";
-    out property <string> appearance-system: lang == "ru" ? "Как в системе" : "System";
+    out property <string> appearance-system: lang == "ru" ? "Авто" : "System";
     out property <string> appearance-light: lang == "ru" ? "Светлая" : "Light";
     out property <string> appearance-dark: lang == "ru" ? "Тёмная" : "Dark";
     out property <string> appearance-amoled: lang == "ru" ? "AMOLED" : "AMOLED";

@@ -2,8 +2,7 @@
 //
 // What has been saved, and what is still coming.
 
-import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, LinearProgressIndicator, FilledButton, TextButton } from "@material";
+import { MaterialPalette, FilledButton, TextButton, ScrollView } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -11,6 +10,7 @@ import { DownloadItem } from "../structs.slint";
 import { Dropdown } from "../components/release-parts.slint";
 import { QuietButton } from "../components/quiet-button.slint";
 import { ConfirmSheet } from "../components/confirm.slint";
+import { EmptyState } from "../components/ui-kit.slint";
 
 component QueueRow inherits Rectangle {
     in property <DownloadItem> item;
@@ -19,9 +19,11 @@ component QueueRow inherits Rectangle {
     callback stop();
     callback delete-file();
 
-    height: 72px;
-    border-radius: Shape.medium;
-    background: MaterialPalette.surface-container;
+    height: 84px;
+    border-radius: Shape.card;
+    background: MaterialPalette.surface-container-low;
+    border-width: 1px;
+    border-color: MaterialPalette.outline-variant;
     property <string> status-label: root.item.status == "queued" ? Tr.dl-queued
         : root.item.status == "running"
             ? (root.item.enhancing ? Tr.enhance-running : Tr.dl-running)
@@ -31,8 +33,8 @@ component QueueRow inherits Rectangle {
         : Tr.dl-failed;
 
     VerticalLayout {
-        padding: Spacing.medium;
-        spacing: Spacing.tight;
+        padding: Spacing.base;
+        spacing: Spacing.small;
 
         HorizontalLayout {
             spacing: Spacing.small;
@@ -40,7 +42,8 @@ component QueueRow inherits Rectangle {
             Text {
                 text: root.item.title;
                 color: MaterialPalette.on-surface;
-                font-size: Typography.body-large-size;
+                font-size: 16px;
+                font-weight: 600;
                 horizontal-stretch: 1;
                 overflow: elide;
                 vertical-alignment: center;
@@ -57,7 +60,7 @@ component QueueRow inherits Rectangle {
                 clicked => { root.play(); }
             }
 
-            if root.item.status == "done": TextButton {
+            if root.item.status == "done": QuietButton {
                 text: Tr.delete;
                 enabled: root.item.can-delete;
                 clicked => { root.delete-file(); }
@@ -84,13 +87,29 @@ component QueueRow inherits Rectangle {
             if root.item.status == "running" && root.item.detail != "starting": VerticalLayout {
                 horizontal-stretch: 1;
                 alignment: center;
-                LinearProgressIndicator { progress: root.item.progress; }
+
+                Rectangle {
+                    width: 100%;
+                    height: 6px;
+                    border-radius: 3px;
+                    background: MaterialPalette.surface-container-highest;
+                    clip: true;
+
+                    Rectangle {
+                        x: 0;
+                        y: 0;
+                        width: parent.width * clamp(root.item.progress, 0.0, 1.0);
+                        height: 100%;
+                        border-radius: 3px;
+                        background: MaterialPalette.primary;
+                    }
+                }
             }
 
             if root.item.status != "running": Text {
                 text: root.item.detail != "" ? root.item.detail : root.item.dubber;
                 color: MaterialPalette.on-surface-variant;
-                font-size: Typography.label-small-size;
+                font-size: 12px;
                 horizontal-stretch: 1;
                 overflow: elide;
             }
@@ -132,273 +151,281 @@ export component DownloadsPage inherits Rectangle {
     horizontal-stretch: 1;
     vertical-stretch: 1;
 
-    VerticalLayout {
-        padding: Spacing.base;
-        spacing: Spacing.medium;
+    HorizontalLayout {
+        Rectangle { horizontal-stretch: 1; }
 
-        HorizontalLayout {
-            spacing: Spacing.small;
+        // The queue reads as one column, not as a bar across a cinema
+        // screen: a file name on the left and its buttons a thousand pixels
+        // away is a row nobody can scan.
+        VerticalLayout {
+            horizontal-stretch: 1000;
+            max-width: 1120px;
+            padding: Spacing.page;
+            spacing: Spacing.base;
 
-            Text {
-                text: Tr.nav-downloads;
-                color: MaterialPalette.on-surface;
-                font-size: Typography.title-large-size;
-                font-weight: Typography.title-large-weight-em;
-                horizontal-stretch: 1;
-                vertical-alignment: center;
-            }
-
-            if root.items.length > 0: VerticalLayout {
-                alignment: center;
-
-                QuietButton {
-                    text: Tr.clear-finished;
-                    enabled: !root.working;
-                    clicked => { root.clear-finished(); }
-                }
-            }
-        }
-
-        if root.playback-error: Text {
-            text: Tr.dl-playback-error;
-            color: MaterialPalette.error;
-            font-size: Typography.body-medium-size;
-            wrap: word-wrap;
-        }
-
-        if root.delete-error: Text {
-            text: Tr.dl-delete-error;
-            color: MaterialPalette.error;
-            font-size: Typography.body-medium-size;
-            wrap: word-wrap;
-        }
-
-        if root.items.length == 0: Text {
-            text: Tr.no-downloads;
-            color: MaterialPalette.on-surface-variant;
-            font-size: Typography.body-large-size;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            wrap: word-wrap;
-            vertical-stretch: 1;
-        }
-
-        if root.items.length > 0: ScrollView {
-            vertical-stretch: 1;
-            content-height: queue.preferred-height;
-
-            queue := VerticalLayout {
-                spacing: Spacing.small;
-                alignment: start;
-
-                for item in root.items: QueueRow {
-                    item: item;
-                    play => { root.play(item.index); }
-                    enhance => {
-                        root.resolution = root.can-upscale ? 1 : 0;
-                        root.rate = root.can-generate ? 2 : 0;
-                        root.profile = root.saved-profile;
-                        root.picking = item.index;
-                    }
-                    stop => { root.stop-enhance(item.index); }
-                    delete-file => {
-                        root.delete-error = false;
-                        root.delete-path = item.detail;
-                        root.deleting = item.index;
-                    }
-                }
-            }
-        }
-    }
-
-    if root.deleting >= 0: ConfirmSheet {
-        title: Tr.dl-delete-title;
-        text: root.delete-path + "\n\n" + Tr.dl-delete-confirm;
-        action: Tr.delete;
-        dismiss => { root.deleting = -1; }
-        confirm => {
-            root.delete-error = !root.delete-file(root.deleting, root.delete-path);
-            root.deleting = -1;
-        }
-    }
-
-    if root.picking >= 0: Rectangle {
-        background: #000000A6;
-
-        TouchArea {
-            clicked => {
-                if (self.mouse-x < panel.x || self.mouse-x > panel.x + panel.width
-                    || self.mouse-y < panel.y || self.mouse-y > panel.y + panel.height) {
-                    root.picking = -1;
-                }
-            }
-        }
-
-        panel := Rectangle {
-            width: min(440px, parent.width - 2 * Spacing.base);
-            height: form.preferred-height;
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
-            border-radius: Shape.extra-large;
-            background: MaterialPalette.surface-container-high;
-            drop-shadow-blur: 32px;
-            drop-shadow-color: #00000080;
-
-            init => { resolution-choice.focus(); }
-
-            form := VerticalLayout {
-                padding: Spacing.base;
+            HorizontalLayout {
                 spacing: Spacing.small;
 
                 Text {
-                    text: Tr.enhance-title;
+                    text: Tr.nav-downloads;
                     color: MaterialPalette.on-surface;
-                    font-size: Typography.title-large-size;
-                    font-weight: Typography.title-large-weight-em;
+                    font-size: Typography.headline-small-size;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
                 }
 
-                HorizontalLayout {
-                    spacing: Spacing.medium;
+                if root.items.length > 0: VerticalLayout {
+                    alignment: center;
 
-                    VerticalLayout {
-                        spacing: Spacing.tight;
-                        min-width: 0px;
-                        preferred-width: 0px;
-                        horizontal-stretch: 1;
-
-                        Text {
-                            text: Tr.enhance-resolution;
-                            color: MaterialPalette.on-surface;
-                            font-size: Typography.label-large-size;
-                        }
-
-                        resolution-choice := Dropdown {
-                            label: Tr.enhance-resolution;
-                            model: [{ label: Tr.enhance-as-is }, { label: Tr.enhance-double-size },
-                                { label: "2K · 1440p" }, { label: "4K · 2160p" }];
-                            current: root.resolution;
-                            selected(i) => { root.resolution = i; }
-                        }
-                    }
-
-                    VerticalLayout {
-                        spacing: Spacing.tight;
-                        min-width: 0px;
-                        preferred-width: 0px;
-                        horizontal-stretch: 1;
-
-                        Text {
-                            text: Tr.enhance-fps;
-                            color: MaterialPalette.on-surface;
-                            font-size: Typography.label-large-size;
-                        }
-
-                        Dropdown {
-                            label: Tr.enhance-fps;
-                            enabled: root.can-generate;
-                            model: [{ label: Tr.enhance-as-is }, { label: "×2" }, { label: "60 FPS" },
-                                { label: "120 FPS" }, { label: Tr.frame-rate-display }];
-                            current: root.rate;
-                            selected(i) => { root.rate = i; }
-                        }
+                    QuietButton {
+                        text: Tr.clear-finished;
+                        enabled: !root.working;
+                        clicked => { root.clear-finished(); }
                     }
                 }
+            }
 
-                Text {
-                    text: Tr.enhance-resize-hint;
-                    color: MaterialPalette.on-surface-variant;
-                    font-size: Typography.body-small-size;
-                    wrap: word-wrap;
+            if root.playback-error: Text {
+                text: Tr.dl-playback-error;
+                color: MaterialPalette.error;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+            }
+
+            if root.delete-error: Text {
+                text: Tr.dl-delete-error;
+                color: MaterialPalette.error;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+            }
+
+            if root.items.length == 0: EmptyState {
+                vertical-stretch: 1;
+                icon: @image-url("../icons/download.svg");
+                title: Tr.no-downloads;
+                detail: "";
+            }
+
+            if root.items.length > 0: ScrollView {
+                vertical-stretch: 1;
+                content-height: queue.preferred-height;
+
+                queue := VerticalLayout {
+                    spacing: Spacing.small;
+                    alignment: start;
+
+                    for item in root.items: QueueRow {
+                        item: item;
+                        play => { root.play(item.index); }
+                        enhance => {
+                            root.resolution = root.can-upscale ? 1 : 0;
+                            root.rate = root.can-generate ? 2 : 0;
+                            root.profile = root.saved-profile;
+                            root.picking = item.index;
+                        }
+                        stop => { root.stop-enhance(item.index); }
+                        delete-file => {
+                            root.delete-error = false;
+                            root.delete-path = item.detail;
+                            root.deleting = item.index;
+                        }
+                    }
                 }
+            }
+        }
 
-                VerticalLayout {
-                    spacing: Spacing.tight;
+        if root.deleting >= 0: ConfirmSheet {
+            title: Tr.dl-delete-title;
+            text: root.delete-path + "\n\n" + Tr.dl-delete-confirm;
+            action: Tr.delete;
+            dismiss => { root.deleting = -1; }
+            confirm => {
+                root.delete-error = !root.delete-file(root.deleting, root.delete-path);
+                root.deleting = -1;
+            }
+        }
+
+        if root.picking >= 0: Rectangle {
+            background: #000000A6;
+
+            TouchArea {
+                clicked => {
+                    if (self.mouse-x < panel.x || self.mouse-x > panel.x + panel.width
+                        || self.mouse-y < panel.y || self.mouse-y > panel.y + panel.height) {
+                        root.picking = -1;
+                    }
+                }
+            }
+
+            panel := Rectangle {
+                width: min(440px, parent.width - 2 * Spacing.base);
+                height: form.preferred-height;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: Shape.extra-large;
+                background: MaterialPalette.surface-container-high;
+                drop-shadow-blur: 32px;
+                drop-shadow-color: #00000080;
+
+                init => { resolution-choice.focus(); }
+
+                form := VerticalLayout {
+                    padding: Spacing.base;
+                    spacing: Spacing.small;
 
                     Text {
-                        text: Tr.processing-profile;
+                        text: Tr.enhance-title;
                         color: MaterialPalette.on-surface;
-                        font-size: Typography.label-large-size;
+                        font-size: Typography.title-large-size;
+                        font-weight: Typography.title-large-weight-em;
                     }
 
-                    for row in [0, 2]: HorizontalLayout {
-                        spacing: Spacing.small;
+                    HorizontalLayout {
+                        spacing: Spacing.medium;
 
-                        for index in [row, row + 1]: Rectangle {
-                            property <bool> selected: root.profile == index;
-                            property <string> name: index == 0 ? Tr.economy
-                                : index == 1 ? Tr.balanced
-                                : index == 2 ? Tr.quality-high : Tr.quality-max;
-                            height: Spacing.control-height;
+                        VerticalLayout {
+                            spacing: Spacing.tight;
                             min-width: 0px;
                             preferred-width: 0px;
                             horizontal-stretch: 1;
-                            border-radius: Shape.medium;
-                            border-width: profile-keys.has-focus ? 2px : self.selected ? 1px : 0px;
-                            border-color: MaterialPalette.primary;
-                            background: self.selected ? MaterialPalette.secondary-container
-                                : (profile-touch.has-hover ? MaterialPalette.surface-container-highest
-                                    : MaterialPalette.surface-container);
-                            accessible-role: radio-button;
-                            accessible-label: self.name;
-                            accessible-checkable: true;
-                            accessible-checked: self.selected;
-                            accessible-action-default => { root.profile = index; }
 
                             Text {
-                                text: parent.name;
+                                text: Tr.enhance-resolution;
                                 color: MaterialPalette.on-surface;
-                                font-size: Typography.body-medium-size;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                                font-size: Typography.label-large-size;
                             }
-                            profile-keys := FocusScope {
-                                width: 100%;
-                                height: 100%;
-                                key-pressed(event) => {
-                                    if (event.text == Key.Return || event.text == " ") {
-                                        root.profile = index;
-                                        return accept;
-                                    }
-                                    reject
-                                }
-                                profile-touch := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => {
-                                        profile-keys.focus();
-                                        root.profile = index;
-                                    }
-                                }
+
+                            resolution-choice := Dropdown {
+                                label: Tr.enhance-resolution;
+                                model: [{ label: Tr.enhance-as-is }, { label: Tr.enhance-double-size },
+                                    { label: "2K · 1440p" }, { label: "4K · 2160p" }];
+                                current: root.resolution;
+                                selected(i) => { root.resolution = i; }
+                            }
+                        }
+
+                        VerticalLayout {
+                            spacing: Spacing.tight;
+                            min-width: 0px;
+                            preferred-width: 0px;
+                            horizontal-stretch: 1;
+
+                            Text {
+                                text: Tr.enhance-fps;
+                                color: MaterialPalette.on-surface;
+                                font-size: Typography.label-large-size;
+                            }
+
+                            Dropdown {
+                                label: Tr.enhance-fps;
+                                enabled: root.can-generate;
+                                model: [{ label: Tr.enhance-as-is }, { label: "×2" }, { label: "60 FPS" },
+                                    { label: "120 FPS" }, { label: Tr.frame-rate-display }];
+                                current: root.rate;
+                                selected(i) => { root.rate = i; }
                             }
                         }
                     }
 
                     Text {
-                        text: root.profile == 0 ? Tr.profile-economy : root.profile == 1 ? Tr.profile-balanced
-                            : root.profile == 2 ? Tr.profile-high : Tr.profile-maximum;
+                        text: Tr.enhance-resize-hint;
                         color: MaterialPalette.on-surface-variant;
                         font-size: Typography.body-small-size;
-                    }
-                }
-
-                HorizontalLayout {
-                    spacing: Spacing.small;
-                    alignment: end;
-
-                    TextButton {
-                        text: Tr.cancel;
-                        clicked => { root.picking = -1; }
+                        wrap: word-wrap;
                     }
 
-                    FilledButton {
-                        text: Tr.enhance-start;
-                        enabled: root.resolution > 0 || root.rate > 0;
-                        clicked => {
-                            root.enhance(root.picking, root.resolution, root.rate, root.profile);
-                            root.picking = -1;
+                    VerticalLayout {
+                        spacing: Spacing.tight;
+
+                        Text {
+                            text: Tr.processing-profile;
+                            color: MaterialPalette.on-surface;
+                            font-size: Typography.label-large-size;
+                        }
+
+                        for row in [0, 2]: HorizontalLayout {
+                            spacing: Spacing.small;
+
+                            for index in [row, row + 1]: Rectangle {
+                                property <bool> selected: root.profile == index;
+                                property <string> name: index == 0 ? Tr.economy
+                                    : index == 1 ? Tr.balanced
+                                    : index == 2 ? Tr.quality-high : Tr.quality-max;
+                                height: Spacing.control-height;
+                                min-width: 0px;
+                                preferred-width: 0px;
+                                horizontal-stretch: 1;
+                                border-radius: Shape.medium;
+                                border-width: profile-keys.has-focus ? 2px : self.selected ? 1px : 0px;
+                                border-color: MaterialPalette.primary;
+                                background: self.selected ? MaterialPalette.secondary-container
+                                    : (profile-touch.has-hover ? MaterialPalette.surface-container-highest
+                                        : MaterialPalette.surface-container);
+                                accessible-role: radio-button;
+                                accessible-label: self.name;
+                                accessible-checkable: true;
+                                accessible-checked: self.selected;
+                                accessible-action-default => { root.profile = index; }
+
+                                Text {
+                                    text: parent.name;
+                                    color: MaterialPalette.on-surface;
+                                    font-size: Typography.body-medium-size;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                profile-keys := FocusScope {
+                                    width: 100%;
+                                    height: 100%;
+                                    key-pressed(event) => {
+                                        if (event.text == Key.Return || event.text == " ") {
+                                            root.profile = index;
+                                            return accept;
+                                        }
+                                        reject
+                                    }
+                                    profile-touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => {
+                                            profile-keys.focus();
+                                            root.profile = index;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: root.profile == 0 ? Tr.profile-economy : root.profile == 1 ? Tr.profile-balanced
+                                : root.profile == 2 ? Tr.profile-high : Tr.profile-maximum;
+                            color: MaterialPalette.on-surface-variant;
+                            font-size: Typography.body-small-size;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: Spacing.small;
+                        alignment: end;
+
+                        TextButton {
+                            text: Tr.cancel;
+                            clicked => { root.picking = -1; }
+                        }
+
+                        FilledButton {
+                            text: Tr.enhance-start;
+                            enabled: root.resolution > 0 || root.rate > 0;
+                            clicked => {
+                                root.enhance(root.picking, root.resolution, root.rate, root.profile);
+                                root.picking = -1;
+                            }
                         }
                     }
                 }
             }
         }
+
+        Rectangle { horizontal-stretch: 1; }
     }
 }

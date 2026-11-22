@@ -4,8 +4,8 @@
 // who else runs it, and who is kept out. The same sheet, with only the
 // settings, makes a new channel.
 
-import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, TextField, FilledButton, TonalButton, TextButton, OutlineButton, IconButton, Switch, SecondaryTabBar } from "@material";
+import { MaterialPalette, FilledButton, TonalButton, TextButton, OutlineButton, IconButton, Switch, ScrollView } from "@material";
+import { Field as TextField, TextTabs } from "ui-kit.slint";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -109,7 +109,7 @@ export component ChannelAdmin inherits Rectangle {
             : parent.height - 2 * Spacing.comfortable;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        border-radius: Shape.extra-large;
+        border-radius: Shape.sheet;
         background: MaterialPalette.surface-container-high;
         drop-shadow-blur: 32px;
         drop-shadow-color: #00000080;
@@ -142,18 +142,22 @@ export component ChannelAdmin inherits Rectangle {
                 }
             }
 
-            if !root.creating: SecondaryTabBar {
-                height: 48px;
-                items: [
-                    { text: Tr.channel-settings },
-                    { text: Tr.suggested-posts },
-                    { text: Tr.administrators },
-                    { text: Tr.blocked-people },
-                ];
-                property <int> wanted: root.tab;
-                init => { self.current-index = root.tab; }
-                changed wanted => { self.current-index = self.wanted; }
-                index-changed(i) => { root.select-tab(i); }
+            if !root.creating: HorizontalLayout {
+                padding-left: Spacing.comfortable;
+                padding-right: Spacing.comfortable;
+
+                TextTabs {
+                    horizontal-stretch: 1;
+                    items: [
+                        Tr.channel-settings,
+                        Tr.suggested-posts,
+                        Tr.administrators,
+                        Tr.blocked-people,
+                    ];
+                    current: root.tab;
+                    gap: Spacing.comfortable;
+                    select(i) => { root.select-tab(i); }
+                }
             }
 
             ScrollView {

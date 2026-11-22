@@ -13,14 +13,14 @@
 // into someone else's network from a third-party client is a separate
 // decision, and not one this screen makes.
 
-import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, SecondaryTabBar, CircularProgressIndicator, TonalButton, OutlineButton, TextButton, IconButton, FloatingActionButton, FABStyle } from "@material";
+import { MaterialPalette, CircularProgressIndicator, TonalButton, OutlineButton, TextButton, IconButton, FloatingActionButton, FABStyle, ScrollView } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { FeedPost, ChannelItem } from "../structs.slint";
 import { QuietButton } from "../components/quiet-button.slint";
 import { VoteArrow } from "../components/comments.slint";
+import { TextTabs, EmptyState } from "../components/ui-kit.slint";
 
 /// An icon and a number beside it.
 component Tally inherits HorizontalLayout {
@@ -69,11 +69,13 @@ component PostCard inherits Rectangle {
     property <bool> expanded: false;
     property <int> folded-lines: 6;
 
-    border-radius: Shape.large;
-    background: MaterialPalette.surface-container;
+    background: transparent;
 
     layout := VerticalLayout {
-        padding: Spacing.base;
+        padding-left: 4px;
+        padding-right: 4px;
+        padding-top: 20px;
+        padding-bottom: 20px;
         spacing: Spacing.medium;
 
         // ---- who and when ------------------------------------------------
@@ -184,6 +186,7 @@ component PostCard inherits Rectangle {
         // ---- what people made of it --------------------------------------
         HorizontalLayout {
             spacing: Spacing.base;
+            cross-axis-alignment: center;
 
             // The account's rating, as in the official client: up, the score,
             // down. The score moves with the vote. Without an account the
@@ -225,15 +228,13 @@ component PostCard inherits Rectangle {
 
             // The comment count opens the thread.
             Rectangle {
-                width: comments-tally.preferred-width + Spacing.small;
-                height: 28px;
+                width: max(Spacing.icon-button, comments-tally.preferred-width + 2 * Spacing.small);
+                height: Spacing.icon-button;
                 border-radius: Shape.small;
                 background: comments-touch.has-hover ? MaterialPalette.surface-container-high : transparent;
 
-                // Sized outright: a layout inside a plain rectangle is not
-                // given a size by it, and draws its text into nothing.
                 comments-tally := Tally {
-                    x: Spacing.tight;
+                    x: (parent.width - self.width) / 2;
                     width: self.preferred-width;
                     height: parent.height;
                     icon: @image-url("../icons/comment.svg");
@@ -252,16 +253,16 @@ component PostCard inherits Rectangle {
             if root.post.can-edit: IconButton {
                 icon: @image-url("../icons/edit.svg");
                 tooltip: Tr.edit;
-                width: 28px;
-                height: 28px;
+                width: 36px;
+                height: 36px;
                 clicked => { root.edit(); }
             }
 
             if root.post.can-pin: IconButton {
                 icon: root.post.pinned ? @image-url("../icons/pin-filled.svg") : @image-url("../icons/pin.svg");
                 tooltip: root.post.pinned ? Tr.unpin-post : Tr.pin-post;
-                width: 28px;
-                height: 28px;
+                width: 36px;
+                height: 36px;
                 clicked => { root.pin(); }
             }
 
@@ -270,8 +271,8 @@ component PostCard inherits Rectangle {
             if root.post.can-delete && !root.confirming-delete: IconButton {
                 icon: @image-url("../icons/trash.svg");
                 tooltip: Tr.delete;
-                width: 28px;
-                height: 28px;
+                width: 36px;
+                height: 36px;
                 clicked => { root.confirming-delete = true; }
             }
 
@@ -287,8 +288,8 @@ component PostCard inherits Rectangle {
             report-button := IconButton {
                 icon: @image-url("../icons/flag.svg");
                 tooltip: Tr.report;
-                width: 28px;
-                height: 28px;
+                width: 36px;
+                height: 36px;
                 clicked => { root.report(); }
             }
         }
@@ -300,6 +301,13 @@ component PostCard inherits Rectangle {
             color: MaterialPalette.on-surface-variant;
             font-size: Typography.label-medium-size;
             wrap: word-wrap;
+        }
+
+        // The stream is divided by hairlines, as the phone client divides
+        // it: a post is part of a feed, not a card in a board.
+        Rectangle {
+            height: 1px;
+            background: MaterialPalette.outline-variant;
         }
     }
 
@@ -509,7 +517,7 @@ export component FeedPage inherits Rectangle {
     /// The width a column of text is comfortable to read at. A post stretched
     /// across a desktop window is a line too long to find the start of the
     /// next one.
-    property <length> measure: 680px;
+    property <length> measure: 720px;
 
     /// The channels tab is up: a list of channels rather than of posts.
     property <bool> listing-channels: !root.channel-open && root.tab == 2;
@@ -570,42 +578,25 @@ export component FeedPage inherits Rectangle {
 
             Rectangle { horizontal-stretch: 1; }
 
-            SecondaryTabBar {
+            TextTabs {
                 horizontal-stretch: 1000;
                 max-width: root.measure;
-                items: [{ text: Tr.feed-mine }, { text: Tr.feed-latest }, { text: Tr.feed-channels }];
-
-                // Pushed, not bound: the bar writes its own index on a click.
-                property <int> wanted: root.tab;
-                init => { self.current-index = root.tab; }
-                changed wanted => { self.current-index = self.wanted; }
-
-                index-changed(i) => { root.select-tab(i); }
+                items: [Tr.feed-mine, Tr.feed-latest, Tr.feed-channels];
+                current: root.tab;
+                gap: Spacing.loose;
+                select(i) => { root.select-tab(i); }
             }
 
             Rectangle { horizontal-stretch: 1; }
         }
 
-        if !root.signed-in: VerticalLayout {
+        if !root.signed-in: EmptyState {
             vertical-stretch: 1;
-            alignment: center;
-            spacing: Spacing.base;
-
-            Text {
-                text: Tr.sign-in-to-feed;
-                color: MaterialPalette.on-surface-variant;
-                font-size: Typography.body-large-size;
-                horizontal-alignment: center;
-            }
-
-            HorizontalLayout {
-                alignment: center;
-
-                OutlineButton {
-                    text: Tr.sign-in;
-                    clicked => { root.sign-in(); }
-                }
-            }
+            icon: @image-url("../icons/feed.svg");
+            title: Tr.signed-out;
+            detail: Tr.sign-in-to-feed;
+            action: Tr.sign-in;
+            act => { root.sign-in(); }
         }
 
         if root.signed-in && root.listing-channels: ScrollView {

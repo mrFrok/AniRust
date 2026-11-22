@@ -3,17 +3,151 @@
 // Settings: how the client looks and plays, what brings a notification, the
 // account, and what the program is.
 //
+// One page of grouped rows, the way the phone client does it: a heading, a
+// card of rows under it, the control on the right of each row. Nothing is a
+// form — a setting is read, not filled in — so there are no input boxes here
+// except the ones a choice needs.
+//
 // Kept on a destination of its own at the foot of the rail rather than at the
 // bottom of the profile, where it used to be: a profile is somebody, and
 // settings are not.
 
-import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton, Switch, TextButton, TonalButton } from "@material";
+import { MaterialPalette, SegmentedButton, FilledButton, OutlineButton, TonalButton, TextButton, Switch, ScrollView } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { Scheme, Accent } from "../globals/scheme.slint";
+import { Tint } from "../globals/tint.slint";
 import { QuietButton } from "../components/quiet-button.slint";
+
+/// A heading over a group of rows, with a line of explanation when the group
+/// needs one.
+component SectionHeading inherits VerticalLayout {
+    in property <string> text;
+    in property <string> detail;
+
+    spacing: 2px;
+    padding-top: Spacing.loose;
+    padding-bottom: Spacing.small;
+
+    Text {
+        text: root.text;
+        color: MaterialPalette.on-surface;
+        font-size: 18px;
+        font-weight: 600;
+    }
+
+    if root.detail != "": Text {
+        text: root.detail;
+        color: MaterialPalette.on-surface-variant;
+        font-size: Typography.body-medium-size;
+        wrap: word-wrap;
+    }
+}
+
+/// The surface a group of rows sits on: a card, not a form.
+component Group inherits Rectangle {
+    @children
+
+    background: MaterialPalette.surface-container-low;
+    border-radius: Shape.card;
+    border-width: 1px;
+    border-color: MaterialPalette.outline-variant;
+    vertical-stretch: 0;
+    min-width: 0px;
+}
+
+/// One switch with its label, and optionally a line of why.
+component ToggleRow inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> detail;
+    in property <bool> on: false;
+    callback flipped(bool);
+
+    padding-left: Spacing.base;
+    padding-right: Spacing.base;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    spacing: Spacing.base;
+
+    VerticalLayout {
+        horizontal-stretch: 1;
+        spacing: 2px;
+        alignment: center;
+
+        Text {
+            text: root.title;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.body-large-size;
+            wrap: word-wrap;
+        }
+
+        if root.detail != "": Text {
+            text: root.detail;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.body-small-size;
+            wrap: word-wrap;
+        }
+    }
+
+    VerticalLayout {
+        alignment: center;
+
+        // Its own width and no more: a switch stretched across the row is a
+        // slider that does not slide.
+        Switch {
+            width: 50px;
+            height: 30px;
+            property <bool> wanted: root.on;
+            init => { self.checked = root.on; }
+            changed wanted => { self.checked = self.wanted; }
+            changed checked => {
+                if (self.checked != root.on) { root.flipped(self.checked); }
+            }
+        }
+    }
+}
+
+/// A row of choices that can place the control below the label.
+component ChoiceRow inherits FlexboxLayout {
+    in property <string> title;
+    in property <string> detail;
+
+    padding-left: Spacing.base;
+    padding-right: Spacing.base;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    spacing: Spacing.base;
+    flex-wrap: wrap;
+    cross-axis-alignment: center;
+
+    VerticalLayout {
+        horizontal-stretch: 1;
+        spacing: 2px;
+        alignment: center;
+
+        Text {
+            text: root.title;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.body-large-size;
+        }
+
+        if root.detail != "": Text {
+            text: root.detail;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.body-small-size;
+            wrap: word-wrap;
+        }
+    }
+
+    @children
+}
+
+/// The hairline between two rows of one group.
+component RowSeparator inherits Rectangle {
+    height: 1px;
+    background: MaterialPalette.outline-variant;
+}
 
 export component SettingsPage inherits Rectangle {
     in property <bool> signed-in: false;
@@ -51,7 +185,7 @@ export component SettingsPage inherits Rectangle {
     callback sign-out();
     callback open-link(string);
 
-    background: MaterialPalette.surface;
+    background: MaterialPalette.background;
 
     min-width: 0px;
     min-height: 0px;
@@ -62,196 +196,168 @@ export component SettingsPage inherits Rectangle {
     horizontal-stretch: 1;
     vertical-stretch: 1;
 
-    ScrollView {
+    scroller := ScrollView {
         width: 100%;
         height: 100%;
+        horizontal-scrollbar-policy: always-off;
 
-        HorizontalLayout {
-            padding: Spacing.base;
+        content-height: column.preferred-height;
 
-            Rectangle { horizontal-stretch: 1; }
+        column := VerticalLayout {
+            x: (scroller.visible-width - self.width) / 2;
+            width: min(960px, scroller.visible-width - 2 * Spacing.page);
+            height: self.preferred-height;
+            alignment: start;
+            padding-bottom: Spacing.loose;
 
             VerticalLayout {
-                horizontal-stretch: 1000;
-                // One width for the page: a label and its switch read as a
-                // pair only when they are not a window apart.
-                max-width: 560px;
-                spacing: Spacing.base;
-                alignment: start;
+                padding-top: Spacing.page;
 
                 Text {
                     text: Tr.settings;
                     color: MaterialPalette.on-surface;
                     font-size: Typography.headline-small-size;
-                    font-weight: Typography.title-large-weight-em;
+                    font-weight: 600;
                 }
+            }
 
-                // ---- the account --------------------------------------------
-                Text {
-                    text: Tr.account-section;
-                    color: MaterialPalette.on-surface;
-                    font-size: Typography.title-medium-size;
-                    font-weight: Typography.title-medium-weight-em;
-                }
+            // ---- the account --------------------------------------------
+            SectionHeading {
+                text: Tr.account-section;
+            }
 
-                if !root.signed-in: HorizontalLayout {
-                    alignment: start;
-                    FilledButton {
+            Group {
+                FlexboxLayout {
+                    flex-wrap: wrap;
+                    cross-axis-alignment: center;
+                    padding: Spacing.base;
+                    spacing: Spacing.base;
+
+                    Rectangle {
+                        width: 52px;
+                        height: 52px;
+                        border-radius: 26px;
+                        background: Tint.coral-bg;
+
+                        Image {
+                            source: @image-url("../icons/person.svg");
+                            colorize: Tint.coral-ink;
+                            width: 24px;
+                            height: 24px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                        }
+                    }
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 2px;
+
+                        Text {
+                            text: root.signed-in ? root.account-name : Tr.sign-in-title;
+                            color: MaterialPalette.on-surface;
+                            font-size: Typography.title-medium-size;
+                            font-weight: 600;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: root.signed-in ? Tr.account-signed-in : Tr.sign-in-to-profile;
+                            color: MaterialPalette.on-surface-variant;
+                            font-size: Typography.body-small-size;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    if !root.signed-in: FilledButton {
                         text: Tr.sign-in;
                         clicked => { root.sign-in(); }
                     }
-                }
 
-                if root.signed-in: HorizontalLayout {
-                    spacing: Spacing.small;
-                    alignment: start;
-
-                    Text {
-                        text: root.account-name;
-                        color: MaterialPalette.on-surface-variant;
-                        font-size: Typography.body-large-size;
-                        vertical-alignment: center;
-                    }
-
-                    Rectangle { width: Spacing.small; }
-
-                    TonalButton {
+                    if root.signed-in: TonalButton {
                         text: Tr.account-settings;
                         clicked => { root.open-account-settings(); }
                     }
 
-                    QuietButton {
+                    if root.signed-in: TextButton {
                         text: Tr.sign-out;
                         clicked => { root.sign-out(); }
                     }
                 }
+            }
 
-                HorizontalDivider {}
+            // ---- what brings a notification ----------------------------
+            if root.signed-in && root.notify.length > 0: SectionHeading {
+                text: Tr.notification-settings;
+            }
 
-            // ---- what brings a notification ------------------------------------
-            if root.signed-in && root.notify.length > 0: VerticalLayout {
-                spacing: Spacing.tight;
-                // A label and its switch read as a pair only when they are not a
-                // window apart.
-                max-width: 560px;
+            if root.signed-in && root.notify.length > 0: Group {
+                VerticalLayout {
+                    alignment: start;
 
-                Text {
-                    text: Tr.notification-settings;
-                    color: MaterialPalette.on-surface;
-                    font-size: Typography.title-medium-size;
-                    font-weight: Typography.title-medium-weight-em;
-                }
+                    for label[i] in [
+                        Tr.ns-episodes, Tr.ns-first-episode, Tr.ns-comments, Tr.ns-related,
+                        Tr.ns-articles, Tr.ns-my-article-comments, Tr.ns-my-collection-comments,
+                        Tr.ns-selected-releases, Tr.ns-reports,
+                    ]: VerticalLayout {
+                        alignment: start;
 
-                for label[i] in [
-                    Tr.ns-episodes, Tr.ns-first-episode, Tr.ns-comments, Tr.ns-related,
-                    Tr.ns-articles, Tr.ns-my-article-comments, Tr.ns-my-collection-comments,
-                    Tr.ns-selected-releases, Tr.ns-reports,
-                ]: HorizontalLayout {
-                    spacing: Spacing.base;
-                    height: 40px;
+                        if i > 0: RowSeparator {}
 
-                    Text {
-                        text: label;
-                        color: MaterialPalette.on-surface;
-                        font-size: Typography.body-large-size;
-                        vertical-alignment: center;
-                        horizontal-stretch: 1;
-                    }
-
-                    VerticalLayout {
-                        alignment: center;
-
-                        // Its own width and no more: a switch stretched across
-                        // the row is a slider that does not slide.
-                        Switch {
-                            width: 52px;
-                            height: 32px;
-                            checked: i < root.notify.length && root.notify[i];
-                            // Put back to what Rust says at once: the switch is a
-                            // picture of the server's setting, which the click
-                            // asks to turn over, not a setting of its own.
-                            changed checked => {
-                                let wanted = i < root.notify.length && root.notify[i];
-                                if (self.checked != wanted) {
-                                    self.checked = wanted;
-                                    root.flip-notify(i);
-                                }
-                            }
+                        ToggleRow {
+                            title: label;
+                            on: i < root.notify.length && root.notify[i];
+                            flipped(on) => { root.flip-notify(i); }
                         }
                     }
                 }
             }
 
-            VerticalLayout {
-                spacing: Spacing.base;
+            // ---- playback ----------------------------------------------
+            SectionHeading {
+                text: Tr.playback;
+            }
 
-                HorizontalDivider {}
+            Group {
+                VerticalLayout {
+                    alignment: start;
 
-                // ---- the player ------------------------------------------------
-                HorizontalLayout {
-                    spacing: Spacing.base;
-                    max-width: 560px;
-
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        spacing: Spacing.hair;
-
-                        Text {
-                            text: Tr.remember-player;
-                            color: MaterialPalette.on-surface;
-                            font-size: Typography.title-medium-size;
-                            font-weight: Typography.title-medium-weight-em;
-                        }
-
-                        Text {
-                            text: Tr.remember-player-why;
-                            color: MaterialPalette.on-surface-variant;
-                            font-size: Typography.body-medium-size;
-                            wrap: word-wrap;
-                        }
+                    ToggleRow {
+                        title: Tr.remember-player;
+                        detail: Tr.remember-player-why;
+                        on: root.remember-player;
+                        flipped(on) => { root.set-remember-player(on); }
                     }
 
-                    VerticalLayout {
-                        alignment: center;
+                    RowSeparator {}
 
-                        Switch {
-                            width: 52px;
-                            height: 32px;
-                            property <bool> wanted: root.remember-player;
-                            init => { self.checked = root.remember-player; }
-                            changed wanted => { self.checked = self.wanted; }
-                            changed checked => {
-                                if (self.checked != root.remember-player) { root.set-remember-player(self.checked); }
+                    HorizontalLayout {
+                        padding-left: Spacing.base;
+                        padding-right: Spacing.base;
+                        padding-top: 12px;
+                        padding-bottom: 12px;
+                        spacing: Spacing.base;
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+                            alignment: center;
+
+                            Text {
+                                text: Tr.bench-setting;
+                                color: MaterialPalette.on-surface;
+                                font-size: Typography.body-large-size;
+                                wrap: word-wrap;
+                            }
+
+                            Text {
+                                text: Tr.bench-setting-hint;
+                                color: MaterialPalette.on-surface-variant;
+                                font-size: Typography.body-small-size;
+                                wrap: word-wrap;
                             }
                         }
-                    }
-                }
-
-                // ---- the machine test -------------------------------------------
-                HorizontalLayout {
-                    spacing: Spacing.base;
-
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        spacing: Spacing.hair;
-
-                        Text {
-                            text: Tr.bench-setting;
-                            color: MaterialPalette.on-surface;
-                            font-size: Typography.title-medium-size;
-                            font-weight: Typography.title-medium-weight-em;
-                        }
-
-                        Text {
-                            text: Tr.bench-setting-hint;
-                            color: MaterialPalette.on-surface-variant;
-                            font-size: Typography.body-medium-size;
-                            wrap: word-wrap;
-                        }
-                    }
-
-                    VerticalLayout {
-                        alignment: center;
 
                         TonalButton {
                             text: Tr.bench-start;
@@ -259,20 +365,20 @@ export component SettingsPage inherits Rectangle {
                         }
                     }
                 }
+            }
 
-                // ---- the language -------------------------------------------------
+            // ---- how it looks ------------------------------------------
+            SectionHeading {
+                text: Tr.appearance;
+                detail: Tr.appearance-why;
+            }
+
+            Group {
                 VerticalLayout {
-                    spacing: Spacing.small;
+                    alignment: start;
 
-                    Text {
-                        text: Tr.language;
-                        color: MaterialPalette.on-surface;
-                        font-size: Typography.title-medium-size;
-                        font-weight: Typography.title-medium-weight-em;
-                    }
-
-                    HorizontalLayout {
-                        alignment: start;
+                    ChoiceRow {
+                        title: Tr.language;
 
                         SegmentedButton {
                             items: [
@@ -281,7 +387,6 @@ export component SettingsPage inherits Rectangle {
                                 { text: "English" },
                             ];
 
-                            // Pushed, not bound, as the appearance's below.
                             property <int> wanted: root.language;
                             init => { self.current-index = root.language; }
                             changed wanted => { self.current-index = self.wanted; }
@@ -289,20 +394,32 @@ export component SettingsPage inherits Rectangle {
                             index-changed(i) => { root.select-language(i); }
                         }
                     }
-                }
 
-                VerticalLayout {
-                    spacing: Spacing.small;
+                    RowSeparator {}
 
-                    Text {
-                        text: Tr.ui-scale;
-                        color: MaterialPalette.on-surface;
-                        font-size: Typography.title-medium-size;
-                        font-weight: Typography.title-medium-weight-em;
+                    ChoiceRow {
+                        title: Tr.appearance;
+
+                        SegmentedButton {
+                            items: [
+                                { text: Tr.appearance-system },
+                                { text: Tr.appearance-light },
+                                { text: Tr.appearance-dark },
+                                { text: Tr.appearance-amoled },
+                            ];
+
+                            property <int> wanted: root.appearance;
+                            init => { self.current-index = root.appearance; }
+                            changed wanted => { self.current-index = self.wanted; }
+
+                            index-changed(i) => { root.select-appearance(i); }
+                        }
                     }
 
-                    HorizontalLayout {
-                        alignment: start;
+                    RowSeparator {}
+
+                    ChoiceRow {
+                        title: Tr.ui-scale;
 
                         SegmentedButton {
                             items: [{ text: "S" }, { text: "M" }, { text: "L" }, { text: "XL" }];
@@ -312,248 +429,181 @@ export component SettingsPage inherits Rectangle {
                             index-changed(i) => { root.select-ui-scale(i); }
                         }
                     }
-                }
 
-                // ---- how it looks ------------------------------------------------
-                VerticalLayout {
-                    spacing: Spacing.small;
-
-                    Text {
-                        text: Tr.appearance;
-                        color: MaterialPalette.on-surface;
-                        font-size: Typography.title-medium-size;
-                        font-weight: Typography.title-medium-weight-em;
-                    }
-
-                    Text {
-                        text: Tr.appearance-why;
-                        color: MaterialPalette.on-surface-variant;
-                        font-size: Typography.body-medium-size;
-                        wrap: word-wrap;
-                    }
-
-                    HorizontalLayout {
-                        alignment: start;
-
-                        choice := SegmentedButton {
-                            items: [
-                                { text: Tr.appearance-system },
-                                { text: Tr.appearance-light },
-                                { text: Tr.appearance-dark },
-                                { text: Tr.appearance-amoled },
-                            ];
-
-                            // Pushed, not bound: the control writes its own index on a
-                            // click, and what is actually in force is whatever Rust
-                            // wrote to the settings file.
-                            property <int> wanted: root.appearance;
-                            init => { self.current-index = root.appearance; }
-                            changed wanted => { self.current-index = self.wanted; }
-
-                            index-changed(i) => { root.select-appearance(i); }
-                        }
-                    }
+                    RowSeparator {}
 
                     // The accent: a swatch of each, its own primary colour.
                     HorizontalLayout {
-                        alignment: start;
-                        spacing: Spacing.small;
+                        padding-left: Spacing.base;
+                        padding-right: Spacing.base;
+                        padding-top: 14px;
+                        padding-bottom: 14px;
+                        spacing: Spacing.base;
 
-                        for colour[i] in [
-                            Scheme.scheme-of(Accent.violet).dark.primary,
-                            Scheme.scheme-of(Accent.blue).dark.primary,
-                            Scheme.scheme-of(Accent.indigo).dark.primary,
-                            Scheme.scheme-of(Accent.teal).dark.primary,
-                            Scheme.scheme-of(Accent.green).dark.primary,
-                            Scheme.scheme-of(Accent.amber).dark.primary,
-                            Scheme.scheme-of(Accent.rose).dark.primary,
-                        ]: Rectangle {
-                            width: 36px;
-                            height: 36px;
-                            border-radius: 18px;
-                            background: colour;
-                            border-width: i == root.accent ? 3px : 0px;
-                            border-color: MaterialPalette.on-surface;
+                        Text {
+                            text: Tr.accent;
+                            color: MaterialPalette.on-surface;
+                            font-size: Typography.body-large-size;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
 
-                            TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => { root.select-accent(i); }
+                        HorizontalLayout {
+                            alignment: end;
+                            spacing: Spacing.small;
+
+                            for colour[i] in [
+                                Scheme.scheme-of(Accent.coral).light.primary,
+                                Scheme.scheme-of(Accent.violet).light.primary,
+                                Scheme.scheme-of(Accent.blue).light.primary,
+                                Scheme.scheme-of(Accent.indigo).light.primary,
+                                Scheme.scheme-of(Accent.teal).light.primary,
+                                Scheme.scheme-of(Accent.green).light.primary,
+                                Scheme.scheme-of(Accent.amber).light.primary,
+                                Scheme.scheme-of(Accent.rose).light.primary,
+                            ]: Rectangle {
+                                width: 30px;
+                                height: 30px;
+                                border-radius: 15px;
+                                background: colour;
+                                border-width: i == root.accent ? 3px : 0px;
+                                border-color: MaterialPalette.surface;
+
+                                TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.select-accent(i); }
+                                }
                             }
                         }
                     }
 
+                    RowSeparator {}
+
+                    ToggleRow {
+                        title: Tr.translucent-window;
+                        detail: Tr.translucent-why;
+                        on: root.translucent;
+                        flipped(on) => { root.set-translucent(on); }
+                    }
+                }
+            }
+
+            // ---- the program --------------------------------------------
+            SectionHeading {
+                text: Tr.about;
+            }
+
+            Group {
+                VerticalLayout {
+                    alignment: start;
+
                     HorizontalLayout {
+                        padding: Spacing.base;
                         spacing: Spacing.base;
-                        max-width: 560px;
+
+                        Image {
+                            source: @image-url("../../../packaging/icons/anirust.svg");
+                            width: 56px;
+                            height: 56px;
+                        }
 
                         VerticalLayout {
-                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 2px;
 
                             Text {
-                                text: Tr.translucent-window;
+                                text: "AniRust " + root.version;
                                 color: MaterialPalette.on-surface;
-                                font-size: Typography.body-large-size;
+                                font-size: Typography.title-medium-size;
+                                font-weight: 600;
                             }
 
                             Text {
-                                text: Tr.translucent-why;
+                                text: Tr.about-what;
                                 color: MaterialPalette.on-surface-variant;
                                 font-size: Typography.body-medium-size;
                                 wrap: word-wrap;
                             }
                         }
-
-                        VerticalLayout {
-                            alignment: center;
-
-                            Switch {
-                                width: 52px;
-                                height: 32px;
-                                property <bool> wanted: root.translucent;
-                                init => { self.checked = root.translucent; }
-                                changed wanted => { self.checked = self.wanted; }
-                                changed checked => {
-                                    if (self.checked != root.translucent) { root.set-translucent(self.checked); }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-                HorizontalDivider {}
-
-                // ---- the program --------------------------------------------
-                Text {
-                    text: Tr.about;
-                    color: MaterialPalette.on-surface;
-                    font-size: Typography.title-medium-size;
-                    font-weight: Typography.title-medium-weight-em;
-                }
-
-                HorizontalLayout {
-                    spacing: Spacing.base;
-                    alignment: start;
-
-                    Image {
-                        source: @image-url("../../../packaging/icons/anirust.svg");
-                        width: 56px;
-                        height: 56px;
                     }
 
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: Spacing.hair;
+                    RowSeparator {}
 
-                        Text {
-                            text: "AniRust " + root.version;
-                            color: MaterialPalette.on-surface;
-                            font-size: Typography.title-medium-size;
-                            font-weight: Typography.title-medium-weight-em;
+                    FlexboxLayout {
+                        padding: Spacing.base;
+                        spacing: Spacing.small;
+                        flex-wrap: wrap;
+                        cross-axis-alignment: center;
+                        alignment: start;
+
+                        TonalButton {
+                            text: Tr.faq;
+                            clicked => { root.open-link("https://anixart-app.com/faq/"); }
+                        }
+
+                        OutlineButton {
+                            text: Tr.service-rules;
+                            clicked => { root.open-link("https://anixart-app.com/rules/"); }
+                        }
+
+                        QuietButton {
+                            text: Tr.source-code;
+                            clicked => { root.open-link("https://github.com/mrfrok/AniRust"); }
+                        }
+                    }
+
+                    RowSeparator {}
+
+                    ToggleRow {
+                        title: Tr.update-check;
+                        detail: Tr.update-check-why;
+                        on: root.check-updates;
+                        flipped(on) => { root.set-check-updates(on); }
+                    }
+
+                    RowSeparator {}
+
+                    FlexboxLayout {
+                        padding: Spacing.base;
+                        spacing: Spacing.small;
+                        flex-wrap: wrap;
+                        cross-axis-alignment: center;
+                        alignment: start;
+
+                        OutlineButton {
+                            text: Tr.update-check-now;
+                            enabled: root.update-state != "checking" && root.update-state != "downloading" && root.update-state != "installing";
+                            clicked => { root.check-for-updates(); }
+                        }
+
+                        if root.update-state == "available" && root.update-how == "": FilledButton {
+                            text: Tr.update-install;
+                            clicked => { root.install-update(); }
                         }
 
                         Text {
-                            text: Tr.about-what;
+                            text: Tr.update-status(root.update-state, root.update-version, root.update-error, root.update-how);
                             color: MaterialPalette.on-surface-variant;
                             font-size: Typography.body-medium-size;
+                            vertical-alignment: center;
+                            wrap: word-wrap;
+                            horizontal-stretch: 1;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        padding: Spacing.base;
+
+                        Text {
+                            horizontal-stretch: 1;
+                            text: Tr.about-unaffiliated;
+                            color: MaterialPalette.on-surface-variant;
+                            font-size: Typography.body-small-size;
                             wrap: word-wrap;
                         }
                     }
                 }
-
-                Text {
-                    text: Tr.about-unaffiliated;
-                    color: MaterialPalette.on-surface-variant;
-                    font-size: Typography.body-small-size;
-                    wrap: word-wrap;
-                }
-
-                HorizontalLayout {
-                    spacing: Spacing.small;
-                    alignment: start;
-
-                    TonalButton {
-                        text: Tr.faq;
-                        clicked => { root.open-link("https://anixart-app.com/faq/"); }
-                    }
-
-                    TextButton {
-                        text: Tr.service-rules;
-                        clicked => { root.open-link("https://anixart-app.com/rules/"); }
-                    }
-
-                    TextButton {
-                        text: Tr.source-code;
-                        clicked => { root.open-link("https://github.com/mrfrok/AniRust"); }
-                    }
-                }
-
-                // ---- updates ------------------------------------------------
-                HorizontalLayout {
-                    spacing: Spacing.base;
-                    max-width: 560px;
-
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        spacing: Spacing.hair;
-
-                        Text {
-                            text: Tr.update-check;
-                            color: MaterialPalette.on-surface;
-                            font-size: Typography.body-large-size;
-                        }
-
-                        Text {
-                            text: Tr.update-check-why;
-                            color: MaterialPalette.on-surface-variant;
-                            font-size: Typography.body-medium-size;
-                            wrap: word-wrap;
-                        }
-                    }
-
-                    VerticalLayout {
-                        alignment: center;
-
-                        Switch {
-                            width: 52px;
-                            height: 32px;
-                            property <bool> wanted: root.check-updates;
-                            init => { self.checked = root.check-updates; }
-                            changed wanted => { self.checked = self.wanted; }
-                            changed checked => {
-                                if (self.checked != root.check-updates) { root.set-check-updates(self.checked); }
-                            }
-                        }
-                    }
-                }
-
-                HorizontalLayout {
-                    spacing: Spacing.small;
-                    alignment: start;
-
-                    OutlineButton {
-                        text: Tr.update-check-now;
-                        enabled: root.update-state != "checking" && root.update-state != "downloading" && root.update-state != "installing";
-                        clicked => { root.check-for-updates(); }
-                    }
-
-                    if root.update-state == "available" && root.update-how == "": FilledButton {
-                        text: Tr.update-install;
-                        clicked => { root.install-update(); }
-                    }
-
-                    Text {
-                        text: Tr.update-status(root.update-state, root.update-version, root.update-error, root.update-how);
-                        color: MaterialPalette.on-surface-variant;
-                        font-size: Typography.body-medium-size;
-                        vertical-alignment: center;
-                        wrap: word-wrap;
-                        horizontal-stretch: 1;
-                    }
-                }
             }
-
-            Rectangle { horizontal-stretch: 1; }
         }
     }
 }

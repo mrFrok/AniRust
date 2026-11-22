@@ -4,8 +4,7 @@
 // same place the comments open, for the same reason — they are glanced at
 // beside whatever is on screen, not travelled to.
 
-import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, IconButton, TextButton, OutlineButton, CircularProgressIndicator } from "@material";
+import { MaterialPalette, IconButton, OutlineButton, CircularProgressIndicator, ScrollView } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -127,9 +126,19 @@ export component NotificationsSheet inherits Rectangle {
     }
 
     Rectangle {
-        x: parent.width - self.width;
-        width: min(480px, parent.width);
-        height: 100%;
+        // A floating panel, not a wall: rounded, lifted off the page, and
+        // held a margin away from the edges. The phone client draws these
+        // as sheets from the bottom; a desktop window has room to keep them
+        // whole.
+        x: parent.width - self.width - Spacing.medium;
+        y: Spacing.medium;
+        width: min(480px, parent.width - 2 * Spacing.medium);
+        height: parent.height - 2 * Spacing.medium;
+        border-radius: Shape.sheet;
+        border-width: 1px;
+        border-color: MaterialPalette.outline-variant;
+        drop-shadow-blur: 36px;
+        drop-shadow-color: #0000004D;
         background: MaterialPalette.surface-container-low;
 
         TouchArea {}

@@ -5,13 +5,11 @@
 // Unlike the player's chrome, these sit on a surface rather than on video, so
 // they use the palette properly instead of translucent white.
 
-import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, TextButton, IconButton } from "@material";
+import { MaterialPalette, IconButton, ScrollView } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { PickerOption, EpisodeItem } from "../structs.slint";
-import { QuietButton } from "quiet-button.slint";
 
 /// A dropdown over a list of options.
 ///
@@ -42,8 +40,8 @@ export component Dropdown inherits Rectangle {
     accessible-expandable: root.enabled && root.model.length > 1;
     accessible-expanded: root.popup-focused;
     accessible-action-expand => { root.open(); }
-    border-radius: Shape.medium;
-    border-width: keys.has-focus || root.popup-focused ? 2px : 1px;
+    border-radius: Shape.full;
+    border-width: keys.has-focus || root.popup-focused ? 1.5px : 1px;
     border-color: keys.has-focus || root.popup-focused
         ? MaterialPalette.primary : MaterialPalette.outline-variant;
     background: touch.has-hover
@@ -248,10 +246,10 @@ export component EpisodeRow inherits Rectangle {
     /// Under the pointer, counting the row's own buttons. The row's touch area
     /// sits beneath them, so on its own it lets go exactly when the pointer
     /// reaches a button — which is when the buttons must stay shown.
-    property <bool> hovered: touch.has-hover || tick.has-hover || download-touch.has-hover;
+    property <bool> hovered: touch.has-hover || tick.has-hover || download-touch.has-hover || play-touch.has-hover;
 
-    height: 48px;
-    border-radius: Shape.medium;
+    height: 56px;
+    border-radius: Shape.large;
     // The episode on now is a step up from the list, with its number in the
     // accent: enough to find it, without a block of colour in the column.
     background: root.playing
@@ -264,12 +262,31 @@ export component EpisodeRow inherits Rectangle {
         padding-right: Spacing.tight;
         spacing: Spacing.small;
 
-        VerticalLayout {
-            alignment: center;
-            IconButton {
-                icon: @image-url("../icons/play.svg");
-                accessible-label: Tr.watch-episode + " " + root.episode.position;
-                Tooltip { text: @markdown("\{Tr.watch-episode} \{root.episode.position}"); }
+        // A coral play target on every row: the same button at the same
+        // place, so a list is scanned rather than read.
+        Rectangle {
+            cross-axis-self-alignment: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 20px;
+            background: root.playing ? MaterialPalette.primary
+                : touch.has-hover ? MaterialPalette.surface-container-highest
+                : MaterialPalette.surface-container;
+            accessible-role: button;
+            accessible-label: Tr.watch-episode + " " + root.episode.position;
+            accessible-action-default => { root.clicked(); }
+
+            Image {
+                source: @image-url("../icons/play.svg");
+                colorize: root.playing ? MaterialPalette.on-primary : MaterialPalette.primary;
+                width: 14px;
+                height: 14px;
+                x: (parent.width - self.width) / 2 + 1px;
+                y: (parent.height - self.height) / 2;
+            }
+
+            play-touch := TouchArea {
+                mouse-cursor: pointer;
                 clicked => { root.clicked(); }
             }
         }
@@ -282,7 +299,8 @@ export component EpisodeRow inherits Rectangle {
             Text {
                 text: Tr.episode + " " + root.episode.position;
                 color: MaterialPalette.on-surface;
-                font-size: Typography.body-medium-size;
+                font-size: 15px;
+                font-weight: root.playing ? 600 : 500;
                 overflow: elide;
             }
 
@@ -300,7 +318,7 @@ export component EpisodeRow inherits Rectangle {
         // under the pointer went away again when the pointer reached it, and
         // one nobody can see is one nobody finds.
         Rectangle {
-            width: 32px;
+            width: 40px;
             background: transparent;
             accessible-role: button;
             accessible-label: Tr.download-episode + " " + root.episode.position;
@@ -317,7 +335,7 @@ export component EpisodeRow inherits Rectangle {
                 source: @image-url("../icons/download.svg");
                 colorize: download-touch.has-hover
                     ? MaterialPalette.primary
-                    : (root.hovered ? MaterialPalette.on-surface-variant : MaterialPalette.outline);
+                    : MaterialPalette.on-surface-variant;
                 width: 18px;
                 height: 18px;
                 x: (parent.width - self.width) / 2;
@@ -335,7 +353,7 @@ export component EpisodeRow inherits Rectangle {
         // one to click, and a watched row's tick takes itself off. Its own
         // target, so ticking an episode does not also start it.
         Rectangle {
-            width: 28px;
+            width: 40px;
             accessible-role: button;
             accessible-label: root.episode.watched ? Tr.unmark-watched : Tr.mark-watched;
             accessible-checkable: true;
@@ -346,8 +364,8 @@ export component EpisodeRow inherits Rectangle {
                 width: 16px;
                 height: 16px;
                 border-radius: 4px;
-                border-width: 1px;
-                border-color: tick.has-hover ? MaterialPalette.primary : MaterialPalette.outline;
+                border-width: 1.5px;
+                border-color: tick.has-hover ? MaterialPalette.primary : MaterialPalette.on-surface-variant;
             }
 
             if root.episode.watched: Text {
@@ -406,7 +424,7 @@ export component EpisodePicker inherits VerticalLayout {
     /// loop over a model.
     in property <bool> all-watched: false;
 
-    spacing: Spacing.medium;
+    spacing: Spacing.base;
 
     HorizontalLayout {
         spacing: Spacing.small;
@@ -474,15 +492,25 @@ export component EpisodePicker inherits VerticalLayout {
         Text {
             text: root.episodes.length > 0 ? Tr.episodes + " · " + root.episodes.length : Tr.episodes;
             color: MaterialPalette.on-surface;
-            font-size: Typography.title-medium-size;
-            font-weight: Typography.title-medium-weight-em;
+            font-size: Typography.title-large-size;
+            font-weight: 600;
             vertical-alignment: center;
             horizontal-stretch: 1;
         }
 
-        if root.episodes.length > 0: QuietButton {
+        // A quiet coral label rather than a button: it belongs to the
+        // heading, it does not compete with the list.
+        if root.episodes.length > 0: Text {
             text: root.all-watched ? Tr.unmark-all : Tr.mark-all-watched;
-            clicked => { root.toggle-all-watched(); }
+            color: MaterialPalette.primary;
+            font-size: Typography.label-large-size;
+            font-weight: 500;
+            vertical-alignment: center;
+
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.toggle-all-watched(); }
+            }
         }
 
     }
@@ -546,5 +574,14 @@ export component Poster inherits Rectangle {
         height: 100%;
         opacity: root.loaded ? 1.0 : 0.0;
         animate opacity { duration: Motion.enter-duration; easing: Motion.enter; }
+    }
+
+    if !root.loaded: Image {
+        source: @image-url("../icons/poster.svg");
+        colorize: MaterialPalette.on-surface-variant.with-alpha(0.35);
+        width: 36px;
+        height: 36px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
     }
 }

@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The soft, coloured surfaces the phone client uses for quick actions and
+// status pills: a pastel wash with ink of the same hue. Material has a
+// container role for the accent and one for the tertiary, but the phone
+// client puts five different washes on one screen (popular, schedule,
+// collections, filter, random), so the rest live here.
+//
+// Each tone is a pair: the wash a pill sits on, and the ink that reaches
+// 4.5:1 on it. The dark half is the same hues taken down to a deep tint, so
+// a screen full of them stays night-friendly rather than glowing.
+
+import { Palette } from "std-widgets.slint";
+import { Appearance, Scheme } from "scheme.slint";
+
+export global Tint {
+    /// Whether the surfaces in force are the dark ones. The appearance is
+    /// asked by name first; following the desktop means asking the palette,
+    /// which is what the component set itself reads.
+    out property <bool> dark:
+        Scheme.appearance == Appearance.dark
+        || Scheme.appearance == Appearance.amoled
+        || (Scheme.appearance == Appearance.system && Palette.color_scheme == ColorScheme.dark);
+
+    out property <color> coral-bg: root.dark ? #382027 : #FDEBEE;
+    out property <color> coral-ink: root.dark ? #FF9BA1 : #B3252F;
+
+    out property <color> blue-bg: root.dark ? #1B2A44 : #EAF2FF;
+    out property <color> blue-ink: root.dark ? #9FC2FF : #2559B8;
+
+    out property <color> mint-bg: root.dark ? #17332B : #E7F7F1;
+    out property <color> mint-ink: root.dark ? #8BE0C2 : #117A5B;
+
+    out property <color> amber-bg: root.dark ? #3A2C12 : #FFF5E2;
+    out property <color> amber-ink: root.dark ? #FFD48A : #8A5200;
+
+    out property <color> violet-bg: root.dark ? #2B2340 : #F3EDFF;
+    out property <color> violet-ink: root.dark ? #C9B2FF : #6B3FC4;
+}

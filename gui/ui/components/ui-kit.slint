@@ -1,0 +1,474 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// The pieces the phone client is built from, for the desktop: a tinted pill
+// with an icon, a text tab with a coral underline, a round search field, and
+// a round icon button. They are here rather than in the component set because
+// @material's equivalents carry Material's own proportions — 32px chips, an
+// 8px corner radius, uppercase-free but dense — and this interface is softer
+// and larger than that.
+//
+// Everything takes its colours from `MaterialPalette` and `Tint`, so a change
+// of accent or appearance reaches all of it without a second switch.
+
+import { MaterialPalette, FilledButton, ToolTip } from "@material";
+import { Typography } from "../globals/typography.slint";
+import { Shape, Spacing, Motion } from "../globals/shape.slint";
+import { Tint } from "../globals/tint.slint";
+
+/// A pill on a pastel wash: the quick actions on the home screen, the status
+/// of a release, the count beside a heart.
+///
+/// The wash and the ink are handed in as a pair rather than named as a hue,
+/// because the pair has to stay legible when the dark half is on and only the
+/// pair knows that.
+export component TintPill inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> has-icon: icon.width > 0;
+    in property <color> wash: Tint.coral-bg;
+    in property <color> ink: Tint.coral-ink;
+    in property <bool> enabled: true;
+    /// A trailing hint, usually a chevron for a pill that opens a choice.
+    in property <image> trailing;
+    in property <bool> has-trailing: trailing.width > 0;
+    in property <length> inner-height: 44px;
+    callback clicked();
+
+    height: root.inner-height;
+    border-radius: Shape.full;
+    background: touch.has-hover && root.enabled ? root.wash.darker(0.05) : root.wash;
+    opacity: root.enabled ? 1.0 : 0.5;
+    accessible-role: button;
+    accessible-enabled: root.enabled;
+    accessible-label: root.text;
+    // As wide as its content: a pill is a label, not a bar. A caller that
+    // wants it to fill a column sets `width: 100%` itself.
+    width: (root.has-icon ? 30px : 0px)
+        + (root.has-trailing ? 26px : 0px)
+        + (root.has-icon ? 16px : 20px)
+        + (root.has-trailing ? 14px : 20px)
+        + label.preferred-width;
+
+    HorizontalLayout {
+        padding-left: root.has-icon ? 16px : 20px;
+        padding-right: root.has-trailing ? 14px : 20px;
+        spacing: 10px;
+        alignment: center;
+
+        if root.has-icon: VerticalLayout {
+            alignment: center;
+
+            Image {
+                source: root.icon;
+                colorize: root.ink;
+                width: 20px;
+                height: 20px;
+            }
+        }
+
+        label := Text {
+            text: root.text;
+            color: root.ink;
+            font-size: Typography.label-large-size;
+            font-weight: Typography.label-large-weight;
+            vertical-alignment: center;
+        }
+
+        if root.has-trailing: VerticalLayout {
+            alignment: center;
+
+            Image {
+                source: root.trailing;
+                colorize: root.ink;
+                width: 16px;
+                height: 16px;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: root.enabled ? pointer : default;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// One tab in a row of text tabs: the phone client's pattern, a coral label
+/// and a short underline under it, no container.
+component TextTab inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    callback picked();
+    callback scroll(length) -> EventResult;
+
+    height: 52px;
+    background: transparent;
+    accessible-role: tab;
+    accessible-label: self.text;
+    accessible-item-selected: root.selected;
+    accessible-action-default => { root.picked(); }
+
+    VerticalLayout {
+        spacing: 0;
+
+        label := Text {
+            text: root.text;
+            color: root.selected ? MaterialPalette.primary
+                : touch.has-hover ? MaterialPalette.on-surface
+                : MaterialPalette.on-surface-variant;
+            font-size: 16px;
+            font-weight: root.selected ? 600 : 500;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            vertical-stretch: 1;
+            animate color { duration: Motion.standard-duration; easing: Motion.standard; }
+        }
+
+        // The underline is as wide as the label, not as the tab, so a short
+        // tab does not get a long rule.
+        Rectangle {
+            height: 3px;
+            width: label.preferred-width;
+            border-radius: 1.5px;
+            background: root.selected ? MaterialPalette.primary : transparent;
+            animate background { duration: Motion.standard-duration; easing: Motion.standard; }
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.picked(); }
+        scroll-event(event) => {
+            root.scroll(event.delta-x != 0px ? event.delta-x : event.delta-y)
+        }
+    }
+}
+
+/// A row of text tabs, scrolled sideways when there are more than fit.
+export component TextTabs inherits Rectangle {
+    in property <[string]> items;
+    in property <int> current: 0;
+    /// Distance between two labels. The phone client keeps them close.
+    in property <length> gap: Spacing.comfortable;
+    callback select(int);
+
+    height: 52px;
+    background: transparent;
+
+    tabs := Flickable {
+        interactive: self.content-width > self.width;
+        content-width: row.preferred-width;
+        width: 100%;
+        height: 100%;
+
+        row := HorizontalLayout {
+            spacing: root.gap;
+            alignment: start;
+
+            for item[index] in root.items: TextTab {
+                text: item;
+                selected: index == root.current;
+                picked => { root.select(index); }
+                scroll(delta) => {
+                    if !tabs.interactive { return reject; }
+                    tabs.content-x = clamp(tabs.content-x + delta, tabs.width - tabs.content-width, 0px);
+                    accept
+                }
+            }
+        }
+    }
+}
+
+/// The search field: a round surface, a magnifier, and the text itself. No
+/// button — Enter searches, as it does in the phone client. A clear cross
+/// appears once there is something to clear.
+export component SearchField inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <bool> enabled: true;
+    callback searched(string);
+
+    height: 44px;
+    border-radius: Shape.full;
+    background: MaterialPalette.surface-container;
+    border-width: input.has-focus ? 1.5px : 1px;
+    border-color: input.has-focus ? MaterialPalette.primary : MaterialPalette.outline-variant;
+    animate border-color { duration: Motion.standard-duration; easing: Motion.standard; }
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 10px;
+        spacing: 10px;
+
+        VerticalLayout {
+            alignment: center;
+
+            Image {
+                source: @image-url("../icons/search.svg");
+                colorize: input.has-focus ? MaterialPalette.primary : MaterialPalette.on-surface-variant;
+                width: 20px;
+                height: 20px;
+            }
+        }
+
+        // The text itself, with the placeholder laid over it: the one the
+        // widget set draws uses its own colour, which does not follow the
+        // scheme.
+        body := Rectangle {
+            horizontal-stretch: 1;
+            height: 100%;
+            background: transparent;
+
+            input := TextInput {
+                x: 0;
+                y: 0;
+                text <=> root.text;
+                single-line: true;
+                enabled: root.enabled;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.body-large-size;
+                vertical-alignment: center;
+                width: 100%;
+                height: 100%;
+                accessible-label: root.placeholder;
+                accepted => { root.searched(self.text); }
+            }
+
+            if root.text == "": Text {
+                x: 0;
+                y: 0;
+                text: root.placeholder;
+                color: MaterialPalette.on-surface-variant;
+                font-size: Typography.body-large-size;
+                vertical-alignment: center;
+                width: 100%;
+                height: 100%;
+            }
+        }
+
+        if root.text != "": Rectangle {
+            width: 28px;
+            height: 28px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 14px;
+            background: clear.has-hover ? MaterialPalette.surface-container-highest : transparent;
+
+            Image {
+                source: @image-url("../icons/close.svg");
+                colorize: MaterialPalette.on-surface-variant;
+                width: 16px;
+                height: 16px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+
+            clear := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.text = "";
+                    input.focus();
+                    root.searched("");
+                }
+            }
+        }
+    }
+}
+
+/// A round button with a line icon and a tooltip, for actions that need no
+/// label: the heart and the bookmark beside a title, a bell in the bar.
+export component RoundIconButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> tooltip;
+    in property <bool> active: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    width: 44px;
+    height: 44px;
+    border-radius: 22px;
+    background: root.active ? MaterialPalette.primary-container
+        : touch.has-hover && root.enabled ? MaterialPalette.surface-container
+        : transparent;
+    border-width: 1px;
+    border-color: root.active ? transparent : MaterialPalette.outline-variant;
+    opacity: root.enabled ? 1.0 : 0.45;
+    accessible-role: button;
+    accessible-label: root.tooltip;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+
+    Image {
+        source: root.icon;
+        colorize: root.active ? MaterialPalette.on-primary-container : MaterialPalette.on-surface;
+        width: 20px;
+        height: 20px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+    }
+
+    if touch.has-hover && !touch.pressed && root.tooltip != "": tip := ToolTip {
+        x: min(0px, root.width - self.width);
+        y: root.height + Spacing.tight;
+        width: self.preferred-width;
+        height: self.preferred-height;
+        text: root.tooltip;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: root.enabled ? pointer : default;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// A labelled input: the name above the box, the box itself, and a line of
+/// explanation under it when something is wrong. The phone client's fields
+/// are this shape — a label you can read before you type, rather than one
+/// that floats up out of the box once you do.
+export component Field inherits VerticalLayout {
+    in property <string> label;
+    in property <string> placeholder-text;
+    in property <string> supporting-text;
+    in property <bool> has-error: false;
+    in property <bool> enabled: true;
+    in property <bool> read-only: false;
+    out property <bool> has-focus: input.has-focus;
+    in-out property <string> text;
+    in property <InputType> input-type: InputType.text;
+    callback accepted(string);
+    callback edited(string);
+
+    spacing: 6px;
+
+    Text {
+        text: root.label;
+        color: root.has-error ? MaterialPalette.error : MaterialPalette.on-surface-variant;
+        font-size: Typography.label-large-size;
+        font-weight: 500;
+    }
+
+    Rectangle {
+        height: 48px;
+        border-radius: Shape.medium + 2px;
+        background: MaterialPalette.surface;
+        border-width: input.has-focus || root.has-error ? 1.5px : 1px;
+        border-color: root.has-error ? MaterialPalette.error
+            : input.has-focus ? MaterialPalette.primary
+            : MaterialPalette.outline.with-alpha(0.45);
+        opacity: root.enabled ? 1.0 : 0.5;
+        animate border-color { duration: Motion.standard-duration; easing: Motion.standard; }
+
+        input := TextInput {
+            x: 14px;
+            width: parent.width - 28px;
+            height: 100%;
+            text <=> root.text;
+            enabled: root.enabled;
+            read-only: root.read-only;
+            input-type: root.input-type;
+            single-line: true;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.body-large-size;
+            vertical-alignment: center;
+            accessible-label: root.label;
+            accepted => { root.accepted(self.text); }
+            edited => { root.edited(self.text); }
+        }
+
+        if root.text == "" && root.placeholder-text != "": Text {
+            x: 14px;
+            width: parent.width - 28px;
+            height: 100%;
+            text: root.placeholder-text;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.body-large-size;
+            vertical-alignment: center;
+        }
+    }
+
+    if root.supporting-text != "": Text {
+        text: root.supporting-text;
+        color: root.has-error ? MaterialPalette.error : MaterialPalette.on-surface-variant;
+        font-size: Typography.label-medium-size;
+        wrap: word-wrap;
+    }
+}
+
+/// What a page says when it has nothing to show: one quiet icon, a sentence
+/// about why, and, when there is one, the action that changes it.
+///
+/// The column is centred by spacers rather than by a layout's alignment: a
+/// layout centres along its main axis, and a fixed-size icon on the cross
+/// axis would otherwise sit at the left edge.
+export component EmptyState inherits HorizontalLayout {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> detail;
+    in property <string> action;
+    callback act();
+
+    Rectangle { horizontal-stretch: 1; }
+
+    VerticalLayout {
+        width: 420px;
+        vertical-stretch: 1;
+        alignment: center;
+        spacing: Spacing.base;
+
+        HorizontalLayout {
+            height: 76px;
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Rectangle {
+                width: 76px;
+                height: 76px;
+                border-radius: 38px;
+                background: Tint.coral-bg;
+
+                Image {
+                    source: root.icon;
+                    colorize: Tint.coral-ink;
+                    width: 34px;
+                    height: 34px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+        }
+
+        Text {
+            width: 100%;
+            text: root.title;
+            color: MaterialPalette.on-surface;
+            font-size: Typography.title-large-size;
+            font-weight: 600;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        if root.detail != "": Text {
+            width: 100%;
+            text: root.detail;
+            color: MaterialPalette.on-surface-variant;
+            font-size: Typography.body-large-size;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        if root.action != "": HorizontalLayout {
+            Rectangle { horizontal-stretch: 1; }
+
+            FilledButton {
+                text: root.action;
+                clicked => { root.act(); }
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+        }
+    }
+
+    Rectangle { horizontal-stretch: 1; }
+}

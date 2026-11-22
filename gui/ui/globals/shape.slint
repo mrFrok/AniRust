@@ -6,13 +6,17 @@
 // later change from being a search-and-replace across the tree.
 
 export global Shape {
-    // Material 3 shape scale.
+    // Material 3 shape scale, pushed for the phone client's softer corners:
+    // posters and cards read as pictures, not as panels.
     out property <length> none: 0px;
     out property <length> extra-small: 4px;
     out property <length> small: 8px;
     out property <length> medium: 12px;
     out property <length> large: 16px;
+    out property <length> card: 20px;
+    out property <length> poster: 20px;
     out property <length> extra-large: 28px;
+    out property <length> sheet: 28px;
     out property <length> full: 999px;
 
     // Pressing morphs a pill towards a squircle; these are the pair.
@@ -28,6 +32,10 @@ export global Spacing {
     out property <length> base: 16px;
     out property <length> comfortable: 24px;
     out property <length> loose: 32px;
+    /// Page edges and the gap between sections on a screen that scrolls.
+    out property <length> page: 24px;
+    out property <length> section: 28px;
+    out property <length> navigation-rail: 104px;
 
     // Sizes that recur across controls.
     out property <length> control-height: 44px;

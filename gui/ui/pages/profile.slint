@@ -11,15 +11,15 @@
 // can act on is decoration, and this client has no room for decoration it
 // cannot click.
 
-import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, ListTile, SegmentedButton, HorizontalDivider, FilledButton, OutlineButton, FilledCard, IconButton, Switch, TextButton, TonalButton } from "@material";
+import { MaterialPalette, FilledButton, FilledCard, IconButton, OutlineButton, TonalButton, ScrollView } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
 import { Account, HistoryItem, PersonItem } from "../structs.slint";
 import { PersonChip } from "../components/person-chip.slint";
 import { QuietButton } from "../components/quiet-button.slint";
-import { Scheme, Accent } from "../globals/scheme.slint";
+import { Tint } from "../globals/tint.slint";
+import { EmptyState } from "../components/ui-kit.slint";
 
 /// One wedge of the ring.
 ///
@@ -571,68 +571,119 @@ export component ProfilePage inherits Rectangle {
             }
         }
 
+        // ---- nobody signed in --------------------------------------------
+        //
+        // Not a heading over an empty page: an invitation, one line about
+        // what signing in is for, and the one button that does it.
+        if !root.signed-in: EmptyState {
+            vertical-stretch: 1;
+            padding-top: 96px;
+            icon: @image-url("../icons/person.svg");
+            title: Tr.signed-out;
+            detail: Tr.sign-in-to-profile;
+            action: Tr.sign-in;
+            act => { root.sign-in(); }
+        }
+
         // ---- who ---------------------------------------------------------
-        HorizontalLayout {
-            spacing: Spacing.base;
+        //
+        // The person first: a tall cover, the avatar over it, the name,
+        // the status, and the one action that changes them. The figures
+        // come after this, not before it — a profile is somebody, not a
+        // dashboard that happens to have a face at the top.
+        if root.signed-in: Rectangle {
+            height: 252px;
+            border-radius: Shape.extra-large;
+            clip: true;
+            background: MaterialPalette.surface-container-low;
+            border-width: 1px;
+            border-color: MaterialPalette.outline-variant;
 
-            // The avatar is the account's own picture once it arrives, and a
-            // filled circle until then — never a gap that fills in later and
-            // moves everything sideways.
-            Rectangle {
-                width: 72px;
-                height: 72px;
-                border-radius: self.width / 2;
-                background: MaterialPalette.surface-container-highest;
-                clip: true;
-
-                Image {
-                    source: root.avatar;
-                    image-fit: cover;
-                    width: 100%;
-                    height: 100%;
-                    visible: root.signed-in && root.avatar-loaded;
-                }
-
-                Image {
-                    source: @image-url("../icons/person.svg");
-                    colorize: MaterialPalette.on-primary-container;
-                    width: 34px;
-                    height: 34px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    visible: !root.signed-in || !root.avatar-loaded;
-                }
+            if root.avatar-loaded: Image {
+                source: root.avatar;
+                image-fit: cover;
+                width: 100%;
+                height: 100%;
+                opacity: 0.28;
             }
 
-            VerticalLayout {
-                horizontal-stretch: 1;
+            Rectangle {
+                background: MaterialPalette.surface-container-low.with-alpha(0.62);
+            }
+
+            identity := VerticalLayout {
+                padding: Spacing.base;
                 alignment: center;
-                spacing: Spacing.hair;
+                spacing: 4px;
+
+                // The avatar is the account's own picture once it arrives, and
+                // a filled circle until then — never a gap that fills in later
+                // and moves everything sideways. The ring separates it from
+                // the cover behind.
+                //
+                // Its own row with spacers: a fixed-size child of a vertical
+                // layout is placed at the start of the cross axis, and an
+                // avatar at the left edge of a centred header is the one
+                // thing that gives the layout away.
+                HorizontalLayout {
+                    height: 96px;
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    Rectangle {
+                        width: 96px;
+                        height: 96px;
+                        border-radius: 48px;
+                        background: MaterialPalette.surface-container-highest;
+                        border-width: 3px;
+                        border-color: MaterialPalette.surface-container-low;
+                        clip: true;
+
+                        Image {
+                            source: root.avatar;
+                            image-fit: cover;
+                            width: 100%;
+                            height: 100%;
+                            visible: root.avatar-loaded;
+                        }
+
+                        Image {
+                            source: @image-url("../icons/person.svg");
+                            colorize: MaterialPalette.on-primary-container;
+                            width: 48px;
+                            height: 48px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            visible: !root.avatar-loaded;
+                        }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+                }
 
                 HorizontalLayout {
                     spacing: Spacing.small;
-                    alignment: start;
+                    alignment: center;
 
                     Text {
-                        text: root.signed-in ? root.account.login : Tr.signed-out;
+                        text: root.account.login;
                         color: MaterialPalette.on-surface;
-                        font-size: Typography.title-large-size;
-                        font-weight: Typography.title-large-weight-em;
-                        vertical-alignment: center;
+                        font-size: 24px;
+                        font-weight: 600;
                         overflow: elide;
                     }
 
-                    if root.signed-in && root.account.verified: Rectangle {
-                        y: (parent.height - self.height) / 2;
-                        height: 22px;
-                        width: badge.preferred-width + Spacing.medium;
-                        border-radius: Shape.small;
-                        background: MaterialPalette.secondary-container;
+                    if root.account.verified: Rectangle {
+                        height: 26px;
+                        width: badge.preferred-width + 18px;
+                        border-radius: 13px;
+                        background: Tint.coral-bg;
 
                         badge := Text {
                             text: Tr.verified;
-                            color: MaterialPalette.on-secondary-container;
-                            font-size: Typography.label-small-size;
+                            color: Tint.coral-ink;
+                            font-size: Typography.label-medium-size;
+                            font-weight: 500;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                             width: 100%;
@@ -641,66 +692,62 @@ export component ProfilePage inherits Rectangle {
                     }
                 }
 
-                if root.signed-in && root.account.status != "": Text {
+                if root.account.status != "": Text {
                     text: root.account.status;
                     color: MaterialPalette.on-surface;
-                    font-size: Typography.body-medium-size;
-                    overflow: elide;
+                    font-size: Typography.body-large-size;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
                 }
 
                 Text {
-                    text: root.signed-in
-                        ? (root.account.registered != ""
-                            ? Tr.registered + " " + root.account.registered
-                            : "")
-                        : Tr.sign-in-to-profile;
+                    text: root.account.registered != ""
+                        ? Tr.registered + " " + root.account.registered
+                        : "";
                     color: MaterialPalette.on-surface-variant;
                     font-size: Typography.body-medium-size;
-                    wrap: word-wrap;
-                }
-            }
-
-            VerticalLayout {
-                alignment: center;
-
-                // Signing in is the offer; signing out is the retreat from it.
-                // Material spells that difference with the button, which is
-                // why the two are not the same one with a different word in.
-                if !root.signed-in: FilledButton {
-                    text: Tr.sign-in;
-                    clicked => { root.sign-in(); }
+                    horizontal-alignment: center;
                 }
 
-                // Picture and status are the profile's own; everything else
-                // that can be set, and signing out, is under Settings.
-                if root.signed-in && root.mine: TonalButton {
-                    text: Tr.edit-profile;
-                    clicked => { root.open-settings(); }
-                }
+                HorizontalLayout {
+                    padding-top: 4px;
+                    alignment: center;
 
-                // Someone else's: the one friend button, saying what it will
-                // do — the standing between the two decides — and a block.
-                if root.signed-in && !root.mine: HorizontalLayout {
-                    spacing: Spacing.small;
-
-                    if !root.account.blocked: FilledButton {
-                        text: root.account.friend-status == 2 ? Tr.unfriend
-                            : root.account.friend-status == 1 ? Tr.accept-friend
-                            : root.account.friend-status == 0 ? Tr.cancel-request
-                            : Tr.add-friend;
-                        enabled: root.account.friend-status >= 0 || !root.account.friend-requests-closed;
-                        clicked => { root.friend-action(); }
+                    // Picture and status are the profile's own; everything
+                    // else that can be set, and signing out, is under
+                    // Settings.
+                    if root.mine: OutlineButton {
+                        width: 300px;
+                        height: 48px;
+                        text: Tr.edit-profile;
+                        clicked => { root.open-settings(); }
                     }
 
-                    QuietButton {
-                        text: root.account.blocked ? Tr.unblock : Tr.block;
-                        clicked => { root.toggle-block(); }
-                    }
+                    // Someone else's: the one friend button, saying what it
+                    // will do — the standing between the two decides — and a
+                    // block.
+                    if !root.mine: HorizontalLayout {
+                        spacing: Spacing.small;
 
-                    IconButton {
-                        icon: @image-url("../icons/flag.svg");
-                        tooltip: Tr.report;
-                        clicked => { root.report(); }
+                        if !root.account.blocked: FilledButton {
+                            text: root.account.friend-status == 2 ? Tr.unfriend
+                                : root.account.friend-status == 1 ? Tr.accept-friend
+                                : root.account.friend-status == 0 ? Tr.cancel-request
+                                : Tr.add-friend;
+                            enabled: root.account.friend-status >= 0 || !root.account.friend-requests-closed;
+                            clicked => { root.friend-action(); }
+                        }
+
+                        QuietButton {
+                            text: root.account.blocked ? Tr.unblock : Tr.block;
+                            clicked => { root.toggle-block(); }
+                        }
+
+                        IconButton {
+                            icon: @image-url("../icons/flag.svg");
+                            tooltip: Tr.report;
+                            clicked => { root.report(); }
+                        }
                     }
                 }
             }

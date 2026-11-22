@@ -462,6 +462,7 @@ fn wire_preferences(window: &MainWindow, held: &Rc<Cell<preferences::Preferences
 fn show_accent(window: &MainWindow, chosen: preferences::Accent) {
     use preferences::Accent as Kept;
     window.set_accent(match chosen {
+        Kept::Coral => Accent::Coral,
         Kept::Violet => Accent::Violet,
         Kept::Blue => Accent::Blue,
         Kept::Indigo => Accent::Indigo,

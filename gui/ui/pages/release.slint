@@ -11,13 +11,14 @@
 // The player itself is injected as this component's child, so the one instance
 // that owns the video texture is declared once, in the window.
 
-import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, IconButton, FloatingActionButton, FABStyle, TonalButton, ActionChip, OutlineButton } from "@material";
+import { MaterialPalette, ActionChip } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
+import { Tint } from "../globals/tint.slint";
 import { VideoItem, PickerOption, EpisodeItem, LinkItem } from "../structs.slint";
 import { EpisodePicker, Poster, Dropdown } from "../components/release-parts.slint";
+import { TintPill, RoundIconButton } from "../components/ui-kit.slint";
 import { QuietButton } from "../components/quiet-button.slint";
 
 /// A heading and a wrapping row of chips under it.
@@ -38,8 +39,8 @@ component LinkRow inherits VerticalLayout {
         Text {
             text: root.heading;
             color: MaterialPalette.on-surface;
-            font-size: Typography.title-small-size;
-            font-weight: Typography.title-small-weight-em;
+            font-size: Typography.title-medium-size;
+            font-weight: 600;
             vertical-alignment: center;
             horizontal-stretch: 1;
         }
@@ -163,19 +164,21 @@ component Rating inherits HorizontalLayout {
     spacing: 0px;
 
     for i in 5: Rectangle {
-        width: 26px;
-        height: 32px;
+        width: 30px;
+        height: 36px;
 
         Text {
-            text: "★";
-            font-size: 20px;
+            // A filled star means a vote; an empty one is a choice still to
+            // be made. Five grey filled stars read as five out of five.
+            text: (root.hovered > 0 ? i < root.hovered : i < root.vote) ? "★" : "☆";
+            font-size: 24px;
             horizontal-alignment: center;
             vertical-alignment: center;
             width: 100%;
             height: 100%;
             color: (root.hovered > 0 ? i < root.hovered : i < root.vote)
                 ? MaterialPalette.tertiary
-                : MaterialPalette.outline-variant;
+                : MaterialPalette.on-surface-variant;
         }
 
         touch := TouchArea {
@@ -294,10 +297,6 @@ export component ReleasePage inherits Rectangle {
     horizontal-stretch: 1;
     vertical-stretch: 1;
 
-    /// The height the start button occupies, which the failure line above it
-    /// is placed from. Stated rather than measured: the button it belongs to
-    /// is one of two that take that place, and neither is always there.
-    property <length> start-height: 56px;
     /// The list of episodes beside the picture.
     property <length> picker-width: 380px;
 
@@ -322,42 +321,57 @@ export component ReleasePage inherits Rectangle {
     VerticalLayout {
         // ---- header ------------------------------------------------------
         if !root.theatre: Rectangle {
-            height: 64px;
-            background: MaterialPalette.surface-container;
+            height: 76px;
+            background: MaterialPalette.surface;
+
+            // A hairline under it, so the picture or the page below reads as
+            // a separate thing without a second shade of grey.
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: MaterialPalette.outline-variant;
+            }
 
             HorizontalLayout {
-                padding-left: Spacing.small;
-                padding-right: Spacing.base;
+                padding-left: Spacing.base;
+                padding-right: Spacing.page;
                 spacing: Spacing.small;
 
                 VerticalLayout {
                     alignment: center;
 
-                    IconButton {
+                    RoundIconButton {
                         icon: @image-url("../icons/back.svg");
+                        tooltip: Tr.back;
                         clicked => { root.go-back(); }
                     }
                 }
 
+                // The title lives in the hero while the release is being
+                // looked at; up here it would be said twice on one screen.
                 Text {
+                    visible: root.playing || root.narrow;
                     text: root.title;
                     color: MaterialPalette.on-surface;
-                    font-size: Typography.title-large-size;
-                    font-weight: Typography.title-large-weight-em;
+                    font-size: Typography.title-medium-size;
+                    font-weight: 600;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                     overflow: elide;
                 }
 
+                if !root.playing && !root.narrow: Rectangle {
+                    horizontal-stretch: 1;
+                    background: transparent;
+                }
+
                 VerticalLayout {
                     alignment: center;
 
-                    IconButton {
-                        icon: @image-url("../icons/heart.svg");
-                        checked-icon: @image-url("../icons/heart-filled.svg");
-                        checkable: true;
-                        checked: root.favourite;
+                    RoundIconButton {
+                        icon: root.favourite ? @image-url("../icons/heart-filled.svg") : @image-url("../icons/heart.svg");
                         tooltip: root.favourite ? Tr.remove-from-favourites : Tr.add-to-favourites;
+                        active: root.favourite;
                         clicked => {
                             if (root.signed-in) { root.toggle-favourite(); } else { root.sign-in(); }
                         }
@@ -367,7 +381,7 @@ export component ReleasePage inherits Rectangle {
                 VerticalLayout {
                     alignment: center;
 
-                    IconButton {
+                    RoundIconButton {
                         icon: @image-url("../icons/collection-add.svg");
                         tooltip: Tr.add-to-collection;
                         clicked => {
@@ -380,7 +394,8 @@ export component ReleasePage inherits Rectangle {
                     alignment: center;
 
                     Dropdown {
-                        width: 190px;
+                        width: 200px;
+                        height: 44px;
                         model: [
                             { label: Tr.not-in-list },
                             { label: Tr.list-watching },
@@ -442,10 +457,18 @@ export component ReleasePage inherits Rectangle {
                     height: !self.visible ? 0px
                         : root.theatre ? page.height
                         : root.narrow && !root.playing ? clamp(page.height * 0.42, 148px, 230px)
-                        : max(220px, min(
+                        : root.playing ? max(220px, min(
                             (page.width - 2 * Spacing.base
                                 - (root.narrow ? 0px : root.picker-width + Spacing.base)) * 9 / 16,
-                            page.height - 2 * Spacing.base));
+                            page.height - 2 * Spacing.base))
+                        // Before anything is playing this is a release page,
+                        // not an empty player: a 16:9 frame 570px tall says
+                        // "here will be video" and pushes the title, genres
+                        // and description off the first screen.
+                        : min(480px, max(220px, min(
+                            (page.width - 2 * Spacing.base
+                                - (root.narrow ? 0px : root.picker-width + Spacing.base)) * 9 / 16,
+                            page.height - 2 * Spacing.base)));
 
                 Rectangle {
                     horizontal-stretch: 1;
@@ -455,57 +478,146 @@ export component ReleasePage inherits Rectangle {
 
                     @children
 
-                    // Nothing loaded yet: a still from the release and the one
-                    // button that matters, rather than a black rectangle.
+                    // Nothing loaded yet: the release itself, the way the
+                    // phone client opens it — a still behind, the poster, the
+                    // name, and the one button that matters.
                     if !root.playing: Rectangle {
-                        background: MaterialPalette.surface-container;
+                        background: #0E0E10;
 
                         Image {
                             source: root.backdrop-loaded ? root.backdrop : root.poster;
                             image-fit: cover;
                             width: 100%;
                             height: 100%;
-                            opacity: root.backdrop-loaded ? 0.55 : (root.poster-loaded ? 0.27 : 0.0);
+                            opacity: root.backdrop-loaded ? 0.8 : (root.poster-loaded ? 0.45 : 0.0);
                             animate opacity {
                                 duration: Motion.enter-duration;
                                 easing: Motion.enter;
                             }
                         }
 
-                        if root.failed: Text {
-                            text: Tr.episode-failed;
-                            color: #FFFFFFD9;
-                            font-size: Typography.body-medium-size;
-                            horizontal-alignment: left;
-                            wrap: word-wrap;
-                            width: min(parent.width - 2 * Spacing.loose, 460px);
-                            x: Spacing.comfortable;
-                            y: parent.height - root.start-height - self.height - Spacing.comfortable - Spacing.base;
-                        }
-
-                        // The one button that matters on this screen, so it is
-                        // the one shape Material reserves for that: an
-                        // extended floating action button, lifted off the
-                        // still behind it.
-                        if root.first-episode > 0: FloatingActionButton {
-                            style: FABStyle.standard;
-                            icon: @image-url("../icons/play.svg");
-                            text: root.resume-episode > 0 && root.watched-any
-                                ? Tr.continue-episode + " " + root.first-episode
-                                : Tr.watch-episode + " " + root.first-episode;
-                            x: Spacing.comfortable;
-                            y: parent.height - self.height - Spacing.comfortable;
-
-                            clicked => { root.play-episode(root.first-episode); }
-                        }
-
-                        // Nothing to start yet. It keeps the button's place
-                        // and says why, rather than leaving the still bare.
-                        if root.first-episode == 0: TonalButton {
-                            text: root.loading ? Tr.loading : Tr.nothing-to-play;
-                            enabled: false;
+                        // Before any art arrives: a picture frame rather than
+                        // a black hole that looks like a failed video.
+                        if !root.backdrop-loaded && !root.poster-loaded: Image {
+                            source: @image-url("../icons/poster.svg");
+                            colorize: #FFFFFF3D;
+                            width: 56px;
+                            height: 56px;
                             x: (parent.width - self.width) / 2;
                             y: (parent.height - self.height) / 2;
+                        }
+
+                        // A scrim under the words, so white stays white over a
+                        // bright still. Neutral black, not a colour wash: the
+                        // poster is the only colourful thing here.
+                        Rectangle {
+                            background: @linear-gradient(180deg, #00000000 22%, #000000B8 68%, #000000F2 100%);
+                        }
+
+                        HorizontalLayout {
+                            padding: 28px;
+                            spacing: 24px;
+
+                            // The poster sits on the same baseline as the
+                            // words beside it, which is what makes the two
+                            // read as one block rather than as a picture
+                            // parked in a corner.
+                            if !root.narrow && self.height > 280px: VerticalLayout {
+                                alignment: end;
+                                vertical-stretch: 1;
+
+                                Poster {
+                                    width: 168px;
+                                    height: 252px;
+                                    source: root.poster;
+                                    loaded: root.poster-loaded;
+                                    drop-shadow-blur: 28px;
+                                    drop-shadow-color: #00000080;
+                                }
+                            }
+
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                vertical-stretch: 1;
+                                alignment: end;
+                                spacing: 8px;
+
+                                Text {
+                                    text: root.title;
+                                    color: #FFFFFF;
+                                    font-size: root.narrow ? 24px : 32px;
+                                    font-weight: 600;
+                                    wrap: word-wrap;
+                                    max-lines: 2;
+                                }
+
+                                if root.original-title != "": Text {
+                                    text: root.original-title;
+                                    color: #FFFFFFB8;
+                                    font-size: Typography.body-medium-size;
+                                    overflow: elide;
+                                }
+
+                                HorizontalLayout {
+                                    spacing: 10px;
+
+                                    if root.score != "": Text {
+                                        text: "★ " + root.score;
+                                        color: #FFD48A;
+                                        font-size: Typography.title-small-size;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Text {
+                                        text: root.year
+                                            + (root.episodes-label != "" ? " · " + root.episodes-label : "")
+                                            + (root.status != "" ? " · " + root.status : "");
+                                        color: #FFFFFFC7;
+                                        font-size: Typography.body-medium-size;
+                                        vertical-alignment: center;
+                                        horizontal-alignment: left;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                }
+
+                                if root.failed: Text {
+                                    text: Tr.episode-failed;
+                                    color: #FFFFFFD9;
+                                    font-size: Typography.body-medium-size;
+                                    wrap: word-wrap;
+                                }
+
+                                HorizontalLayout {
+                                    padding-top: 8px;
+                                    spacing: Spacing.small;
+                                    alignment: start;
+
+                                    if root.first-episode > 0: TintPill {
+                                        text: root.resume-episode > 0 && root.watched-any
+                                            ? Tr.continue-episode + " " + root.first-episode
+                                            : Tr.watch-episode + " " + root.first-episode;
+                                        icon: @image-url("../icons/play.svg");
+                                        has-icon: true;
+                                        wash: MaterialPalette.primary;
+                                        ink: MaterialPalette.on-primary;
+                                        inner-height: 52px;
+                                        clicked => { root.play-episode(root.first-episode); }
+                                    }
+
+                                    // Nothing to start yet. It keeps the
+                                    // button's place and says why, rather
+                                    // than leaving the still bare.
+                                    if root.first-episode == 0: TintPill {
+                                        text: root.loading ? Tr.loading : Tr.nothing-to-play;
+                                        enabled: false;
+                                        wash: MaterialPalette.surface-container-high;
+                                        ink: MaterialPalette.on-surface-variant;
+                                        inner-height: 52px;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -554,15 +666,15 @@ export component ReleasePage inherits Rectangle {
                 // that a film retells a series, that an order matters.
                 if !root.theatre && root.note != "": Rectangle {
                     border-radius: Shape.large;
-                    background: MaterialPalette.secondary-container;
-                    height: note-text.preferred-height + 2 * Spacing.medium;
+                    background: Tint.coral-bg;
+                    height: note-text.preferred-height + 2 * Spacing.base;
 
                     note-text := Text {
                         x: Spacing.base;
                         width: parent.width - 2 * Spacing.base;
-                        y: Spacing.medium;
+                        y: Spacing.base;
                         text: root.note;
-                        color: MaterialPalette.on-secondary-container;
+                        color: Tint.coral-ink;
                         font-size: Typography.body-medium-size;
                         wrap: word-wrap;
                     }
@@ -573,17 +685,20 @@ export component ReleasePage inherits Rectangle {
                         spacing: Spacing.base;
                         alignment: start;
 
-                        Poster {
+                        // The hero already holds the poster; beside the
+                        // details it would be the same picture twice.
+                        if root.playing: Poster {
                             source: root.poster;
                             loaded: root.poster-loaded;
                         }
 
                         VerticalLayout {
                             horizontal-stretch: 1;
+                            max-width: 880px;
                             spacing: Spacing.tight;
                             alignment: start;
 
-                            if root.original-title != "": Text {
+                            if root.playing && root.original-title != "": Text {
                                 text: root.original-title;
                                 color: MaterialPalette.on-surface-variant;
                                 font-size: Typography.body-medium-size;
@@ -592,6 +707,7 @@ export component ReleasePage inherits Rectangle {
                             // One line of facts, the score first and the
                             // only one in full colour.
                             HorizontalLayout {
+                                visible: root.playing;
                                 spacing: Spacing.small;
                                 alignment: start;
 
@@ -641,6 +757,19 @@ export component ReleasePage inherits Rectangle {
                                 }
                             }
 
+                            Rectangle {
+                                height: Spacing.small;
+                                background: transparent;
+                                visible: !root.playing;
+                            }
+
+                            Text {
+                                text: Tr.synopsis;
+                                color: MaterialPalette.on-surface;
+                                font-size: 18px;
+                                font-weight: 600;
+                            }
+
                             Text {
                                 // Measured at the width it is drawn at: a
                                 // wrapped paragraph in a layout reports the
@@ -649,7 +778,7 @@ export component ReleasePage inherits Rectangle {
                                 min-height: description-measure.preferred-height;
                                 text: root.description;
                                 color: MaterialPalette.on-surface;
-                                font-size: Typography.body-medium-size;
+                                font-size: 16px;
                                 wrap: word-wrap;
                             }
 
@@ -662,9 +791,12 @@ export component ReleasePage inherits Rectangle {
                                 spacing: Spacing.small;
                                 padding-top: Spacing.small;
 
-                                OutlineButton {
-                                    icon: @image-url("../icons/comment.svg");
+                                TintPill {
                                     text: Tr.comments-title + (root.comment-count > 0 ? " · " + root.comment-count : "");
+                                    icon: @image-url("../icons/comment.svg");
+                                    has-icon: true;
+                                    wash: MaterialPalette.surface-container;
+                                    ink: MaterialPalette.on-surface;
                                     clicked => { root.open-comments(); }
                                 }
 
@@ -702,25 +834,26 @@ export component ReleasePage inherits Rectangle {
         }
     }
 
-    // The description as it wraps in its column — the page's width less its
-    // padding, the poster and the gap — for its true height. Invisible.
+    // The description as it wraps in its column — the page's width, less its
+    // padding and, while a poster stands beside it, the poster and the gap —
+    // for its true height. Invisible.
     description-measure := Text {
         visible: false;
-        width: max(1px, page.width - 3 * Spacing.base - 150px);
+        width: min(880px, max(1px, page.width - 2 * Spacing.base - (root.playing ? 150px + Spacing.base : 0px)));
         text: root.description;
-        font-size: Typography.body-medium-size;
+        font-size: 16px;
         wrap: word-wrap;
     }
 
     // The page's own scroll bar: where the view is in the page, and how much
     // of it shows. Drawn over the page's right edge, so it takes no room.
     if !root.theatre && page.content-height > page.height + 1px: Rectangle {
-        x: page.absolute-position.x - root.absolute-position.x + page.width - 6px;
+        x: page.absolute-position.x - root.absolute-position.x + page.width - 10px;
         y: page.absolute-position.y - root.absolute-position.y
             + (page.height - self.height) * (-page.content-y / (page.content-height - page.height));
-        width: 4px;
-        height: max(32px, page.height * page.height / page.content-height);
-        border-radius: 2px;
+        width: 8px;
+        height: max(40px, page.height * page.height / page.content-height);
+        border-radius: 4px;
         background: MaterialPalette.on-surface-variant.with-alpha(0.45);
     }
 

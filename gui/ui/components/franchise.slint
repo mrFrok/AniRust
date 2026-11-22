@@ -3,8 +3,7 @@
 // A franchise's releases, oldest first: the order to watch them in, as far as
 // the dates say.
 
-import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, IconButton } from "@material";
+import { MaterialPalette, IconButton, ScrollView } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -24,10 +23,10 @@ export component FranchiseSheet inherits Rectangle {
 
     Rectangle {
         width: min(560px, parent.width - 2 * Spacing.comfortable);
-        height: parent.height - 2 * Spacing.comfortable;
+        height: min(parent.height - 2 * Spacing.comfortable, 560px);
         x: (parent.width - self.width) / 2;
         y: Spacing.comfortable;
-        border-radius: Shape.extra-large;
+        border-radius: Shape.sheet;
         background: MaterialPalette.surface-container-high;
         drop-shadow-blur: 32px;
         drop-shadow-color: #00000080;

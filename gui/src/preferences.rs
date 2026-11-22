@@ -23,11 +23,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Appearance {
-    /// Whatever the desktop is set to.
+    /// Whatever the desktop is set to. The default: the phone client follows
+    /// the phone's own light or dark setting, and a desktop client should
+    /// follow the desktop's.
+    #[default]
     System,
     Light,
-    /// The default: a room being used to watch something is not a lit one.
-    #[default]
+    /// A room being used to watch something is not a lit one.
     Dark,
     /// Dark, with the surfaces at true black — the pixels an OLED panel
     /// switches off rather than lights dimly.
@@ -101,6 +103,7 @@ impl Language {
 #[serde(rename_all = "kebab-case")]
 pub enum Accent {
     #[default]
+    Coral,
     Violet,
     Blue,
     Indigo,
@@ -111,7 +114,8 @@ pub enum Accent {
 }
 
 impl Accent {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
+        Self::Coral,
         Self::Violet,
         Self::Blue,
         Self::Indigo,
@@ -313,8 +317,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_default_is_dark() {
-        assert_eq!(Preferences::default().appearance, Appearance::Dark);
+    fn the_default_follows_the_desktop() {
+        assert_eq!(Preferences::default().appearance, Appearance::System);
     }
 
     #[test]
@@ -394,6 +398,6 @@ mod tests {
         for accent in Accent::ALL {
             assert_eq!(Accent::at(accent.index()), accent);
         }
-        assert_eq!(Accent::at(99), Accent::Violet);
+        assert_eq!(Accent::at(99), Accent::Coral);
     }
 }

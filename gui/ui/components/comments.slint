@@ -7,14 +7,14 @@
 // they are about, and the release screen has no room left to give them that
 // is not the picture's.
 
-import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, IconButton, FilledButton, OutlineButton, CircularProgressIndicator } from "@material";
+import { MaterialPalette, IconButton, FilledButton, OutlineButton, CircularProgressIndicator, ScrollView } from "@material";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
-import { CommentItem, PickerOption } from "../structs.slint";
+import { CommentItem } from "../structs.slint";
 import { Dropdown } from "release-parts.slint";
 import { QuietButton } from "quiet-button.slint";
+import { EmptyState } from "ui-kit.slint";
 
 /// A vote button: an arrow that lights when it is the account's vote.
 export component VoteArrow inherits Rectangle {
@@ -22,14 +22,14 @@ export component VoteArrow inherits Rectangle {
     in property <bool> active;
     callback clicked;
 
-    width: 26px;
-    height: 26px;
-    border-radius: 13px;
+    width: 40px;
+    height: 40px;
+    border-radius: 20px;
     background: touch.has-hover ? MaterialPalette.surface-container-highest : transparent;
 
     Text {
         text: root.up ? "▲" : "▼";
-        font-size: 11px;
+        font-size: 13px;
         horizontal-alignment: center;
         vertical-alignment: center;
         width: 100%;
@@ -262,9 +262,19 @@ export component CommentsSheet inherits Rectangle {
     }
 
     sheet := Rectangle {
-        x: parent.width - self.width;
-        width: min(560px, parent.width);
-        height: 100%;
+        // A floating panel, not a wall: rounded, lifted off the page, and
+        // held a margin away from the edges. The phone client draws these
+        // as sheets from the bottom; a desktop window has room to keep them
+        // whole.
+        x: parent.width - self.width - Spacing.medium;
+        y: Spacing.medium;
+        width: min(560px, parent.width - 2 * Spacing.medium);
+        height: parent.height - 2 * Spacing.medium;
+        border-radius: Shape.sheet;
+        border-width: 1px;
+        border-color: MaterialPalette.outline-variant;
+        drop-shadow-blur: 36px;
+        drop-shadow-color: #0000004D;
         background: MaterialPalette.surface-container-low;
 
         // Swallows clicks so they do not reach the scrim behind.
@@ -338,13 +348,11 @@ export component CommentsSheet inherits Rectangle {
                 }
             }
 
-            if !root.loading && root.comments.length == 0: Text {
+            if !root.loading && root.comments.length == 0: EmptyState {
                 vertical-stretch: 1;
-                text: root.error != "" ? root.error : Tr.no-comments;
-                color: MaterialPalette.on-surface-variant;
-                font-size: Typography.body-large-size;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+                icon: @image-url("../icons/comment.svg");
+                title: root.error != "" ? root.error : Tr.no-comments;
+                detail: "";
             }
 
             if root.comments.length > 0: ScrollView {

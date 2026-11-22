@@ -15,18 +15,18 @@ export component PosterCard inherits Rectangle {
     background: transparent;
 
     VerticalLayout {
-        spacing: Spacing.tight;
+        spacing: Spacing.small;
 
         Rectangle {
             vertical-stretch: 1;
-            border-radius: Shape.large;
+            border-radius: Shape.poster;
             clip: true;
             background: MaterialPalette.surface-container-high;
             // Lifts slightly under the pointer, which is the whole hover
             // affordance a poster needs.
-            border-width: touch.has-hover ? 2px : 0px;
-            border-color: MaterialPalette.primary;
-            animate border-width { duration: Motion.standard-duration; easing: Motion.standard; }
+            border-width: 1px;
+            border-color: touch.has-hover ? MaterialPalette.outline : MaterialPalette.outline-variant;
+            animate border-color { duration: Motion.standard-duration; easing: Motion.standard; }
 
             Image {
                 source: root.card.poster;
@@ -37,20 +37,33 @@ export component PosterCard inherits Rectangle {
                 animate opacity { duration: Motion.enter-duration; easing: Motion.enter; }
             }
 
+            // A poster on its way is not a broken rectangle: a quiet frame
+            // says "this is a picture, still coming" without pretending to
+            // be art.
+            if !root.card.poster-loaded: Image {
+                source: @image-url("../icons/poster.svg");
+                colorize: MaterialPalette.on-surface-variant.with-alpha(0.35);
+                width: 32px;
+                height: 32px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+
             // Score sits on the poster, as it does on every catalogue that has
             // ever shown one.
             if root.card.score != "": Rectangle {
-                x: parent.width - self.width - Spacing.small;
-                y: Spacing.small;
-                height: 22px;
-                width: score.preferred-width + Spacing.medium;
-                border-radius: Shape.small;
-                background: #000000B3;
+                x: parent.width - self.width - 10px;
+                y: 10px;
+                height: 26px;
+                width: score.preferred-width + 18px;
+                border-radius: 13px;
+                background: #000000A6;
 
                 score := Text {
                     text: "★ " + root.card.score;
-                    color: #FFFFFF;
-                    font-size: Typography.label-small-size;
+                    color: #FFD48A;
+                    font-size: Typography.label-medium-size;
+                    font-weight: 600;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                     width: 100%;
@@ -65,19 +78,20 @@ export component PosterCard inherits Rectangle {
         Text {
             text: root.card.title;
             color: MaterialPalette.on-surface;
-            font-size: Typography.body-medium-size;
+            font-size: 16px;
+            font-weight: 600;
             wrap: word-wrap;
             // `max-lines` cuts the third line; `elide` on its own would cut at
             // the first, because eliding and wrapping are alternatives.
             max-lines: 2;
-            height: 38px;
+            height: 44px;
         }
 
         Text {
             text: root.card.subtitle;
             color: MaterialPalette.on-surface-variant;
-            font-size: Typography.label-small-size;
-            height: 16px;
+            font-size: 13px;
+            height: 18px;
             overflow: elide;
         }
     }

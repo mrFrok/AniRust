@@ -7,10 +7,13 @@
 // in is something done in passing, and coming back to where you were is the
 // whole point of doing it that way.
 
-import { MaterialPalette, TextField, FilledButton, TextButton, OutlineButton, CircularProgressIndicator } from "@material";
+import { MaterialPalette, FilledButton, OutlineButton, CircularProgressIndicator, ScrollView } from "@material";
+import { Field as TextField } from "ui-kit.slint";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing, Motion } from "../globals/shape.slint";
 import { QuietButton } from "quiet-button.slint";
+import { TintPill } from "ui-kit.slint";
+import { Tint } from "../globals/tint.slint";
 import { Tr } from "../globals/tr.slint";
 
 export component SignInSheet inherits Rectangle {
@@ -64,7 +67,7 @@ export component SignInSheet inherits Rectangle {
 
     Rectangle {
         width: min(420px, parent.width - 2 * Spacing.comfortable);
-        height: form.preferred-height + 2 * Spacing.comfortable;
+        height: min(form.preferred-height + 2 * Spacing.comfortable, parent.height - 2 * Spacing.base);
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         border-radius: Shape.extra-large;
@@ -75,293 +78,305 @@ export component SignInSheet inherits Rectangle {
         // Swallows clicks so they do not reach the scrim behind.
         TouchArea {}
 
-        form := VerticalLayout {
-            x: Spacing.comfortable;
-            y: Spacing.comfortable;
-            width: parent.width - 2 * Spacing.comfortable;
-            spacing: Spacing.base;
-            // Otherwise the rows share out the rounding slack and the labels
-            // drift away from the fields they name.
-            alignment: start;
-
-            Text {
-                text: root.mode == "sign-up" || root.mode == "sign-up-code"
-                    ? Tr.sign-up-title
-                    : root.mode == "restore" || root.mode == "restore-code"
-                        ? Tr.restore-title
-                        : root.on-qr ? Tr.qr-title : Tr.sign-in-title;
-                color: MaterialPalette.on-surface;
-                font-size: Typography.title-large-size;
-                font-weight: Typography.title-large-weight-em;
+        form-scroll := ScrollView {
+            horizontal-scrollbar-policy: always-off;
+            content-height: form.preferred-height + 2 * Spacing.comfortable;
+            changed content-height => {
+                self.content-y = clamp(self.content-y, min(0px, self.visible-height - self.content-height), 0px);
             }
 
-            if !root.on-qr: Text {
-                text: root.waiting-for-code
-                    ? Tr.code-sent
-                    : root.mode == "restore" ? Tr.restore-why : Tr.sign-in-why;
-                color: MaterialPalette.on-surface-variant;
-                font-size: Typography.body-medium-size;
-                wrap: word-wrap;
-            }
-
-            // A rejected login and a rejected password are faults of one
-            // field each, so each is reported under the field it belongs to.
-            // Only a failure that belongs to none gets a line of its own.
-            if !root.waiting-for-code && !root.on-qr: TextField {
-                label: root.mode == "sign-up" ? Tr.new-login-field : Tr.login-field;
-                text <=> root.login;
-                has-error: root.login-error;
-                supporting-text: root.login-error ? Tr.auth-error(root.error) : "";
-                accepted(text) => { root.submit(); }
-            }
-
-            if root.suggestions.length > 0 && root.error == "login-taken": HorizontalLayout {
-                spacing: Spacing.small;
+            form := VerticalLayout {
+                x: Spacing.comfortable;
+                y: Spacing.comfortable;
+                width: form-scroll.visible-width - 2 * Spacing.comfortable;
+                spacing: Spacing.base;
+                // Otherwise the rows share out the rounding slack and the labels
+                // drift away from the fields they name.
                 alignment: start;
 
-                for suggestion in root.suggestions: TextButton {
-                    text: suggestion;
-                    clicked => { root.login = suggestion; }
-                }
-            }
-
-            if root.mode == "sign-up": TextField {
-                label: Tr.email-field;
-                text <=> root.email;
-                has-error: root.email-error;
-                supporting-text: root.email-error ? Tr.auth-error(root.error) : "";
-                accepted(text) => { root.submit(); }
-            }
-
-            if root.waiting-for-code: TextField {
-                label: Tr.code-field;
-                text <=> root.code;
-                has-error: root.code-error;
-                supporting-text: root.code-error ? Tr.auth-error(root.error) : "";
-                accepted(text) => { root.submit(); }
-            }
-
-            // Restoring asks for the new password beside the code: the code
-            // is what proves it is the owner setting it.
-            if root.mode != "restore" && root.mode != "sign-up-code" && !root.on-qr: TextField {
-                label: root.mode == "restore-code" ? Tr.new-password-field : Tr.password-field;
-                input-type: InputType.password;
-                text <=> root.password;
-                has-error: root.password-error;
-                supporting-text: root.password-error ? Tr.auth-error(root.error) : "";
-                accepted(text) => { root.submit(); }
-            }
-
-            if root.error != "" && !root.login-error && !root.email-error && !root.password-error && !root.code-error: Text {
-                text: Tr.auth-error(root.error);
-                color: MaterialPalette.error;
-                font-size: Typography.body-medium-size;
-                wrap: word-wrap;
-            }
-
-            if root.on-qr: VerticalLayout {
-                spacing: Spacing.base;
-
-                // White whatever the theme, with the quiet zone drawn into the
-                // picture: scanners look for dark modules on a light ground.
-                // The same size while loading, so the sheet does not jump.
-                HorizontalLayout {
-                    alignment: center;
-
-                    Rectangle {
-                        width: 208px;
-                        height: 208px;
-                        border-radius: Shape.medium;
-                        background: #ffffff;
-                        clip: true;
-
-                        Image {
-                            width: parent.width;
-                            height: parent.height;
-                            source: root.qr-image;
-                            image-rendering: pixelated;
-                            opacity: root.qr-ended ? 0.12 : 1;
-                            accessible-role: image;
-                            accessible-label: Tr.qr-step-scan;
-
-                            animate opacity { duration: Motion.standard-duration; easing: Motion.standard; }
-                        }
-
-                        if root.qr-state == "loading": CircularProgressIndicator {
-                            indeterminate: true;
-                            width: 40px;
-                            height: 40px;
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                        }
-                    }
-                }
-
-                // The PIN is the one thing to carry to the phone: biggest on
-                // the sheet, spaced so it reads digit by digit.
-                if root.qr-pin != "" && !root.qr-ended: VerticalLayout {
-                    spacing: Spacing.tight;
-
-                    Text {
-                        text: Tr.qr-pin-label;
-                        horizontal-alignment: center;
-                        color: MaterialPalette.on-surface-variant;
-                        font-size: Typography.label-large-size;
-                    }
-
-                    Text {
-                        text: root.qr-pin;
-                        horizontal-alignment: center;
-                        color: MaterialPalette.on-surface;
-                        font-size: Typography.display-small-size;
-                        letter-spacing: 12px;
-                        font-weight: 600;
-                        accessible-role: text;
-                        accessible-label: Tr.qr-pin-label + " " + root.qr-pin;
-                    }
-                }
-
                 Text {
-                    text: Tr.qr-status(root.qr-state, root.qr-device);
-                    horizontal-alignment: center;
-                    color: root.qr-ended ? MaterialPalette.error : MaterialPalette.on-surface-variant;
+                    text: root.mode == "sign-up" || root.mode == "sign-up-code"
+                        ? Tr.sign-up-title
+                        : root.mode == "restore" || root.mode == "restore-code"
+                            ? Tr.restore-title
+                            : root.on-qr ? Tr.qr-title : Tr.sign-in-title;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-large-size;
+                    font-weight: Typography.title-large-weight-em;
+                }
+
+                if !root.on-qr: Text {
+                    text: root.waiting-for-code
+                        ? Tr.code-sent
+                        : root.mode == "restore" ? Tr.restore-why : Tr.sign-in-why;
+                    color: MaterialPalette.on-surface-variant;
                     font-size: Typography.body-medium-size;
                     wrap: word-wrap;
-                    accessible-role: text;
                 }
 
-                // The way out of an ended code sits right under what says it
-                // ended, not at the far end of the sheet.
-                if root.qr-ended: HorizontalLayout {
-                    alignment: center;
+                // A rejected login and a rejected password are faults of one
+                // field each, so each is reported under the field it belongs to.
+                // Only a failure that belongs to none gets a line of its own.
+                if !root.waiting-for-code && !root.on-qr: TextField {
+                    label: root.mode == "sign-up" ? Tr.new-login-field : Tr.login-field;
+                    text <=> root.login;
+                    has-error: root.login-error;
+                    supporting-text: root.login-error ? Tr.auth-error(root.error) : "";
+                    accepted(text) => { root.submit(); }
+                }
 
-                    FilledButton {
-                        text: Tr.qr-new-code;
-                        clicked => { root.qr-start(); }
+                if root.suggestions.length > 0 && root.error == "login-taken": FlexboxLayout {
+                    spacing: Spacing.small;
+                    alignment: start;
+                    flex-wrap: wrap;
+
+                    for suggestion in root.suggestions: TintPill {
+                        text: suggestion;
+                        wash: Tint.coral-bg;
+                        ink: Tint.coral-ink;
+                        inner-height: 36px;
+                        clicked => { root.login = suggestion; }
                     }
                 }
 
-                if !root.qr-ended: VerticalLayout {
-                    spacing: Spacing.small;
+                if root.mode == "sign-up": TextField {
+                    label: Tr.email-field;
+                    text <=> root.email;
+                    has-error: root.email-error;
+                    supporting-text: root.email-error ? Tr.auth-error(root.error) : "";
+                    accepted(text) => { root.submit(); }
+                }
 
-                    for step[index] in [Tr.qr-step-scan, Tr.qr-step-pin]: HorizontalLayout {
-                        spacing: Spacing.small;
+                if root.waiting-for-code: TextField {
+                    label: Tr.code-field;
+                    text <=> root.code;
+                    has-error: root.code-error;
+                    supporting-text: root.code-error ? Tr.auth-error(root.error) : "";
+                    accepted(text) => { root.submit(); }
+                }
+
+                // Restoring asks for the new password beside the code: the code
+                // is what proves it is the owner setting it.
+                if root.mode != "restore" && root.mode != "sign-up-code" && !root.on-qr: TextField {
+                    label: root.mode == "restore-code" ? Tr.new-password-field : Tr.password-field;
+                    input-type: InputType.password;
+                    text <=> root.password;
+                    has-error: root.password-error;
+                    supporting-text: root.password-error ? Tr.auth-error(root.error) : "";
+                    accepted(text) => { root.submit(); }
+                }
+
+                if root.error != "" && !root.login-error && !root.email-error && !root.password-error && !root.code-error: Text {
+                    text: Tr.auth-error(root.error);
+                    color: MaterialPalette.error;
+                    font-size: Typography.body-medium-size;
+                    wrap: word-wrap;
+                }
+
+                if root.on-qr: VerticalLayout {
+                    spacing: Spacing.base;
+
+                    // White whatever the theme, with the quiet zone drawn into the
+                    // picture: scanners look for dark modules on a light ground.
+                    // The same size while loading, so the sheet does not jump.
+                    HorizontalLayout {
+                        alignment: center;
 
                         Rectangle {
-                            width: 24px;
-                            height: 24px;
-                            border-radius: self.width / 2;
-                            background: MaterialPalette.secondary-container;
+                            width: 208px;
+                            height: 208px;
+                            border-radius: Shape.medium;
+                            background: #ffffff;
+                            clip: true;
+
+                            Image {
+                                width: parent.width;
+                                height: parent.height;
+                                source: root.qr-image;
+                                image-rendering: pixelated;
+                                opacity: root.qr-ended ? 0.12 : 1;
+                                accessible-role: image;
+                                accessible-label: Tr.qr-step-scan;
+
+                                animate opacity { duration: Motion.standard-duration; easing: Motion.standard; }
+                            }
+
+                            if root.qr-state == "loading": CircularProgressIndicator {
+                                indeterminate: true;
+                                width: 40px;
+                                height: 40px;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+                    }
+
+                    // The PIN is the one thing to carry to the phone: biggest on
+                    // the sheet, spaced so it reads digit by digit.
+                    if root.qr-pin != "" && !root.qr-ended: VerticalLayout {
+                        spacing: Spacing.tight;
+
+                        Text {
+                            text: Tr.qr-pin-label;
+                            horizontal-alignment: center;
+                            color: MaterialPalette.on-surface-variant;
+                            font-size: Typography.label-large-size;
+                        }
+
+                        Text {
+                            text: root.qr-pin;
+                            horizontal-alignment: center;
+                            color: MaterialPalette.on-surface;
+                            font-size: Typography.display-small-size;
+                            letter-spacing: 12px;
+                            font-weight: 600;
+                            accessible-role: text;
+                            accessible-label: Tr.qr-pin-label + " " + root.qr-pin;
+                        }
+                    }
+
+                    Text {
+                        text: Tr.qr-status(root.qr-state, root.qr-device);
+                        horizontal-alignment: center;
+                        color: root.qr-ended ? MaterialPalette.error : MaterialPalette.on-surface-variant;
+                        font-size: Typography.body-medium-size;
+                        wrap: word-wrap;
+                        accessible-role: text;
+                    }
+
+                    // The way out of an ended code sits right under what says it
+                    // ended, not at the far end of the sheet.
+                    if root.qr-ended: HorizontalLayout {
+                        alignment: center;
+
+                        FilledButton {
+                            text: Tr.qr-new-code;
+                            clicked => { root.qr-start(); }
+                        }
+                    }
+
+                    if !root.qr-ended: VerticalLayout {
+                        spacing: Spacing.small;
+
+                        for step[index] in [Tr.qr-step-scan, Tr.qr-step-pin]: HorizontalLayout {
+                            spacing: Spacing.small;
+
+                            Rectangle {
+                                width: 24px;
+                                height: 24px;
+                                border-radius: self.width / 2;
+                                background: MaterialPalette.secondary-container;
+
+                                Text {
+                                    text: index + 1;
+                                    color: MaterialPalette.on-secondary-container;
+                                    font-size: Typography.label-medium-size;
+                                }
+                            }
 
                             Text {
-                                text: index + 1;
-                                color: MaterialPalette.on-secondary-container;
-                                font-size: Typography.label-medium-size;
+                                text: step;
+                                vertical-alignment: center;
+                                color: MaterialPalette.on-surface;
+                                font-size: Typography.body-medium-size;
+                                wrap: word-wrap;
                             }
                         }
 
                         Text {
-                            text: step;
-                            vertical-alignment: center;
-                            color: MaterialPalette.on-surface;
-                            font-size: Typography.body-medium-size;
-                            wrap: word-wrap;
+                            text: Tr.qr-needs-11;
+                            color: MaterialPalette.on-surface-variant;
+                            font-size: Typography.body-small-size;
+                        }
+                    }
+                }
+
+                // Another way in, under the one most people use: for an account
+                // with no password of its own, the only one.
+                if root.mode == "sign-in": VerticalLayout {
+                    spacing: Spacing.tight;
+
+                    OutlineButton {
+                        text: Tr.qr-sign-in;
+                        clicked => {
+                            root.mode = "qr";
+                            root.qr-start();
                         }
                     }
 
                     Text {
-                        text: Tr.qr-needs-11;
+                        text: Tr.qr-sign-in-hint;
+                        horizontal-alignment: center;
                         color: MaterialPalette.on-surface-variant;
                         font-size: Typography.body-small-size;
-                    }
-                }
-            }
-
-            // Another way in, under the one most people use: for an account
-            // with no password of its own, the only one.
-            if root.mode == "sign-in": VerticalLayout {
-                spacing: Spacing.tight;
-
-                OutlineButton {
-                    text: Tr.qr-sign-in;
-                    clicked => {
-                        root.mode = "qr";
-                        root.qr-start();
+                        wrap: word-wrap;
                     }
                 }
 
-                Text {
-                    text: Tr.qr-sign-in-hint;
-                    horizontal-alignment: center;
-                    color: MaterialPalette.on-surface-variant;
-                    font-size: Typography.body-small-size;
-                    wrap: word-wrap;
-                }
-            }
+                // The other forms, from this one.
+                if root.mode == "sign-in": HorizontalLayout {
+                    alignment: space-between;
 
-            // The other forms, from this one.
-            if root.mode == "sign-in": HorizontalLayout {
-                alignment: space-between;
+                    QuietButton {
+                        text: Tr.create-account;
+                        clicked => { root.mode = "sign-up"; }
+                    }
 
-                QuietButton {
-                    text: Tr.create-account;
-                    clicked => { root.mode = "sign-up"; }
-                }
-
-                QuietButton {
-                    text: Tr.forgot-password;
-                    clicked => { root.mode = "restore"; }
-                }
-            }
-
-            if root.mode != "sign-in" && !root.on-qr: HorizontalLayout {
-                alignment: start;
-
-                QuietButton {
-                    text: Tr.have-account;
-                    clicked => { root.mode = "sign-in"; }
-                }
-
-                if root.waiting-for-code: QuietButton {
-                    text: Tr.resend-code;
-                    enabled: !root.busy;
-                    clicked => { root.resend(); }
-                }
-            }
-
-            HorizontalLayout {
-                spacing: Spacing.small;
-
-                // On the QR form the way back shares the row with the actions,
-                // pushed to the far side of them.
-                if root.on-qr: QuietButton {
-                    text: Tr.qr-with-password;
-                    clicked => {
-                        root.qr-stop();
-                        root.mode = "sign-in";
+                    QuietButton {
+                        text: Tr.forgot-password;
+                        clicked => { root.mode = "restore"; }
                     }
                 }
 
-                Rectangle { horizontal-stretch: 1; }
+                if root.mode != "sign-in" && !root.on-qr: HorizontalLayout {
+                    alignment: start;
 
-                QuietButton {
-                    text: Tr.cancel;
-                    clicked => { root.dismiss(); }
+                    QuietButton {
+                        text: Tr.have-account;
+                        clicked => { root.mode = "sign-in"; }
+                    }
+
+                    if root.waiting-for-code: QuietButton {
+                        text: Tr.resend-code;
+                        enabled: !root.busy;
+                        clicked => { root.resend(); }
+                    }
                 }
 
-                if !root.on-qr: FilledButton {
-                    text: root.busy
-                        ? Tr.loading
-                        : root.mode == "sign-in"
-                            ? Tr.sign-in
-                            : root.waiting-for-code ? Tr.confirm : Tr.continue;
-                    enabled: !root.busy && (
-                        root.mode == "sign-in" ? root.login != "" && root.password != ""
-                        : root.mode == "sign-up" ? root.login != "" && root.email != "" && root.password != ""
-                        : root.mode == "restore" ? root.login != ""
-                        : root.mode == "sign-up-code" ? root.code != ""
-                        : root.code != "" && root.password != "");
-                    clicked => { root.submit(); }
+                HorizontalLayout {
+                    spacing: Spacing.small;
+
+                    // On the QR form the way back shares the row with the actions,
+                    // pushed to the far side of them.
+                    if root.on-qr: QuietButton {
+                        text: Tr.qr-with-password;
+                        clicked => {
+                            root.qr-stop();
+                            root.mode = "sign-in";
+                        }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    QuietButton {
+                        text: Tr.cancel;
+                        clicked => { root.dismiss(); }
+                    }
+
+                    if !root.on-qr: FilledButton {
+                        text: root.busy
+                            ? Tr.loading
+                            : root.mode == "sign-in"
+                                ? Tr.sign-in
+                                : root.waiting-for-code ? Tr.confirm : Tr.continue;
+                        enabled: !root.busy && (
+                            root.mode == "sign-in" ? root.login != "" && root.password != ""
+                            : root.mode == "sign-up" ? root.login != "" && root.email != "" && root.password != ""
+                            : root.mode == "restore" ? root.login != ""
+                            : root.mode == "sign-up-code" ? root.code != ""
+                            : root.code != "" && root.password != "");
+                        clicked => { root.submit(); }
+                    }
                 }
             }
         }

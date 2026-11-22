@@ -6,8 +6,8 @@
 // A tall sheet over the profile rather than a page: these are visited, not
 // lived on, and the profile they change stays in sight behind them.
 
-import { ScrollView } from "std-widgets.slint";
-import { MaterialPalette, TextField, FilledButton, TonalButton, TextButton, OutlineButton, Switch, SegmentedButton, HorizontalDivider, IconButton } from "@material";
+import { MaterialPalette, FilledButton, TonalButton, TextButton, OutlineButton, Switch, SegmentedButton, HorizontalDivider, IconButton, ScrollView } from "@material";
+import { Field as TextField } from "ui-kit.slint";
 import { Typography } from "../globals/typography.slint";
 import { Shape, Spacing } from "../globals/shape.slint";
 import { Tr } from "../globals/tr.slint";
@@ -131,8 +131,11 @@ export component AccountSettingsSheet inherits Rectangle {
         height: parent.height - 2 * Spacing.comfortable;
         x: (parent.width - self.width) / 2;
         y: Spacing.comfortable;
-        border-radius: Shape.extra-large;
+        border-radius: Shape.sheet;
         background: MaterialPalette.surface-container-high;
+        // The message strip at the foot is a full-width rectangle; clipping
+        // the card keeps its corners round instead of squaring the last row.
+        clip: true;
         drop-shadow-blur: 32px;
         drop-shadow-color: #00000080;
 

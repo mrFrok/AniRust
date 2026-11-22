@@ -5,9 +5,10 @@
 import "fonts/Inter-Regular.ttf";
 import "fonts/Inter-Medium.ttf";
 import "fonts/Inter-SemiBold.ttf";
-import { MaterialPalette, MaterialSchemes, NavigationRail } from "@material";
+import { MaterialPalette, MaterialSchemes } from "@material";
 import { Scheme, Appearance, Accent } from "globals/scheme.slint";
 import { Tr } from "globals/tr.slint";
+import { Spacing } from "globals/shape.slint";
 import { Typography } from "globals/typography.slint";
 import { PlayerPage } from "pages/player.slint";
 import { ReleasePage } from "pages/release.slint";
@@ -57,14 +58,35 @@ export component MainWindow inherits Window {
         Scheme.translucent = root.translucent;
         MaterialPalette.schemes = root.schemes;
         root.measure();
+        root.update-metrics();
     }
     changed lang => { Tr.lang = root.lang; }
 
-    // Which colour scheme is in force. Dark is the default: a room being used
-    // to watch something is not a lit one.
-    in property <Appearance> appearance: Appearance.dark;
+    // Sizes the browsing page needs, calculated from the window's width.
+    //
+    // Written in a handler rather than bound: Slint treats a child whose
+    // layout size is bound to the window's width as a potential loop, because
+    // the window in turn sizes itself from its children, and refuses at run
+    // time. A property assigned from `changed width` has no such chain.
+    property <length> home-card: 168px;
+    property <bool> wide-ui: false;
+    function update-metrics() {
+        root.wide-ui = root.width >= 760px;
+        let column-width = root.width - Spacing.navigation-rail;
+        let padding = root.wide-ui ? Spacing.loose : Spacing.page;
+        let gap = Spacing.comfortable;
+        // Reserve room for the vertical scrollbar and fractional rounding.
+        let available = column-width - 2 * padding - 7px;
+        let min-card = root.wide-ui ? 168px : 144px;
+        let columns = max(1, floor((available + gap) / (min-card + gap)));
+        root.home-card = (available + gap) / columns - gap;
+    }
+
+    // Which colour scheme is in force. The desktop decides by default; the
+    // light and dark appearances are there for people whose desktop does not.
+    in property <Appearance> appearance: Appearance.system;
     changed appearance => { Scheme.appearance = root.appearance; }
-    in property <Accent> accent: Accent.violet;
+    in property <Accent> accent: Accent.coral;
     changed accent => { Scheme.accent = root.accent; }
     in property <bool> translucent: false;
     changed translucent => { Scheme.translucent = root.translucent; }
@@ -429,7 +451,10 @@ export component MainWindow inherits Window {
     /// size; assigning it breaks that circle while giving the same answer.
     property <length> narrow-threshold: 900px;
     property <bool> narrow: false;
-    changed width => { root.measure(); }
+    changed width => {
+        root.measure();
+        root.update-metrics();
+    }
     function measure() { root.narrow = root.width < root.narrow-threshold; }
 
     /// Which screen is up: "home" or "release".
@@ -780,6 +805,9 @@ export component MainWindow inherits Window {
         }
 
         if root.destination < 3: HomePage {
+            card-width: root.home-card;
+            wide: root.wide-ui;
+            feature-first: root.destination < 2;
             heading: root.destination == 0 ? Tr.nav-home
                 : root.destination == 1 ? Tr.nav-catalogue : Tr.nav-bookmarks;
             horizontal-stretch: 1;
@@ -791,39 +819,41 @@ export component MainWindow inherits Window {
 
             signed-in: root.signed-in;
             account-name: root.account-name;
+            avatar: root.avatar;
+            avatar-loaded: root.avatar-loaded;
 
             // What each destination is divided into. The names live here with
             // the rest of the translations; which one is selected, and what it
             // fetches, is Rust's business.
             tabs: root.destination == 0
                 ? [
-                    { text: Tr.tab-latest },
-                    { text: Tr.tab-airing },
-                    { text: Tr.tab-finished },
-                    { text: Tr.tab-interesting },
-                    { text: Tr.tab-recommended },
-                    { text: Tr.tab-watching },
-                    { text: Tr.tab-discussing },
-                    { text: Tr.tab-schedule },
+                    Tr.tab-latest,
+                    Tr.tab-airing,
+                    Tr.tab-finished,
+                    Tr.tab-interesting,
+                    Tr.tab-recommended,
+                    Tr.tab-watching,
+                    Tr.tab-discussing,
+                    Tr.tab-schedule,
                 ]
                 : root.destination == 1
                     ? [
-                        { text: Tr.section-popular },
-                        { text: Tr.section-top },
-                        { text: Tr.section-films },
-                        { text: Tr.section-announced },
-                        { text: Tr.tab-collections },
+                        Tr.section-popular,
+                        Tr.section-top,
+                        Tr.section-films,
+                        Tr.section-announced,
+                        Tr.tab-collections,
                     ]
                     : root.destination == 2
                         ? [
-                            { text: Tr.list-watching },
-                            { text: Tr.list-planned },
-                            { text: Tr.list-watched },
-                            { text: Tr.list-hold },
-                            { text: Tr.list-dropped },
-                            { text: Tr.list-history },
-                            { text: Tr.list-favourites },
-                            { text: Tr.my-collections },
+                            Tr.list-watching,
+                            Tr.list-planned,
+                            Tr.list-watched,
+                            Tr.list-hold,
+                            Tr.list-dropped,
+                            Tr.list-history,
+                            Tr.list-favourites,
+                            Tr.my-collections,
                         ]
                         : [];
             tab: root.tab;

@@ -6,8 +6,8 @@
 // — an `in` property, so a scheme is a value to hand it. This is the only way
 // to change the look at runtime: a Slint *style* is fixed at compile time.
 //
-// The palette is Material 3's violet, which is where Anixart's own accent
-// sits. AMOLED is not a scheme of its own but a modifier on the dark one: the
+// The palette is Anixart's coral, with a soft coral wash for what is chosen.
+// AMOLED is not a scheme of its own but a modifier on the dark one: the
 // surfaces go to true black, which is what an OLED panel actually switches
 // off, while every other role keeps its tonal relationship.
 
@@ -15,16 +15,18 @@ import { MaterialSchemes, MaterialScheme } from "@material";
 
 export enum Appearance { system, light, dark, amoled }
 
-/// The accent colour. Violet is AniRust's own, from Anixart's accent; the
-/// rest come from LibreFastbootFirmwareFlasher, the author's other Slint
-/// application, where `blue` is its palette, `indigo` @material's default,
-/// and the others `blue` with each role's hue turned in OkLCh — lightness and
-/// chroma per role untouched, so containers stay containers.
-export enum Accent { violet, blue, indigo, teal, green, amber, rose }
+/// The accent colour. Coral is Anixart's own red, the one the phone client
+/// signs everything with; violet was AniRust's earlier default, a shade off
+/// Anixart's accent. The rest come from LibreFastbootFirmwareFlasher, the
+/// author's other Slint application, where `blue` is its palette, `indigo`
+/// @material's default, and the others `blue` with each role's hue turned in
+/// OkLCh — lightness and chroma per role untouched, so containers stay
+/// containers.
+export enum Accent { coral, violet, blue, indigo, teal, green, amber, rose }
 
 export global Scheme {
     in property <Appearance> appearance: Appearance.system;
-    in property <Accent> accent: Accent.violet;
+    in property <Accent> accent: Accent.coral;
     /// The window's surfaces see-through, whatever the colour. The blur
     /// behind them, where there is one, is the compositor's.
     in property <bool> translucent: false;
@@ -62,13 +64,14 @@ export global Scheme {
 
     /// The scheme an accent has, for drawing its swatch too.
     public pure function scheme-of(a: Accent) -> MaterialSchemes {
-        return a == Accent.blue ? root.blue-scheme
+        return a == Accent.violet ? root.violet-scheme
+             : a == Accent.blue ? root.blue-scheme
              : a == Accent.indigo ? root.indigo-scheme
              : a == Accent.teal ? root.teal-scheme
              : a == Accent.green ? root.green-scheme
              : a == Accent.amber ? root.amber-scheme
              : a == Accent.rose ? root.rose-scheme
-             : root.violet-scheme;
+             : root.coral-scheme;
     }
 
     /// The surfaces given alpha, so the window shows through, about as much
@@ -192,8 +195,8 @@ export global Scheme {
     /// taken to one graphite ramp, the same whatever the accent. Material
     /// tints its surfaces with the accent; here the posters carry the colour,
     /// and the accent is kept for what is chosen and the one action that
-    /// matters on a screen. Selection (`secondaryContainer`) is a step up the
-    /// ramp, not a wash of colour.
+    /// matters on a screen. Selection is a soft coral wash — the tint the
+    /// phone client gives its chosen pill — rather than a step up the ramp.
     pure function neutral(s: MaterialSchemes) -> MaterialSchemes {
         return {
             light: {
@@ -204,8 +207,8 @@ export global Scheme {
                 onPrimaryContainer: s.light.onPrimaryContainer,
                 secondary: s.light.secondary,
                 onSecondary: s.light.onSecondary,
-                secondaryContainer: #E4E4E7,
-                onSecondaryContainer: #18181A,
+                secondaryContainer: #FBE9EB,
+                onSecondaryContainer: #8E1D26,
                 tertiary: s.light.tertiary,
                 onTertiary: s.light.onTertiary,
                 tertiaryContainer: s.light.tertiaryContainer,
@@ -214,18 +217,18 @@ export global Scheme {
                 onError: s.light.onError,
                 errorContainer: s.light.errorContainer,
                 onErrorContainer: s.light.onErrorContainer,
-                background: #FAFAFA,
-                onBackground: #18181A,
-                surface: #FAFAFA,
-                onSurface: #18181A,
-                surfaceVariant: #E4E4E7,
-                onSurfaceVariant: #5C5C62,
-                outline: #85858B,
-                outlineVariant: #DEDEE1,
+                background: #F7F7F8,
+                onBackground: #17171B,
+                surface: #FFFFFF,
+                onSurface: #17171B,
+                surfaceVariant: #EFEFF2,
+                onSurfaceVariant: #66666F,
+                outline: #A9A9B3,
+                outlineVariant: #ECECF0,
                 shadow: s.light.shadow,
                 scrim: s.light.scrim,
-                inverseSurface: #2A2A2C,
-                inverseOnSurface: #F2F2F3,
+                inverseSurface: #212124,
+                inverseOnSurface: #F4F4F6,
                 inversePrimary: s.light.inversePrimary,
                 primaryFixed: s.light.primaryFixed,
                 onPrimaryFixed: s.light.onPrimaryFixed,
@@ -239,13 +242,13 @@ export global Scheme {
                 onTertiaryFixed: s.light.onTertiaryFixed,
                 tertiaryFixedDim: s.light.tertiaryFixedDim,
                 onTertiaryFixedVariant: s.light.onTertiaryFixedVariant,
-                surfaceDim: #DCDCDF,
+                surfaceDim: #E9E9ED,
                 surfaceBright: #FFFFFF,
                 surfaceContainerLowest: #FFFFFF,
-                surfaceContainerLow: #F5F5F6,
-                surfaceContainer: #F0F0F1,
-                surfaceContainerHigh: #EAEAEC,
-                surfaceContainerHighest: #E4E4E7,
+                surfaceContainerLow: #F8F8FA,
+                surfaceContainer: #F2F2F5,
+                surfaceContainerHigh: #ECECF0,
+                surfaceContainerHighest: #E5E5EA,
             },
             dark: {
                 primary: s.dark.primary,
@@ -255,8 +258,8 @@ export global Scheme {
                 onPrimaryContainer: s.dark.onPrimaryContainer,
                 secondary: s.dark.secondary,
                 onSecondary: s.dark.onSecondary,
-                secondaryContainer: #2C2C2F,
-                onSecondaryContainer: #F2F2F3,
+                secondaryContainer: #3B2024,
+                onSecondaryContainer: #FFD9DC,
                 tertiary: s.dark.tertiary,
                 onTertiary: s.dark.onTertiary,
                 tertiaryContainer: s.dark.tertiaryContainer,
@@ -265,18 +268,18 @@ export global Scheme {
                 onError: s.dark.onError,
                 errorContainer: s.dark.errorContainer,
                 onErrorContainer: s.dark.onErrorContainer,
-                background: #121213,
-                onBackground: #E9E9EB,
-                surface: #121213,
-                onSurface: #E9E9EB,
-                surfaceVariant: #2A2A2C,
-                onSurfaceVariant: #A3A3A8,
-                outline: #6B6B70,
-                outlineVariant: #2C2C2F,
+                background: #17171A,
+                onBackground: #F2F2F3,
+                surface: #1C1C1E,
+                onSurface: #F2F2F3,
+                surfaceVariant: #2A2A2E,
+                onSurfaceVariant: #A5A5AD,
+                outline: #73737C,
+                outlineVariant: #2E2E33,
                 shadow: s.dark.shadow,
                 scrim: s.dark.scrim,
-                inverseSurface: #E9E9EB,
-                inverseOnSurface: #1A1A1B,
+                inverseSurface: #F2F2F3,
+                inverseOnSurface: #1B1B1E,
                 inversePrimary: s.dark.inversePrimary,
                 primaryFixed: s.dark.primaryFixed,
                 onPrimaryFixed: s.dark.onPrimaryFixed,
@@ -290,13 +293,13 @@ export global Scheme {
                 onTertiaryFixed: s.dark.onTertiaryFixed,
                 tertiaryFixedDim: s.dark.tertiaryFixedDim,
                 onTertiaryFixedVariant: s.dark.onTertiaryFixedVariant,
-                surfaceDim: #121213,
-                surfaceBright: #353537,
-                surfaceContainerLowest: #0D0D0E,
-                surfaceContainerLow: #161617,
-                surfaceContainer: #1A1A1B,
-                surfaceContainerHigh: #222224,
-                surfaceContainerHighest: #2A2A2C,
+                surfaceDim: #17171A,
+                surfaceBright: #3A3A3F,
+                surfaceContainerLowest: #121214,
+                surfaceContainerLow: #212124,
+                surfaceContainer: #26262A,
+                surfaceContainerHigh: #2E2E33,
+                surfaceContainerHighest: #38383D,
             },
         };
     }
@@ -363,7 +366,115 @@ export global Scheme {
         };
     }
 
-    /// Material 3's violet, generated from Anixart's own accent.
+    /// Anixart's coral, the red the phone client signs its buttons and
+    /// selected tabs with. The tone is a shade deeper than the phone's own
+    /// #FF4B55 so that white on it clears 4.5:1.
+    property <MaterialSchemes> coral-scheme: {
+        light: {
+            primary: #DC3540,
+            surfaceTint: #DC3540,
+            onPrimary: #FFFFFF,
+            primaryContainer: #FDEBEE,
+            onPrimaryContainer: #5A0A10,
+            secondary: #A85C62,
+            onSecondary: #FFFFFF,
+            secondaryContainer: #FBE9EB,
+            onSecondaryContainer: #4A1317,
+            tertiary: #B26A00,
+            onTertiary: #FFFFFF,
+            tertiaryContainer: #FFF1D6,
+            onTertiaryContainer: #3D2600,
+            error: #BA1A1A,
+            onError: #FFFFFF,
+            errorContainer: #FFDAD6,
+            onErrorContainer: #410002,
+            background: #F7F7F8,
+            onBackground: #17171B,
+            surface: #FFFFFF,
+            onSurface: #17171B,
+            surfaceVariant: #EFEFF2,
+            onSurfaceVariant: #66666F,
+            outline: #A9A9B3,
+            outlineVariant: #ECECF0,
+            shadow: #000000,
+            scrim: #000000,
+            inverseSurface: #212124,
+            inverseOnSurface: #F4F4F6,
+            inversePrimary: #FFB3B7,
+            primaryFixed: #FFDADB,
+            onPrimaryFixed: #410005,
+            primaryFixedDim: #FFB3B7,
+            onPrimaryFixedVariant: #8C1D26,
+            secondaryFixed: #FBE9EB,
+            onSecondaryFixed: #2A1416,
+            secondaryFixedDim: #EFD5D7,
+            onSecondaryFixedVariant: #5A3A3D,
+            tertiaryFixed: #FFEBC2,
+            onTertiaryFixed: #291800,
+            tertiaryFixedDim: #F5D9A6,
+            onTertiaryFixedVariant: #5E4200,
+            surfaceDim: #E9E9ED,
+            surfaceBright: #FFFFFF,
+            surfaceContainerLowest: #FFFFFF,
+            surfaceContainerLow: #F8F8FA,
+            surfaceContainer: #F2F2F5,
+            surfaceContainerHigh: #ECECF0,
+            surfaceContainerHighest: #E5E5EA,
+        },
+        dark: {
+            primary: #FF7A80,
+            surfaceTint: #FF7A80,
+            onPrimary: #4A070C,
+            primaryContainer: #6E1418,
+            onPrimaryContainer: #FFDADB,
+            secondary: #E8AEB2,
+            onSecondary: #46262A,
+            secondaryContainer: #5E3034,
+            onSecondaryContainer: #FFD9DC,
+            tertiary: #F2C26B,
+            onTertiary: #432C00,
+            tertiaryContainer: #5E4200,
+            onTertiaryContainer: #FFE0A6,
+            error: #FFB4AB,
+            onError: #690005,
+            errorContainer: #93000A,
+            onErrorContainer: #FFDAD6,
+            background: #111113,
+            onBackground: #F2F2F3,
+            surface: #141416,
+            onSurface: #F2F2F3,
+            surfaceVariant: #2A2A2E,
+            onSurfaceVariant: #A5A5AD,
+            outline: #73737C,
+            outlineVariant: #2E2E33,
+            shadow: #000000,
+            scrim: #000000,
+            inverseSurface: #F2F2F3,
+            inverseOnSurface: #1B1B1E,
+            inversePrimary: #DC3540,
+            primaryFixed: #FFDADB,
+            onPrimaryFixed: #410005,
+            primaryFixedDim: #FFB3B7,
+            onPrimaryFixedVariant: #8C1D26,
+            secondaryFixed: #FBE9EB,
+            onSecondaryFixed: #2A1416,
+            secondaryFixedDim: #EFD5D7,
+            onSecondaryFixedVariant: #5A3A3D,
+            tertiaryFixed: #FFEBC2,
+            onTertiaryFixed: #291800,
+            tertiaryFixedDim: #F5D9A6,
+            onTertiaryFixedVariant: #5E4200,
+            surfaceDim: #111113,
+            surfaceBright: #1C1C1E,
+            surfaceContainerLowest: #0E0E10,
+            surfaceContainerLow: #141416,
+            surfaceContainer: #1C1C1E,
+            surfaceContainerHigh: #28282A,
+            surfaceContainerHighest: #323234,
+        },
+    };
+
+    /// Material 3's violet, AniRust's earlier default.
     property <MaterialSchemes> violet-scheme: {
         light: {
             primary: #8246B9,
