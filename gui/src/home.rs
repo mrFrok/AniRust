@@ -147,7 +147,7 @@ enum Query {
     Schedule(usize),
     /// Everybody's collections, the popular among recent ones first.
     Collections,
-    /// The account's own collections, then those it favourited.
+    /// The account's own collections and those it favourited.
     MyCollections,
     /// Nothing to fetch — the destination is not a grid of releases.
     None,
@@ -160,10 +160,10 @@ fn query_for(destination: Destination, tab: usize) -> Query {
             Query::Catalogue(Box::new(Filter::sorted_by(FilterSort::LastUpdate)))
         }
         (Destination::Home, 1) => Query::Catalogue(Box::new(
-            Filter::sorted_by(FilterSort::Popularity).status(AIRING),
+            Filter::sorted_by(FilterSort::LastUpdate).status(AIRING),
         )),
         (Destination::Home, 2) => Query::Catalogue(Box::new(
-            Filter::sorted_by(FilterSort::Popularity).status(FINISHED),
+            Filter::sorted_by(FilterSort::LastUpdate).status(FINISHED),
         )),
         (Destination::Home, TAB_INTERESTING) => Query::Interesting,
         (Destination::Home, TAB_RECOMMENDED) => Query::Recommended,
@@ -178,10 +178,10 @@ fn query_for(destination: Destination, tab: usize) -> Query {
             Query::Catalogue(Box::new(Filter::sorted_by(FilterSort::Rating)))
         }
         (Destination::Browse, 2) => Query::Catalogue(Box::new(
-            Filter::sorted_by(FilterSort::Popularity).category(FILM),
+            Filter::sorted_by(FilterSort::LastUpdate).category(FILM),
         )),
         (Destination::Browse, 3) => Query::Catalogue(Box::new(
-            Filter::sorted_by(FilterSort::Year).status(ANNOUNCED),
+            Filter::sorted_by(FilterSort::LastUpdate).status(ANNOUNCED),
         )),
         (Destination::Browse, _) => Query::Collections,
 
@@ -402,7 +402,7 @@ async fn fetch(
                 collections(api.collections(page, CollectionSort::Trending).await?)
             }
             Query::MyCollections => {
-                // The account's own, then those it favourited, page by page.
+                // The two endpoints are paged separately.
                 let mine = api.profile_collections(me, page).await?;
                 let favourites = api.favorite_collections(page).await.unwrap_or_default();
                 let more = has_more(&mine) || has_more(&favourites);
@@ -503,19 +503,27 @@ fn load(
             }
         };
         match found {
-            Found::Releases(releases, people, channels) => {
+            Found::Releases(mut releases, people, channels) => {
+                let by_update = matches!(&next, Source::Tab(Query::List(_) | Query::Favourites));
                 if page == 0 {
+                    if by_update {
+                        releases.sort_by_key(|release| std::cmp::Reverse(release_updated(release)));
+                    }
                     show_found(&window, &state, people, channels, &http);
                     show(&window, &state, releases, generation, http);
                 } else {
-                    append_releases(&state, releases, generation, &http);
+                    append_releases(&state, releases, generation, &http, by_update);
                 }
             }
-            Found::Collections(found) => {
+            Found::Collections(mut found) => {
+                let by_update = matches!(&next, Source::Tab(_));
                 if page == 0 {
+                    if by_update {
+                        sort_collections(&mut found);
+                    }
                     show_collections(&window, &state, found, generation, http);
                 } else {
-                    append_collections(&state, found, generation, &http);
+                    append_collections(&state, found, generation, &http, by_update);
                 }
             }
         }
@@ -547,31 +555,45 @@ pub fn load_more(
     load(window, state, client, http, source, page, generation);
 }
 
+pub(crate) fn release_updated(release: &Release) -> i64 {
+    release.last_update_date.max(release.creation_date)
+}
+
+fn collection_updated(collection: &Collection) -> i64 {
+    collection.last_update_date.max(collection.creation_date)
+}
+
+pub(crate) fn sort_collections(collections: &mut [Collection]) {
+    collections.sort_by_key(|collection| std::cmp::Reverse(collection_updated(collection)));
+}
+
 fn append_releases(
     state: &Rc<RefCell<HomeState>>,
     releases: Vec<Release>,
     generation: u64,
     http: &reqwest::Client,
+    by_update: bool,
 ) {
     let Some(model) = state.borrow().cards.clone() else {
         return;
     };
-    let start = model.row_count();
-    // A release already on screen is not shown twice when pages overlap.
-    let fresh: Vec<Release> = {
-        let state = state.borrow();
-        releases
-            .into_iter()
-            .filter(|r| state.releases.iter().all(|seen| seen.id != r.id))
-            .collect()
-    };
-    for release in &fresh {
-        model.push(card_for(release));
-    }
-    let posters: Vec<String> = fresh.iter().map(Release::poster_url).collect();
-    state.borrow_mut().releases.extend(fresh);
-    for (offset, url) in posters.into_iter().enumerate() {
-        load_poster(state, &model, start + offset, generation, http.clone(), url);
+    for release in releases {
+        let (id, poster) = (release.id, release.poster_url());
+        let mut current = state.borrow_mut();
+        let seen = &mut current.releases;
+        if seen.iter().any(|existing| existing.id == id) {
+            continue;
+        }
+        let at = if by_update {
+            seen.partition_point(|existing| release_updated(existing) >= release_updated(&release))
+        } else {
+            seen.len()
+        };
+        let card = card_for(&release);
+        seen.insert(at, release);
+        drop(current);
+        model.insert(at, card);
+        load_poster(state, &model, id, generation, http.clone(), poster);
     }
 }
 
@@ -580,25 +602,30 @@ fn append_collections(
     found: Vec<Collection>,
     generation: u64,
     http: &reqwest::Client,
+    by_update: bool,
 ) {
     let Some(model) = state.borrow().cards.clone() else {
         return;
     };
-    let start = model.row_count();
-    let fresh: Vec<Collection> = {
-        let state = state.borrow();
-        found
-            .into_iter()
-            .filter(|c| state.collections.iter().all(|seen| seen.id != c.id))
-            .collect()
-    };
-    for collection in &fresh {
-        model.push(collection_card(collection));
-    }
-    let images: Vec<String> = fresh.iter().map(|c| c.image.clone()).collect();
-    state.borrow_mut().collections.extend(fresh);
-    for (offset, url) in images.into_iter().enumerate() {
-        load_poster(state, &model, start + offset, generation, http.clone(), url);
+    for collection in found {
+        let (id, image) = (collection.id, collection.image.clone());
+        let mut current = state.borrow_mut();
+        let seen = &mut current.collections;
+        if seen.iter().any(|existing| existing.id == id) {
+            continue;
+        }
+        let at = if by_update {
+            seen.partition_point(|entry| {
+                collection_updated(entry) >= collection_updated(&collection)
+            })
+        } else {
+            seen.len()
+        };
+        let card = collection_card(&collection);
+        seen.insert(at, collection);
+        drop(current);
+        model.insert(at, card);
+        load_poster(state, &model, id, generation, http.clone(), image);
     }
 }
 
@@ -863,7 +890,10 @@ pub(crate) fn show(
     window.set_results(slint::ModelRc::from(Rc::clone(&model)));
     window.set_results_loading(false);
 
-    let posters: Vec<String> = releases.iter().map(Release::poster_url).collect();
+    let posters: Vec<_> = releases
+        .iter()
+        .map(|release| (release.id, release.poster_url()))
+        .collect();
     {
         let mut state = state.borrow_mut();
         state.releases = releases;
@@ -871,8 +901,8 @@ pub(crate) fn show(
         state.cards = Some(Rc::clone(&model));
     }
 
-    for (index, url) in posters.into_iter().enumerate() {
-        load_poster(state, &model, index, generation, http.clone(), url);
+    for (id, url) in posters {
+        load_poster(state, &model, id, generation, http.clone(), url);
     }
 }
 
@@ -880,7 +910,7 @@ pub(crate) fn show(
 fn load_poster(
     state: &Rc<RefCell<HomeState>>,
     model: &Rc<VecModel<ReleaseCard>>,
-    index: usize,
+    id: i64,
     generation: u64,
     http: reqwest::Client,
     url: String,
@@ -899,9 +929,24 @@ fn load_poster(
             return;
         }
         let Ok(buffer) = result else {
-            tracing::debug!(index, "poster not loaded");
+            tracing::debug!(id, "poster not loaded");
             return;
         };
+        // Newly fetched pages can insert cards above this one.
+        let index = {
+            let state = state.borrow();
+            state
+                .releases
+                .iter()
+                .position(|release| release.id == id)
+                .or_else(|| {
+                    state
+                        .collections
+                        .iter()
+                        .position(|collection| collection.id == id)
+                })
+        };
+        let Some(index) = index else { return };
         let Some(mut card) = model.row_data(index) else {
             return;
         };
@@ -924,15 +969,18 @@ fn show_collections(
     window.set_results(slint::ModelRc::from(Rc::clone(&model)));
     window.set_results_loading(false);
 
-    let images: Vec<String> = collections.iter().map(|c| c.image.clone()).collect();
+    let images: Vec<_> = collections
+        .iter()
+        .map(|c| (c.id, c.image.clone()))
+        .collect();
     {
         let mut state = state.borrow_mut();
         state.releases.clear();
         state.collections = collections;
         state.cards = Some(Rc::clone(&model));
     }
-    for (index, url) in images.into_iter().enumerate() {
-        load_poster(state, &model, index, generation, http.clone(), url);
+    for (id, url) in images {
+        load_poster(state, &model, id, generation, http.clone(), url);
     }
 }
 
@@ -1006,6 +1054,38 @@ mod tests {
             episodes_total: total,
             ..Release::default()
         }
+    }
+
+    #[test]
+    fn a_new_page_inserts_recent_releases_without_mismatching_cards() {
+        let dated = |id, last_update_date| Release {
+            id,
+            last_update_date,
+            ..release(&format!("{id}"), 0, 0)
+        };
+        let initial = vec![dated(30, 30), dated(10, 10)];
+        let cards = Rc::new(VecModel::from(
+            initial.iter().map(card_for).collect::<Vec<_>>(),
+        ));
+        let state = Rc::new(RefCell::new(HomeState {
+            releases: initial,
+            cards: Some(Rc::clone(&cards)),
+            ..HomeState::default()
+        }));
+
+        append_releases(
+            &state,
+            vec![dated(20, 20), dated(40, 40), dated(30, 30)],
+            0,
+            &reqwest::Client::new(),
+            true,
+        );
+
+        for (row, id) in [40, 30, 20, 10].into_iter().enumerate() {
+            assert_eq!(state.borrow().release_at(row).unwrap().id, id);
+            assert_eq!(cards.row_data(row).unwrap().subtitle, format!("{id}"));
+        }
+        assert_eq!(cards.row_count(), 4);
     }
 
     #[test]

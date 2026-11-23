@@ -17,6 +17,7 @@
 
 use std::path::PathBuf;
 
+use anirust_player::enhance::Profile;
 use serde::{Deserialize, Serialize};
 
 /// How the application should look.
@@ -154,17 +155,24 @@ pub struct Preferences {
     pub translucent: bool,
     /// Asking GitHub for a newer release on start and once a day.
     pub check_updates: bool,
+    /// Telling Discord what is playing. Off, nothing is sent at all.
+    pub discord_presence: bool,
     pub player: PlayerPreferences,
     /// The machine test has been offered — taken, applied or turned down —
     /// so the next start does not offer it again.
     pub machine_tested: bool,
-    pub enhance_profile: usize,
+    /// Stable on-disk IDs, not positions in the profile picker.
+    enhance_profile: usize,
     /// The interface's size, as a place in [`UI_SCALES`].
     pub ui_scale: usize,
 }
 
 /// The interface's sizes, S to XL, as multiples of the screen's own scale.
 pub const UI_SCALES: [f32; 4] = [0.85, 1.0, 1.25, 1.5];
+
+pub fn ui_scale_factor(index: usize) -> f32 {
+    UI_SCALES[index.min(UI_SCALES.len() - 1)]
+}
 
 impl Default for Preferences {
     fn default() -> Self {
@@ -174,11 +182,35 @@ impl Default for Preferences {
             accent: Accent::default(),
             translucent: false,
             check_updates: true,
+            // A media client that hides what it is playing is the surprising
+            // choice; it is a switch because watching anime is not something
+            // everybody wants every friend to see.
+            discord_presence: true,
             player: PlayerPreferences::default(),
             machine_tested: false,
             enhance_profile: 2,
             ui_scale: 1,
         }
+    }
+}
+
+impl Preferences {
+    pub fn enhancement_profile(self) -> Profile {
+        match self.enhance_profile {
+            // Economy and Ultra used the light RIFE model; Balanced and High
+            // used the full model.
+            0 | 4 => Profile::Standard,
+            3 => Profile::Maximum,
+            _ => Profile::High,
+        }
+    }
+
+    pub fn set_enhancement_profile(&mut self, profile: Profile) {
+        self.enhance_profile = match profile {
+            Profile::Standard => 0,
+            Profile::High => 2,
+            Profile::Maximum => 3,
+        };
     }
 }
 
@@ -338,6 +370,7 @@ mod tests {
     fn preferences_survive_a_round_trip_through_the_file() {
         let written = serde_json::to_string(&Preferences {
             appearance: Appearance::Amoled,
+            ui_scale: 3,
             ..Preferences::default()
         })
         .expect("preferences serialise");
@@ -345,6 +378,7 @@ mod tests {
 
         let read: Preferences = serde_json::from_str(&written).expect("preferences parse");
         assert_eq!(read.appearance, Appearance::Amoled);
+        assert_eq!(ui_scale_factor(read.ui_scale), 1.5);
     }
 
     #[test]
@@ -354,6 +388,33 @@ mod tests {
         assert!(read.check_updates);
         let read: Preferences = serde_json::from_str(r#"{"check_updates":false}"#).unwrap();
         assert!(!read.check_updates);
+    }
+
+    #[test]
+    fn discord_presence_is_on_unless_switched_off() {
+        assert!(Preferences::default().discord_presence);
+        let read: Preferences = serde_json::from_str(r#"{"discord_presence":false}"#).unwrap();
+        assert!(!read.discord_presence);
+    }
+
+    #[test]
+    fn old_enhancement_profile_ids_still_select_a_quality() {
+        for (id, profile) in [
+            (0, Profile::Standard),
+            (1, Profile::High),
+            (2, Profile::High),
+            (3, Profile::Maximum),
+            (4, Profile::Standard),
+            (99, Profile::High),
+        ] {
+            let mut prefs: Preferences =
+                serde_json::from_str(&format!(r#"{{"enhance_profile":{id}}}"#)).unwrap();
+            assert_eq!(prefs.enhancement_profile(), profile);
+            prefs.set_enhancement_profile(profile);
+            let written = serde_json::to_string(&prefs).unwrap();
+            let read: Preferences = serde_json::from_str(&written).unwrap();
+            assert_eq!(read.enhancement_profile(), profile);
+        }
     }
 
     #[test]

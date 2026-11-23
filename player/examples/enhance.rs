@@ -56,6 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Encoder::Nvenc
             },
             profile: enhance::Profile::High,
+            stream_limit: None,
             upscaler: anirust_player::frames::Upscaler::RealEsrgan,
             scratch: &scratch,
             display_fps: None,

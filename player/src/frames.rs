@@ -475,7 +475,7 @@ impl Mlrt {
 
     /// The script lines that load the runtime and the plugin, import
     /// vsmlrt and set `backend` up.
-    fn setup(&self, streams: Option<u8>) -> String {
+    fn setup(&self, streams: Option<usize>) -> String {
         let common = format!(
             "    mlrt = {mlrt}
     runtime = {runtime}
@@ -681,7 +681,7 @@ pub fn script_with(
 }
 
 pub(crate) struct OfflineScript<'a> {
-    pub streams: u8,
+    pub streams: usize,
     pub target_height: Option<u32>,
     pub rate_file: &'a Path,
 }

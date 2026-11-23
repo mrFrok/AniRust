@@ -129,3 +129,53 @@ pub fn refresh_rate(window: &slint::Window) -> Option<f64> {
         .map(|millihertz| f64::from(millihertz) / 1000.0)
         .filter(|fps| *fps > 1.0)
 }
+
+/// Applies the saved multiplier once the native window has its DPI. A native
+/// DPI change can overwrite the Slint factor, so apply it again before drawing.
+pub fn watch_ui_scale(window: &slint::Window, multiplier: impl Fn() -> f32 + 'static) {
+    use slint::winit_030::{EventResult, WinitWindowAccessor, winit::event::WindowEvent};
+
+    let mut pending = true;
+    window.on_winit_window_event(move |window, event| {
+        match event {
+            WindowEvent::ScaleFactorChanged { .. } => {
+                pending = true;
+                window.with_winit_window(|native| native.request_redraw());
+            }
+            WindowEvent::RedrawRequested if pending => {
+                pending = false;
+                apply_ui_scale(window, multiplier());
+            }
+            _ => {}
+        }
+        EventResult::Propagate
+    });
+}
+
+pub fn apply_ui_scale(window: &slint::Window, multiplier: f32) {
+    use slint::platform::WindowEvent;
+    use slint::winit_030::WinitWindowAccessor;
+
+    let Some(native_scale) = window.with_winit_window(|native| native.scale_factor() as f32) else {
+        return;
+    };
+    let base = std::env::var("SLINT_SCALE_FACTOR")
+        .ok()
+        .and_then(|value| value.parse::<f32>().ok())
+        .filter(|scale| scale.is_finite() && *scale > 0.0)
+        .unwrap_or(native_scale);
+    let scale_factor = base * multiplier;
+    if window.scale_factor() == scale_factor {
+        return;
+    }
+    window.dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor });
+    // The backing surface keeps its physical size. Recalculate the logical
+    // viewport so both drawing and input agree at the new scale.
+    let size = window.size();
+    if size.width > 0 && size.height > 0 {
+        window.dispatch_event(WindowEvent::Resized {
+            size: size.to_logical(scale_factor),
+        });
+    }
+    tracing::debug!(scale_factor, multiplier, "applied interface scale");
+}

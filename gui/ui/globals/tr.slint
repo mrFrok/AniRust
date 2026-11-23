@@ -21,6 +21,8 @@ export global Tr {
     out property <string> pause: lang == "ru" ? "Пауза" : "Pause";
     out property <string> back-10: lang == "ru" ? "Назад 10 с" : "Back 10s";
     out property <string> forward-10: lang == "ru" ? "Вперёд 10 с" : "Forward 10s";
+    out property <string> seek-forward-opening: lang == "ru"
+        ? "Вперёд на 1 минуту 25 секунд" : "Forward 1 minute 25 seconds";
     out property <string> skip-opening: lang == "ru" ? "Пропустить опенинг" : "Skip opening";
     out property <string> next-episode: lang == "ru" ? "Следующая серия" : "Next episode";
 
@@ -107,14 +109,20 @@ export global Tr {
     out property <string> enhance-resize-hint: lang == "ru"
         ? "Для 2K и 4K возможно обычное масштабирование"
         : "2K and 4K may use standard scaling";
-    out property <string> processing-profile: lang == "ru" ? "Качество обработки" : "Processing quality";
+    out property <string> enhance-quality: lang == "ru" ? "Качество улучшения" : "Enhancement quality";
+    out property <string> enhance-quality-standard: lang == "ru" ? "Стандартное" : "Standard";
+    out property <string> enhance-quality-high: lang == "ru" ? "Высокое" : "High";
+    out property <string> enhance-quality-maximum: lang == "ru" ? "Максимум" : "Maximum";
     out property <string> enhance-unchanged: lang == "ru" ? "Разрешение не изменилось · сохранён оригинал" : "Resolution unchanged · original kept";
-    out property <string> economy: lang == "ru" ? "Экономное" : "Economy";
-    out property <string> balanced: lang == "ru" ? "Сбалансированное" : "Balanced";
-    out property <string> profile-economy: lang == "ru" ? "Меньше нагрузка · 1 поток" : "Low load · 1 stream";
-    out property <string> profile-balanced: lang == "ru" ? "Умеренная нагрузка · 2 потока" : "Moderate load · 2 streams";
-    out property <string> profile-high: lang == "ru" ? "6 потоков · по умолчанию" : "6 streams · default";
-    out property <string> profile-maximum: lang == "ru" ? "Высокая нагрузка · 8 потоков" : "High load · 8 streams";
+    out property <string> profile-standard: lang == "ru"
+        ? "Лёгкие модели и более компактный файл"
+        : "Lighter models and a more compact file";
+    out property <string> profile-high: lang == "ru"
+        ? "Более точные модели масштабирования и генерации кадров"
+        : "Higher-quality upscaling and frame generation models";
+    out property <string> profile-maximum: lang == "ru"
+        ? "Те же точные модели, меньше потерь при сжатии и больший файл"
+        : "Same higher-quality models, less compression loss and a larger file";
     out property <string> enhance-as-is: lang == "ru" ? "Как есть" : "As is";
     out property <string> enhance-double-size: lang == "ru" ? "×2 · Авто" : "×2 · Auto";
     out property <string> enhance-start: lang == "ru" ? "Начать" : "Start";
@@ -484,6 +492,14 @@ export global Tr {
     out property <string> remember-player-why: lang == "ru"
         ? "Скорость, громкость, апскейл, интерполяция и декодер останутся такими же при следующем запуске"
         : "Speed, volume, upscaling, interpolation and the decoder stay as they were at the next start";
+    out property <string> discord: "Discord";
+    out property <string> discord-why: lang == "ru"
+        ? "Что видят друзья, пока идёт серия: название, номер серии и оставшееся время"
+        : "What friends see while an episode plays: the title, the episode number and the time left";
+    out property <string> discord-presence: lang == "ru" ? "Статус в Discord" : "Discord Rich Presence";
+    out property <string> discord-presence-why: lang == "ru"
+        ? "Друзья увидят название, серию и время просмотра. Данные идут только в запущенный Discord."
+        : "Friends see the title, the episode and the time left. The data goes only to a running Discord.";
     out property <string> translucent-window: lang == "ru" ? "Прозрачность окна" : "Window transparency";
     out property <string> translucent-why: lang == "ru"
         ? "Размытие фона зависит от оконного менеджера"

@@ -81,7 +81,11 @@ pub fn open(cx: &Context<'_>, collection: Collection) {
                 state.borrow_mut().open = Some(view.collection);
             }
             match releases {
-                Ok(page) => home::show(&window, &home, page.content, generation, http),
+                Ok(mut page) => {
+                    page.content
+                        .sort_by_key(|release| std::cmp::Reverse(home::release_updated(release)));
+                    home::show(&window, &home, page.content, generation, http);
+                }
                 Err(error) => {
                     tracing::warn!(%error, id, "the collection's releases were not loaded");
                     window.set_results_loading(false);
@@ -403,10 +407,11 @@ pub fn pick_for(cx: &Context<'_>, release_id: i64) {
         move |result| {
             let Some(window) = weak.upgrade() else { return };
             window.set_my_collections_loading(false);
-            let mine = result.map(|page| page.content).unwrap_or_else(|error| {
+            let mut mine = result.map(|page| page.content).unwrap_or_else(|error| {
                 tracing::warn!(%error, "the account's collections were not loaded");
                 Vec::new()
             });
+            home::sort_collections(&mut mine);
             let titles: Vec<slint::SharedString> =
                 mine.iter().map(|c| c.title.as_str().into()).collect();
             window.set_my_collection_titles(slint::ModelRc::new(VecModel::from(titles)));

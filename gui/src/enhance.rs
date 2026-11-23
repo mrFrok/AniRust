@@ -13,17 +13,19 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use anirust_player::enhance::{self, Encoder, Progress};
+use anirust_player::enhance::{self, Encoder, Profile, Progress};
+use anirust_player::frames::{Upscaler, light_upscale};
 use anirust_player::{
-    Backend, Enhancement, FrameGeneration, Mlrt, Networks, RifeInstall, RifeModel, TargetRate,
+    Backend, Enhancement, FrameGeneration, Mlrt, Networks, RifeInstall, TargetRate,
 };
 
 use crate::gpus;
-use anirust_player::enhance::Profile;
-use anirust_player::frames::{Upscaler, light_upscale};
 
 /// The flag the program is started with to run one job.
 pub const FLAG: &str = "--enhance";
+
+const MODEL_FAILED: i32 = 42;
+const RETRY_CONCURRENCY: i32 = 43;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Resolution {
@@ -138,12 +140,24 @@ fn run_to(
     let Ok(exe) = std::env::current_exe() else {
         return Outcome::Failed("no path to the program".into());
     };
-    let models: &[&str] = if choice.resolution != Resolution::Original {
-        &["esrgan", "light", "off"]
-    } else {
-        &["off"]
+    let mlrt = backend(engine).and_then(Mlrt::for_offline);
+    let models: &[&str] = match (choice.resolution, choice.profile, mlrt.is_some()) {
+        (Resolution::Original, _, _) | (_, _, false) => &["off"],
+        (_, Profile::Standard, true) => &["light", "esrgan", "off"],
+        (_, Profile::High | Profile::Maximum, true) => &["esrgan", "light", "off"],
     };
-    for &model in models {
+    let cpus = std::thread::available_parallelism().map_or(1, |count| count.get());
+    let streams = mlrt.map_or(1, |mlrt| enhance::offline_streams(mlrt.backend));
+    let mut attempts = models
+        .iter()
+        .flat_map(|&model| {
+            std::iter::once((model, None)).chain([2, 1].into_iter().filter_map(move |limit| {
+                ((model != "off" || choice.rate > 0) && (streams > limit || cpus > limit * 2))
+                    .then_some((model, Some(limit)))
+            }))
+        })
+        .peekable();
+    while let Some((model, limit)) = attempts.next() {
         if stop.load(Ordering::Relaxed) {
             return Outcome::Stopped;
         }
@@ -163,6 +177,7 @@ fn run_to(
             .arg(choice.display_millihz.to_string())
             .arg((choice.profile as usize).to_string())
             .arg(model)
+            .args(limit.map(|streams| streams.to_string()))
             .env("ANIRUST_SCRIPT_DIR", enhance::scratch_for(&name))
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
@@ -239,10 +254,25 @@ fn run_to(
         }
         let _ = std::fs::remove_file(&picture);
         let _ = std::fs::remove_file(&staged);
+        let retry_concurrency = status
+            .as_ref()
+            .is_ok_and(|status| matches!(status.code(), None | Some(RETRY_CONCURRENCY)));
+        if retry_concurrency
+            && let Some(&(next_model, Some(limit))) = attempts.peek()
+            && next_model == model
+        {
+            tracing::warn!(model, ?error, limit, "retrying at lower concurrency");
+            continue;
+        }
+        // A missing model cannot be fixed by allocating fewer streams.
+        while attempts
+            .next_if(|(next_model, _)| *next_model == model)
+            .is_some()
+        {}
         if model != "off"
-            && status
-                .as_ref()
-                .is_ok_and(|s| !s.success() && s.code() != Some(1))
+            && status.as_ref().is_ok_and(|status| {
+                matches!(status.code(), None | Some(MODEL_FAILED | RETRY_CONCURRENCY))
+            })
         {
             tracing::warn!(
                 model,
@@ -339,6 +369,7 @@ pub fn child_main(args: &[String]) {
         choice,
         engine,
         model,
+        rest.get(3).and_then(|streams| streams.parse().ok()),
     ) {
         println!("error {}", message.replace('\n', " "));
         std::process::exit(1);
@@ -351,6 +382,7 @@ fn child_job(
     choice: Choice,
     engine: usize,
     model: &str,
+    stream_limit: Option<usize>,
 ) -> Result<(), String> {
     let (target_height, try_upscaler) = if choice.resolution == Resolution::Original {
         (None, false)
@@ -383,7 +415,7 @@ fn child_job(
     } else {
         None
     };
-    // Nothing to hurry for: the cleaner network, on the full picture.
+    // Offline frame generation works on the full input picture.
     let enhancement = Enhancement {
         frames: match choice.rate {
             0 => None,
@@ -394,11 +426,7 @@ fn child_job(
                     4 if choice.display_millihz > 0 => TargetRate::Display,
                     _ => TargetRate::Sixty,
                 },
-                model: if choice.profile == Profile::Economy {
-                    RifeModel::Fast
-                } else {
-                    RifeModel::Quality
-                },
+                model: choice.profile.rife_model(),
                 max_height: 0,
             }),
         },
@@ -421,6 +449,7 @@ fn child_job(
                 encoder,
                 upscaler,
                 profile: choice.profile,
+                stream_limit,
                 scratch: &scratch,
                 display_fps: (choice.display_millihz > 0)
                     .then(|| f64::from(choice.display_millihz) / 1000.0),
@@ -469,8 +498,8 @@ fn child_job(
     match encode(upscaler) {
         Ok(Some(fps)) => println!("fps {fps}"),
         Ok(None) => {}
-        Err(error) if enhancement.upscale && matches!(error, anirust_player::Error::Filter(_)) => {
-            model_failed(&error.to_string());
+        Err(anirust_player::Error::Filter(message)) if !enhancement.is_empty() => {
+            job_failed(&message, RETRY_CONCURRENCY);
         }
         Err(error) => return Err(error.to_string()),
     }
@@ -478,8 +507,12 @@ fn child_job(
 }
 
 fn model_failed(error: &str) -> ! {
+    job_failed(error, MODEL_FAILED);
+}
+
+fn job_failed(error: &str, code: i32) -> ! {
     println!("error {}", error.replace('\n', " "));
-    std::process::exit(42);
+    std::process::exit(code);
 }
 
 #[cfg(test)]

@@ -21,6 +21,7 @@ mod channel_admin;
 mod collections;
 mod comments;
 mod desktop;
+mod discord;
 mod downloads;
 mod editor;
 mod enhance;
@@ -117,7 +118,8 @@ fn main() -> Result<()> {
     window.set_app_version(env!("CARGO_PKG_VERSION").into());
     window.on_open_link(|url| release::open_in_browser(&url));
     let prefs = Rc::new(Cell::new(preferences::Preferences::load()));
-    wire_preferences(&window, &prefs);
+    let presence = Rc::new(discord::Presence::start(prefs.get().discord_presence));
+    wire_preferences(&window, &prefs, &presence);
     bench::wire(&window, &prefs, recommended_engine(gpus::vendors()));
 
     let config = player_config();
@@ -165,6 +167,8 @@ fn main() -> Result<()> {
         playing: Rc::new(RefCell::new(None)),
         settings: Rc::new(Settings::from_preferences(prefs.get().player.in_force())),
         prefs: Rc::clone(&prefs),
+        presence,
+        now_playing: RefCell::new(None),
     });
 
     wire_home(&window, &app);
@@ -243,6 +247,28 @@ struct App {
     settings: Rc<Settings>,
     /// What is kept between runs, written whenever it changes.
     prefs: Rc<Cell<preferences::Preferences>>,
+    /// What Discord is told is playing.
+    presence: Rc<discord::Presence>,
+    /// The title and episode on screen, for the presence; none when nothing
+    /// was chosen, even if a stream is still being found or has failed.
+    now_playing: RefCell<Option<NowPlaying>>,
+}
+
+/// The episode the viewer asked for, as Discord names it.
+///
+/// Kept apart from the player because it is known before the stream resolves,
+/// and because mpv knows nothing of titles, voice-overs or release pages.
+struct NowPlaying {
+    title: String,
+    /// "Серия 5 · AniLibria", already in the interface's language.
+    line: String,
+    /// The release's page on Anixart, for the button.
+    url: Option<String>,
+    /// The release's cover, for Discord to draw in place of the app's icon.
+    poster: Option<String>,
+    /// What the service says an episode lasts, for a clock that exists before
+    /// mpv has read the file.
+    duration: Option<Duration>,
 }
 
 /// Bring-up knobs, so a picture problem can be bisected without a rebuild.
@@ -342,13 +368,19 @@ fn wire_account(window: &MainWindow, app: &Rc<App>) {
 /// the colours are drawn from, and once as its position in the row the profile
 /// screen offers, which is what that row lights up. Rust owns the order of
 /// that row, so the two cannot drift apart.
-fn wire_preferences(window: &MainWindow, held: &Rc<Cell<preferences::Preferences>>) {
+fn wire_preferences(
+    window: &MainWindow,
+    held: &Rc<Cell<preferences::Preferences>>,
+    presence: &Rc<discord::Presence>,
+) {
     let preferences = held.get();
     show_language(window, preferences.language);
     show_appearance(window, preferences.appearance);
     show_accent(window, preferences.accent);
     window.set_translucent(preferences.translucent);
     window.set_remember_player(preferences.player.remember);
+    window.set_discord_available(presence.configured());
+    window.set_discord_presence(preferences.discord_presence);
 
     window.on_select_language({
         let held = Rc::clone(held);
@@ -362,32 +394,11 @@ fn wire_preferences(window: &MainWindow, held: &Rc<Cell<preferences::Preferences
             preferences.save();
         }
     });
-    // The interface's size: the screen's own scale times the one chosen.
-    // The screen's is read once the window is up, before anything is
-    // changed, and every choice is made from it.
     window.set_ui_scale_choice(preferences.ui_scale.min(preferences::UI_SCALES.len() - 1) as i32);
-    let screen_scale = Rc::new(Cell::new(0.0f32));
-    let rescale = {
-        let screen_scale = Rc::clone(&screen_scale);
-        let weak = window.as_weak();
-        move |index: usize| {
-            let Some(window) = weak.upgrade() else { return };
-            if screen_scale.get() <= 0.0 {
-                screen_scale.set(window.window().scale_factor());
-            }
-            let chosen = preferences::UI_SCALES[index.min(preferences::UI_SCALES.len() - 1)];
-            window
-                .window()
-                .dispatch_event(slint::platform::WindowEvent::ScaleFactorChanged {
-                    scale_factor: screen_scale.get() * chosen,
-                });
-        }
-    };
-    if preferences.ui_scale != 1 {
-        let rescale = rescale.clone();
-        let index = preferences.ui_scale;
-        slint::Timer::single_shot(std::time::Duration::ZERO, move || rescale(index));
-    }
+    desktop::watch_ui_scale(window.window(), {
+        let held = Rc::clone(held);
+        move || preferences::ui_scale_factor(held.get().ui_scale)
+    });
     window.on_select_ui_scale({
         let held = Rc::clone(held);
         let weak = window.as_weak();
@@ -397,9 +408,9 @@ fn wire_preferences(window: &MainWindow, held: &Rc<Cell<preferences::Preferences
             let mut preferences = held.get();
             preferences.ui_scale = index;
             held.set(preferences);
-            window.set_ui_scale_choice(index as i32);
-            rescale(index);
             preferences.save();
+            window.set_ui_scale_choice(index as i32);
+            desktop::apply_ui_scale(window.window(), preferences::ui_scale_factor(index));
         }
     });
 
@@ -438,6 +449,21 @@ fn wire_preferences(window: &MainWindow, held: &Rc<Cell<preferences::Preferences
             preferences.player.remember = on;
             held.set(preferences);
             window.set_remember_player(on);
+            preferences.save();
+        }
+    });
+
+    window.on_set_discord_presence({
+        let held = Rc::clone(&held);
+        let presence = Rc::clone(presence);
+        let weak = window.as_weak();
+        move |on| {
+            let Some(window) = weak.upgrade() else { return };
+            let mut preferences = held.get();
+            preferences.discord_presence = on;
+            held.set(preferences);
+            window.set_discord_presence(on);
+            presence.set_enabled(on);
             preferences.save();
         }
     });
@@ -1507,7 +1533,12 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
         let weak = weak.clone();
         move |index| {
             let Some(window) = weak.upgrade() else { return };
-            let Some((path, title, episode)) = usize::try_from(index)
+            let Some(downloads::SavedPlayback {
+                path,
+                title,
+                episode,
+                poster,
+            }) = usize::try_from(index)
                 .ok()
                 .and_then(|index| downloads::saved_episode(&app.queue, index))
             else {
@@ -1545,6 +1576,20 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
             window.set_hint("".into());
             window.set_qualities(slint::ModelRc::default());
             window.set_player_sheet("".into());
+            *app.now_playing.borrow_mut() = Some(NowPlaying {
+                title: title.clone(),
+                line: format!(
+                    "{} {episode}",
+                    if window.get_lang() == "ru" {
+                        "Серия"
+                    } else {
+                        "Episode"
+                    }
+                ),
+                url: None,
+                poster,
+                duration: None,
+            });
             window.set_episode_label(episode.into());
             window.set_local_playback_title(title.into());
             window.set_state("loading".into());
@@ -1552,22 +1597,23 @@ fn wire_home(window: &MainWindow, app: &Rc<App>) {
             window.set_screen("local-playback".into());
         }
     });
-    window.set_enhance_profile(app.prefs.get().enhance_profile.min(3) as i32);
+    let profiles = anirust_player::enhance::Profile::ALL;
+    window.set_enhance_profile(app.prefs.get().enhancement_profile() as i32);
     window.on_enhance_download({
         let app = Rc::clone(app);
         let weak = weak.clone();
         move |index, resolution, rate, profile| {
             let Some(window) = weak.upgrade() else { return };
-            let profile = profile.clamp(0, 3) as usize;
+            let profile = profiles[(profile.max(0) as usize).min(profiles.len() - 1)];
             let mut prefs = app.prefs.get();
-            if prefs.enhance_profile != profile {
-                prefs.enhance_profile = profile;
+            if prefs.enhancement_profile() != profile {
+                prefs.set_enhancement_profile(profile);
                 app.prefs.set(prefs);
                 prefs.save();
             }
             window.set_enhance_profile(profile as i32);
             let choice = enhance::Choice {
-                profile: anirust_player::enhance::Profile::ALL[profile],
+                profile,
                 resolution: enhance::Resolution::ALL[resolution.clamp(0, 3) as usize],
                 rate: rate.clamp(0, 4) as usize,
                 display_millihz: desktop::refresh_rate(window.window())
@@ -1872,6 +1918,7 @@ fn wire_release(window: &MainWindow, app: &Rc<App>) {
                         .as_ref()
                         .map(|r| r.title().to_owned())
                         .unwrap_or_default(),
+                    poster: state.release.as_ref().and_then(release_poster),
                     position,
                     dubber: state
                         .selected_dubber()
@@ -2095,7 +2142,7 @@ fn play(window: &MainWindow, app: &Rc<App>, position: i32) {
 /// for stretches at a time and carries most of the catalogue — so giving up on
 /// the first failure would present a temporary outage as a broken client.
 fn play_at(window: &MainWindow, app: &Rc<App>, position: i32, resume: Option<Duration>) {
-    let (attempt, dubber, index) = {
+    let (attempt, dubber, index, title, release_id, duration, poster) = {
         let state = app.release.borrow();
         if state.episode_at(position).is_none() {
             tracing::warn!(position, "no such episode in this source");
@@ -2109,8 +2156,44 @@ fn play_at(window: &MainWindow, app: &Rc<App>, position: i32, resume: Option<Dur
             attempt,
             state.selected_dubber().map(|d| d.name.clone()),
             state.index_of(position).unwrap_or_default(),
+            state
+                .release
+                .as_ref()
+                .map(|release| release.title().to_owned())
+                .unwrap_or_default(),
+            state.release_id,
+            state.release.as_ref().and_then(|release| {
+                u64::try_from(release.duration)
+                    .ok()
+                    .filter(|minutes| *minutes > 0)
+                    .map(|minutes| Duration::from_secs(minutes * 60))
+            }),
+            state.release.as_ref().and_then(release_poster),
         )
     };
+
+    // Discord is told before the stream resolves, as the viewer already chose
+    // what to watch: a status that only appears ten seconds later reads as a
+    // click that did not work.
+    {
+        let russian = window.get_lang() == "ru";
+        let episode = if russian { "Серия" } else { "Episode" };
+        let line = match &dubber {
+            Some(name) => format!("{episode} {position} · {name}"),
+            None => format!("{episode} {position}"),
+        };
+        *app.now_playing.borrow_mut() = Some(NowPlaying {
+            title: if title.is_empty() {
+                "AniRust".to_owned()
+            } else {
+                title
+            },
+            line,
+            url: discord::release_url(release_id),
+            poster,
+            duration,
+        });
+    }
 
     window.set_current_episode(position);
     window.set_current_index(index as i32);
@@ -2926,12 +3009,16 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     });
 
     let current = Rc::clone(playing);
-    window.on_skip_opening(move || {
-        let ends_at = current
-            .borrow()
-            .as_ref()
-            .and_then(|stream| stream.opening)
-            .map(|range| Duration::from_secs(u64::from(range.end)));
+    window.on_skip_opening(move |fixed| {
+        let ends_at = if fixed {
+            None
+        } else {
+            current
+                .borrow()
+                .as_ref()
+                .and_then(|stream| stream.opening)
+                .map(|range| Duration::from_secs(u64::from(range.end)))
+        };
         player.later("skip the opening", move |player| {
             player.skip_opening(ends_at)
         });
@@ -3570,10 +3657,12 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     // nobody is looking at costs bandwidth for nothing.
     let current = Rc::clone(playing);
     let bridge = Rc::clone(bridge);
+    let app = Rc::clone(app);
     let weak = window.as_weak();
     window.on_close_player(move || {
         bridge.stop();
         current.borrow_mut().take();
+        app.now_playing.borrow_mut().take();
 
         let Some(window) = weak.upgrade() else { return };
         window.set_playing(false);
@@ -3720,8 +3809,65 @@ fn keep_up(
     show_hint(window, step.notice(window.get_lang() == "ru").to_owned());
 }
 
+/// Tells Discord what is on screen.
+///
+/// Called on every status tick, and left to the presence thread to drop what
+/// has not changed. The player's own duration wins over the service's: the
+/// file may carry an ending the catalogue does not know about, and a clock
+/// that stops before the credits is worse than one that runs a minute over.
+fn update_presence(window: &MainWindow, app: &App, status: Option<&anirust_player::Status>) {
+    let russian = window.get_lang() == "ru";
+    let now = app.now_playing.borrow();
+    let Some(now) = now.as_ref().filter(|_| window.get_playing()) else {
+        app.presence.show(discord::Activity::browsing(russian));
+        return;
+    };
+
+    let (position, duration, paused) = status.map_or((Duration::ZERO, None, false), |status| {
+        let position = status.position.unwrap_or_default();
+        // A stream still being found has no clock yet; the service's runtime
+        // starts it once mpv has something to read.
+        let duration =
+            status
+                .duration
+                .filter(|total| !total.is_zero())
+                .or(if position > Duration::ZERO {
+                    now.duration
+                } else {
+                    None
+                });
+        (position, duration, status.state == PlaybackState::Paused)
+    });
+
+    let show_poster = status.is_some_and(|status| {
+        status.loaded
+            && matches!(
+                status.state,
+                PlaybackState::Playing | PlaybackState::Paused | PlaybackState::Buffering
+            )
+    });
+    app.presence.show(
+        discord::Activity::watching(
+            &now.title,
+            &now.line,
+            now.url.as_deref(),
+            position,
+            duration,
+            paused,
+            russian,
+        )
+        .with_poster(now.poster.as_deref().filter(|_| show_poster)),
+    );
+}
+
+fn release_poster(release: &anirust_api::Release) -> Option<String> {
+    let poster = release.poster_url();
+    (!poster.is_empty()).then_some(poster)
+}
+
 fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
     let player = app.bridge.player();
+    let app = Rc::clone(app);
     let prefs = Rc::clone(&app.prefs);
     let weak = window.as_weak();
     let settings = Rc::clone(&app.settings);
@@ -3754,15 +3900,14 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             follow_display(&window, player, &settings);
 
             // With nothing loaded there is nothing to mirror, and asking mpv
-            // for properties it has no file for is pure waste.
-            if !window.get_playing() {
+            // for properties it has no file for is pure waste. Discord is
+            // still told the application is open, so the tick runs once more
+            // below before returning.
+            let status = window.get_playing().then(|| player.status());
+            update_presence(&window, &app, status.as_ref());
+            let Some(status) = status else {
                 return;
-            }
-
-            // One snapshot for the whole tick, read off this thread: mpv
-            // stands still for seconds while the neural filters load, and
-            // asking it directly here would stand the window still too.
-            let status = player.status();
+            };
             if window.get_screen() == "local-playback"
                 && !status.loaded
                 && status.load_failures != settings.local_load_failures.get()

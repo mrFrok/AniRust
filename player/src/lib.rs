@@ -591,7 +591,13 @@ impl Player {
             Some(end) if end > position => self.seek_to(end),
             // Already past a known opening: nothing to skip.
             Some(_) => Ok(()),
-            None => self.seek_by(DEFAULT_OPENING_SECS as f64),
+            None => {
+                self.mpv.command(
+                    "seek",
+                    &[&DEFAULT_OPENING_SECS.to_string(), "relative+exact"],
+                )?;
+                Ok(())
+            }
         }
     }
 

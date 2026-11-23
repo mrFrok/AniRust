@@ -366,6 +366,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_notify_switches(slint::ModelRc::new(slint::VecModel::from(vec![
             true, false, true, true, false, true, true, false, false,
         ])));
+        // The row is normally drawn only when an application ID is
+        // registered; a screenshot may as well show what it looks like.
+        ui.set_discord_available(true);
+        ui.set_discord_presence(true);
     }
     // The question before signing out.
     if state == "sign-out" {
@@ -735,7 +739,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // anything — scrolling to it needs a list that has been laid out.
     draw(&window);
     if state.starts_with("downloads-enhance") {
-        let position = LogicalPosition::new(width as f32 - 350.0, 99.0);
+        let window_width = width as f32;
+        let queue_width = (window_width - 104.0).min(1120.0);
+        let queue_right = (window_width + 104.0 + queue_width) / 2.0 - 24.0;
+        let position = LogicalPosition::new(queue_right - 300.0, 115.0);
         let button = slint::platform::PointerEventButton::Left;
         window.dispatch_event(WindowEvent::PointerPressed { position, button });
         window.dispatch_event(WindowEvent::PointerReleased { position, button });
@@ -767,11 +774,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 press(Key::Return);
                 press(Key::DownArrow);
                 press(Key::Return);
-                for _ in 0..6 {
+                for _ in 0..5 {
                     press(Key::Tab);
                 }
                 press(Key::Return);
-                assert_eq!(accept.get(), Some((0, 3, 3, 2)));
+                press(Key::Tab);
+                press(Key::Tab);
+                press(Key::Return);
+                assert_eq!(accept.get(), Some((0, 3, 3, 4)));
             }
             "downloads-enhance-mouse" => {
                 let position =
@@ -812,6 +822,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || state == "player-volume"
     {
         start_playing(&ui, state == "theatre");
+        if state == "playing" {
+            ui.set_has_video(true);
+        }
     }
     // The machine test: offered on the first start, running its second
     // step, and what it found.

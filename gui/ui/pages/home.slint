@@ -315,38 +315,37 @@ export component HomePage inherits Rectangle {
             // the genres, which come after it in the column.
             z: 1;
 
-            HorizontalLayout {
-                x: 0px;
-                width: parent.width;
-                padding-left: root.page-padding;
-                padding-right: root.page-padding;
+            if root.wide: Text {
+                x: root.page-padding;
+                width: search.x - self.x - Spacing.small;
+                height: 100%;
+                text: root.heading;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.headline-small-size;
+                font-weight: 600;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            search := SearchField {
+                // Take the navigation rail into account when centering the
+                // search in the window. On compact screens give it the free space.
+                property <length> center: (parent.width - Spacing.navigation-rail) / 2;
+                property <length> clearance: root.page-padding + Spacing.small;
+                width: root.wide
+                    ? min(560px, 2 * max(0px, min(self.center - self.clearance - 144px,
+                        actions.x - self.clearance - self.center)))
+                    : max(0px, actions.x - self.clearance);
+                x: root.wide ? self.center - self.width / 2 : root.page-padding;
+                placeholder: Tr.search-hint;
+                text <=> root.query;
+                searched(q) => { root.search(q); }
+            }
+
+            actions := HorizontalLayout {
+                x: parent.width - root.page-padding - self.width;
+                width: self.preferred-width;
                 spacing: Spacing.small;
-
-                if root.wide: Text {
-                    text: root.heading;
-                    color: MaterialPalette.on-surface;
-                    font-size: Typography.headline-small-size;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                }
-
-                // Pushes the search to the right on a wide window, where a
-                // field floating in the middle of the bar reads as a gap
-                // rather than as the one control the bar is for.
-                if root.wide: Rectangle { horizontal-stretch: 1; }
-
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    max-width: 560px;
-                    alignment: center;
-
-                    SearchField {
-                        width: 100%;
-                        placeholder: Tr.search-hint;
-                        text <=> root.query;
-                        searched(q) => { root.search(q); }
-                    }
-                }
 
                 // The bell, only with an account: notifications are the
                 // account's, and a bell that can never ring is a decoration.

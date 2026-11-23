@@ -162,6 +162,9 @@ export component SettingsPage inherits Rectangle {
     in property <int> accent: 0;
     in property <bool> translucent: false;
     in property <bool> remember-player: true;
+    /// Drawn only when this build has a Discord application to post under.
+    in property <bool> discord-available: false;
+    in property <bool> discord-presence: false;
     /// The updater: whether it checks, and what it is doing (see Tr.update-status).
     in property <bool> check-updates: true;
     in property <string> update-state;
@@ -176,6 +179,7 @@ export component SettingsPage inherits Rectangle {
     callback select-accent(int);
     callback set-translucent(bool);
     callback set-remember-player(bool);
+    callback set-discord-presence(bool);
     callback test-machine();
     callback set-check-updates(bool);
     callback check-for-updates();
@@ -283,6 +287,28 @@ export component SettingsPage inherits Rectangle {
                     if root.signed-in: TextButton {
                         text: Tr.sign-out;
                         clicked => { root.sign-out(); }
+                    }
+                }
+            }
+
+            // ---- Discord -----------------------------------------------
+            // A section of its own rather than a row among the player's
+            // switches: it is the only thing here that sends anything off the
+            // machine, and that is worth finding at a glance.
+            if root.discord-available: SectionHeading {
+                text: Tr.discord;
+                detail: Tr.discord-why;
+            }
+
+            if root.discord-available: Group {
+                VerticalLayout {
+                    alignment: start;
+
+                    ToggleRow {
+                        title: Tr.discord-presence;
+                        detail: Tr.discord-presence-why;
+                        on: root.discord-presence;
+                        flipped(on) => { root.set-discord-presence(on); }
                     }
                 }
             }

@@ -124,7 +124,7 @@ export component PlayerPage inherits Rectangle {
     callback set-volume(int);
     callback adjust-volume(int);
     callback toggle-muted();
-    callback skip-opening();
+    callback skip-opening(bool);
     callback previous-episode();
     callback next-episode();
     callback set-speed(float);
@@ -516,7 +516,14 @@ export component PlayerPage inherits Rectangle {
 
                 if root.has-skip: SettingChip {
                     label: Tr.skip-opening;
-                    clicked => { root.skip-opening(); }
+                    clicked => { root.skip-opening(false); }
+                }
+
+                if root.has-video: SettingChip {
+                    label: "+1:25";
+                    accessible-label: Tr.seek-forward-opening;
+                    accessible-checkable: false;
+                    clicked => { root.skip-opening(true); }
                 }
             }
 

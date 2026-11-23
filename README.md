@@ -66,6 +66,8 @@ Working:
   people, with the service's own reasons.
 - **Appearance** — light, dark, AMOLED, or whatever the desktop is set to,
   kept in the platform's config directory.
+- **Discord** — Rich Presence shows the title, episode, time left and poster
+  during playback. Turn it off under **Settings → Discord**.
 
 Not covered: SovetRomantica, whose host is unreachable from the network this
 was developed on, so its protocol could not be observed — and guessing it would
@@ -164,6 +166,16 @@ can be switched off.
 | R | repeat the episode |
 | P, Ctrl+P | screenshot with subtitles, without |
 | Z X, Shift+Z X | subtitle delay, audio delay |
+
+## Improving downloads
+
+In **Downloads → Improve**, choose the output resolution and frame rate
+separately from the quality. **Standard** prefers lighter models;
+**High** prefers Real-ESRGAN and the full RIFE model; **Maximum** uses the
+same models with less compression loss and a larger output. All three use
+the same parallelism and available hardware acceleration. If a neural pass
+fails, AniRust can retry with fewer streams or fall back to a different
+upscaler. The original file is kept.
 
 ## Installing
 
@@ -314,6 +326,18 @@ with `packaging/mlrt/prepare-models.py`, all into `target/mlrt`.
 `ANIRUST_MLRT_DIR` points the program at such a folder, and
 `ANIRUST_TRT_RTX_DIR`, `ANIRUST_OPENVINO_DIR` and `ROCM_PATH` at the vendors'
 runtimes.
+
+AniRust already has a Discord application ID. To use your own application in
+a development build, register it at <https://discord.com/developers/applications>.
+For the browsing image and the fallback when a poster is missing, upload a
+PNG of `packaging/icons/anirust.svg` as a Rich Presence asset named `anirust`.
+
+```sh
+ANIRUST_DISCORD_CLIENT_ID=123456789012345678 cargo run -p anirust-gui
+```
+
+Set `ANIRUST_DISCORD_CLIENT_ID` at build time to bake your ID into the binary,
+or use it at runtime to override the built-in ID.
 
 For frame generation in a development build, point the program at a libmpv
 with the filter and at the plugin:

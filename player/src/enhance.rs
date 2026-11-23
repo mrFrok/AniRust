@@ -17,32 +17,46 @@ use std::time::Duration;
 
 use libmpv2::Mpv;
 
-use crate::frames::{self, Enhancement, Networks};
+use crate::frames::{self, Backend, Enhancement, Networks, RifeModel};
 use crate::{Error, Result};
 
 /// The offline neural upscalers can double sources through 1080p.
 pub const NEURAL_MAX_HEIGHT: u32 = 1080;
 
-/// Offline processing presets, from minimum memory use to highest quality.
+/// Picture quality only. All levels use the same throughput settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Profile {
-    Economy,
-    Balanced,
+    Standard,
     High,
     Maximum,
 }
 
 impl Profile {
-    pub const ALL: [Self; 4] = [Self::Economy, Self::Balanced, Self::High, Self::Maximum];
+    pub const ALL: [Self; 3] = [Self::Standard, Self::High, Self::Maximum];
 
-    pub fn streams(self) -> u8 {
+    #[must_use]
+    pub fn rife_model(self) -> RifeModel {
         match self {
-            Self::Economy => 1,
-            Self::Balanced => 2,
-            Self::High => 6,
-            Self::Maximum => 8,
+            Self::Standard => RifeModel::Fast,
+            Self::High | Self::Maximum => RifeModel::Quality,
         }
     }
+}
+
+fn cpu_parallelism() -> usize {
+    std::thread::available_parallelism().map_or(1, |count| count.get())
+}
+
+/// GPU streams each allocate inference resources; they are not CPU threads.
+/// Use a backend-specific ceiling and let the caller retry at lower concurrency.
+#[must_use]
+pub fn offline_streams(backend: Backend) -> usize {
+    let ceiling = match backend {
+        Backend::TensorRt => 6,
+        Backend::OpenVino => 4,
+        Backend::MigraphX => 2,
+    };
+    cpu_parallelism().min(ceiling)
 }
 
 /// How the picture is written.
@@ -63,26 +77,19 @@ impl Encoder {
         }
     }
 
-    /// Quality-led settings: a constant quality near transparent, 10 bits so
-    /// the gradients anime is full of do not band.
+    /// Keep the encoder fast enough to feed from the filters; the quality
+    /// target, not the encoder's speed preset, changes with the profile.
     fn options(self, profile: Profile) -> String {
-        let (cq, crf, nvenc, cpu) = match profile {
-            Profile::Economy => (24, 23, "p3", "fast"),
-            Profile::Balanced => (21, 20, "p5", "medium"),
-            Profile::High => (19, 18, "p7", "slow"),
-            Profile::Maximum => (17, 16, "p7", "slow"),
+        let (cq, crf) = match profile {
+            Profile::Standard => (23, 22),
+            Profile::High => (19, 18),
+            Profile::Maximum => (16, 15),
         };
         match self {
             Self::Nvenc => {
-                let multipass = match profile {
-                    Profile::Economy | Profile::Balanced => "disabled",
-                    Profile::High | Profile::Maximum => "fullres",
-                };
-                format!(
-                    "preset={nvenc},tune=hq,rc=vbr,cq={cq},b=0,multipass={multipass},spatial-aq=1"
-                )
+                format!("preset=p4,tune=hq,rc=vbr,cq={cq},b=0,multipass=disabled,spatial-aq=1")
             }
-            Self::X265 => format!("crf={crf},preset={cpu}"),
+            Self::X265 => format!("crf={crf},preset=veryfast"),
         }
     }
 }
@@ -109,6 +116,8 @@ pub struct Job<'a> {
     pub target_height: Option<u32>,
     pub encoder: Encoder,
     pub profile: Profile,
+    /// Lower concurrency for a retry when the device could not run the first pass.
+    pub stream_limit: Option<usize>,
     pub upscaler: frames::Upscaler<'a>,
     /// A folder of the job's own for the script, so jobs and playback never
     /// share one.
@@ -173,7 +182,7 @@ pub fn picture(
         networks,
         enhancement,
         target_height,
-        profile,
+        stream_limit,
         upscaler,
         scratch,
         display_fps,
@@ -214,6 +223,13 @@ pub fn picture(
     let rate_file = scratch.join("enhance-rate.txt");
     let _ = std::fs::remove_file(&error_file);
     let _ = std::fs::remove_file(&rate_file);
+    let streams = match networks {
+        Some(Networks::Mlrt(mlrt)) => {
+            let maximum = offline_streams(mlrt.backend);
+            stream_limit.map_or(maximum, |limit| limit.clamp(1, maximum))
+        }
+        _ => 1, // Not used by the Vulkan or resize-only scripts.
+    };
     std::fs::write(
         &script,
         frames::script_with_options(
@@ -224,7 +240,7 @@ pub fn picture(
             upscaler,
             NEURAL_MAX_HEIGHT,
             Some(frames::OfflineScript {
-                streams: profile.streams(),
+                streams,
                 target_height,
                 rate_file: &rate_file,
             }),
@@ -232,11 +248,13 @@ pub fn picture(
     )
     .map_err(io)?;
 
-    let streams = profile.streams();
+    // Keep frames in flight even when RIFE can pass an original frame through
+    // without using a GPU stream. mpv multiplies this count by the buffer
+    // factor, so cap the request count instead of growing the queue on big CPUs.
+    let concurrent_frames = offline_frame_requests(cpu_parallelism(), stream_limit);
     let filter = format!(
-        "vapoursynth=file={}:buffered-frames={}:concurrent-frames={streams}",
+        "vapoursynth=file={}:buffered-frames=4:concurrent-frames={concurrent_frames}",
         frames::mpv_quoted(&script.to_string_lossy()),
-        (streams * 2).max(8)
     );
     encode_picture(job, &filter, Some(&error_file), cancel, &mut report)?;
     if let Some(height) = target_height
@@ -250,6 +268,13 @@ pub fn picture(
         .ok()
         .and_then(|rate| rate.parse().ok());
     Ok(rate)
+}
+
+fn offline_frame_requests(cpus: usize, stream_limit: Option<usize>) -> usize {
+    let requests = cpus.clamp(1, 16);
+    stream_limit
+        .map_or(requests, |limit| limit.clamp(1, 8) * 2)
+        .min(requests)
 }
 
 fn encode_picture(
@@ -271,9 +296,9 @@ fn encode_picture(
         init.set_property("config", false)?;
         init.set_property("terminal", false)?;
         init.set_property("input-default-bindings", false)?;
-        // Decoded on the CPU: the filters want the frames in memory anyway,
-        // and a file on disk is never short of time.
-        init.set_property("hwdec", "no")?;
+        // The filters take frames in system memory, so a hardware decoder
+        // needs to copy them back. mpv falls back when one is unavailable.
+        init.set_property("hwdec", "auto-copy")?;
         init.set_property("audio", "no")?;
         init.set_property("sid", "no")?;
         init.set_property("vf", filter)?;
@@ -341,4 +366,35 @@ fn encode_picture(
 #[must_use]
 pub fn scratch_for(name: &str) -> PathBuf {
     frames::work_dir().join("enhance").join(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encoder_speed_is_shared_but_quality_targets_are_not() {
+        for (profile, cq, crf) in [
+            (Profile::Standard, 23, 22),
+            (Profile::High, 19, 18),
+            (Profile::Maximum, 16, 15),
+        ] {
+            let gpu = Encoder::Nvenc.options(profile);
+            assert!(gpu.contains("preset=p4,"));
+            assert!(gpu.contains(&format!(",cq={cq},")));
+            assert_eq!(
+                Encoder::X265.options(profile),
+                format!("crf={crf},preset=veryfast")
+            );
+        }
+    }
+
+    #[test]
+    fn frame_queue_uses_the_machine_but_is_bounded_and_can_back_off() {
+        assert_eq!(offline_frame_requests(1, None), 1);
+        assert_eq!(offline_frame_requests(8, None), 8);
+        assert_eq!(offline_frame_requests(64, None), 16);
+        assert_eq!(offline_frame_requests(16, Some(2)), 4);
+        assert_eq!(offline_frame_requests(16, Some(1)), 2);
+    }
 }

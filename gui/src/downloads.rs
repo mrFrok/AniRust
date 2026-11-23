@@ -13,11 +13,13 @@
 
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
+use std::cmp::Reverse;
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::SystemTime;
 
 use slint::{ComponentHandle, VecModel};
 
@@ -31,6 +33,7 @@ use crate::{DownloadItem, MainWindow, tasks};
 #[derive(Clone)]
 pub struct Job {
     pub release: String,
+    pub poster: Option<String>,
     pub position: i32,
     pub dubber: String,
     /// The URL to resolve. Held rather than the resolved stream: a link is only
@@ -65,6 +68,7 @@ impl Status {
 struct Entry {
     job: Job,
     status: Status,
+    changed_at: Option<SystemTime>,
     fraction: f32,
     detail: String,
     /// The file it wrote, once done.
@@ -76,9 +80,18 @@ struct Entry {
     stop: Option<Arc<AtomicBool>>,
 }
 
+impl Entry {
+    fn change_status(&mut self, status: Status) {
+        self.status = status;
+        self.changed_at = Some(SystemTime::now());
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct SavedEpisode {
     release: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    poster: Option<String>,
     position: i32,
     dubber: String,
     path: PathBuf,
@@ -101,6 +114,7 @@ impl SavedEpisode {
         let (release, position) = stem.rsplit_once(" - ")?;
         Some(Self {
             release: release.into(),
+            poster: None,
             position: position.parse().ok()?,
             dubber: dubber.into(),
             path,
@@ -111,11 +125,15 @@ impl SavedEpisode {
         Entry {
             job: Job {
                 release: self.release,
+                poster: self.poster,
                 position: self.position,
                 dubber: self.dubber,
                 url: String::new(),
             },
             status: Status::Done,
+            changed_at: std::fs::metadata(&self.path)
+                .and_then(|metadata| metadata.modified())
+                .ok(),
             fraction: 1.0,
             detail: self.path.display().to_string(),
             path: Some(self.path),
@@ -191,6 +209,7 @@ impl Queue {
                 Some(SavedEpisode {
                     path: entry.path.clone()?,
                     release: entry.job.release.clone(),
+                    poster: entry.job.poster.clone(),
                     position: entry.job.position,
                     dubber: entry.job.dubber.clone(),
                 })
@@ -257,7 +276,7 @@ impl Queue {
         for entry in &mut self.entries {
             if entry.path.as_ref() == Some(&path) {
                 entry.path = None;
-                entry.status = Status::Removed;
+                entry.change_status(Status::Removed);
             }
         }
         self.save();
@@ -295,6 +314,7 @@ pub fn enqueue(
         queue.entries.push(Entry {
             job,
             status: Status::Queued,
+            changed_at: Some(SystemTime::now()),
             fraction: 0.0,
             detail: String::new(),
             path: None,
@@ -326,7 +346,7 @@ fn pump(
         };
         let directory = queue.directory();
         queue.running = true;
-        queue.entries[at].status = Status::Running;
+        queue.entries[at].change_status(Status::Running);
         (at, queue.entries[at].job.clone(), directory)
     };
 
@@ -406,7 +426,7 @@ fn pump(
                 let entry = &mut queue.entries[at];
                 match &result {
                     Ok(path) => {
-                        entry.status = Status::Done;
+                        entry.change_status(Status::Done);
                         entry.fraction = 1.0;
                         entry.detail = path.display().to_string();
                         entry.path = Some(path.clone());
@@ -414,7 +434,7 @@ fn pump(
                         queue.save();
                     }
                     Err(error) => {
-                        entry.status = Status::Failed;
+                        entry.change_status(Status::Failed);
                         entry.detail = error.clone();
                         tracing::warn!(%error, "download failed");
                     }
@@ -428,22 +448,30 @@ fn pump(
     );
 }
 
-/// The file and labels for a completed download or enhancement.
-pub fn saved_episode(queue: &RefCell<Queue>, index: usize) -> Option<(PathBuf, String, String)> {
+/// The file and metadata for a completed download or enhancement.
+pub struct SavedPlayback {
+    pub path: PathBuf,
+    pub title: String,
+    pub episode: String,
+    pub poster: Option<String>,
+}
+
+pub fn saved_episode(queue: &RefCell<Queue>, index: usize) -> Option<SavedPlayback> {
     let queue = queue.borrow();
     let entry = queue.entries.get(index)?;
     if entry.status != Status::Done {
         return None;
     }
-    Some((
-        entry.path.clone()?,
-        entry.job.release.clone(),
-        if entry.job.dubber.is_empty() {
+    Some(SavedPlayback {
+        path: entry.path.clone()?,
+        title: entry.job.release.clone(),
+        episode: if entry.job.dubber.is_empty() {
             entry.job.position.to_string()
         } else {
             format!("{} · {}", entry.job.position, entry.job.dubber)
         },
-    ))
+        poster: entry.job.poster.clone(),
+    })
 }
 
 pub fn remove_saved(
@@ -463,11 +491,17 @@ pub fn remove_saved(
 pub fn show(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
     let queue = queue.borrow();
     let enhancement_paths: HashSet<_> = queue.enhancement_paths().collect();
-    let items: Vec<DownloadItem> = queue
+    let mut visible: Vec<_> = queue
         .entries
         .iter()
         .enumerate()
         .filter(|(_, entry)| entry.status != Status::Removed)
+        .collect();
+    // The queue still runs in submission order. Each visible row carries the
+    // original index, so actions act on the same job after a status change.
+    visible.sort_unstable_by_key(|&(index, entry)| Reverse((entry.changed_at, index)));
+    let items: Vec<DownloadItem> = visible
+        .into_iter()
         .map(|(index, entry)| DownloadItem {
             index: index as i32,
             title: format!("{} — {}", entry.job.release, entry.job.position).into(),
@@ -568,6 +602,7 @@ pub fn enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>, index: usize, ch
         queue.entries.push(Entry {
             job,
             status: Status::Queued,
+            changed_at: Some(SystemTime::now()),
             fraction: 0.0,
             detail: String::new(),
             path: None,
@@ -596,7 +631,7 @@ pub fn stop_enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>, index: usiz
                 }
             }
             Status::Queued => {
-                entry.status = Status::Failed;
+                entry.change_status(Status::Failed);
                 entry.detail = String::new();
             }
             Status::Done | Status::Unchanged | Status::Failed | Status::Removed => {}
@@ -620,7 +655,7 @@ fn pump_enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
             return;
         };
         let stop = Arc::new(AtomicBool::new(false));
-        entry.status = Status::Running;
+        entry.change_status(Status::Running);
         entry.stop = Some(Arc::clone(&stop));
         queue.enhancing = true;
         (at, source, choice, stop, engine)
@@ -651,7 +686,7 @@ fn pump_enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
                 if let Message::End(Outcome::Done(path)) = &message {
                     for previous in &mut queue.entries {
                         if previous.path.as_ref() == Some(path) {
-                            previous.status = Status::Removed;
+                            previous.change_status(Status::Removed);
                             previous.path = None;
                         }
                     }
@@ -669,7 +704,7 @@ fn pump_enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
                     Message::End(Outcome::Done(path)) => {
                         tracing::info!(path = %path.display(), "episode improved");
                         entry.stop = None;
-                        entry.status = Status::Done;
+                        entry.change_status(Status::Done);
                         entry.fraction = 1.0;
                         entry.detail = path.display().to_string();
                         entry.path = Some(path);
@@ -677,18 +712,18 @@ fn pump_enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
                     }
                     Message::End(Outcome::Unchanged) => {
                         entry.stop = None;
-                        entry.status = Status::Unchanged;
+                        entry.change_status(Status::Unchanged);
                         entry.detail.clear();
                     }
                     Message::End(Outcome::Stopped) => {
                         entry.stop = None;
-                        entry.status = Status::Failed;
+                        entry.change_status(Status::Failed);
                         entry.detail = String::new();
                     }
                     Message::End(Outcome::Failed(error)) => {
                         tracing::warn!(%error, "improving the episode failed");
                         entry.stop = None;
-                        entry.status = Status::Failed;
+                        entry.change_status(Status::Failed);
                         entry.detail = error;
                     }
                 }
@@ -712,6 +747,18 @@ fn pump_enhance(window: &MainWindow, queue: &Rc<RefCell<Queue>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn download_history_keeps_covers_and_accepts_old_entries() {
+        let original = r#"{"release":"Show","position":3,"dubber":"Dub","path":"episode.mp4"}"#;
+        let mut saved: SavedEpisode = serde_json::from_str(original).unwrap();
+        assert_eq!(saved.poster, None);
+        let url = "https://s.anixmirai.com/posters/cover.jpg";
+        saved.poster = Some(url.to_owned());
+        let json = serde_json::to_string(&saved).unwrap();
+        let saved: SavedEpisode = serde_json::from_str(&json).unwrap();
+        assert_eq!(saved.into_entry().job.poster.as_deref(), Some(url));
+    }
 
     #[test]
     fn old_downloads_survive_restart_until_cleared() {
@@ -775,7 +822,7 @@ mod tests {
             original.clone(),
             Choice {
                 resolution: Resolution::P2160,
-                profile: anirust_player::enhance::Profile::Economy,
+                profile: anirust_player::enhance::Profile::Standard,
                 rate: 0,
                 display_millihz: 0,
             },

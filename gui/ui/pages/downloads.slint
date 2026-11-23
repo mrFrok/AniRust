@@ -119,26 +119,16 @@ component QueueRow inherits Rectangle {
 
 export component DownloadsPage inherits Rectangle {
     in property <[DownloadItem]> items: [];
-    /// What this machine can do to a saved episode.
-    in property <bool> can-upscale;
-    in property <bool> can-generate;
     in property <bool> working;
     in property <bool> playback-error;
     callback play(int);
     callback clear-finished();
-    callback enhance(int, int, int, int);
-    in property <int> saved-profile: 2;
-    property <int> profile: 2;
+    callback pick-enhancement(int);
     callback stop-enhance(int);
     callback delete-file(int, string) -> bool;
     property <int> deleting: -1;
     property <string> delete-path;
     property <bool> delete-error;
-
-    /// The row the choice is open for, or -1.
-    property <int> picking: -1;
-    property <int> resolution: root.can-upscale ? 1 : 0;
-    property <int> rate: root.can-generate ? 2 : 0;
 
     background: MaterialPalette.surface;
 
@@ -218,12 +208,7 @@ export component DownloadsPage inherits Rectangle {
                     for item in root.items: QueueRow {
                         item: item;
                         play => { root.play(item.index); }
-                        enhance => {
-                            root.resolution = root.can-upscale ? 1 : 0;
-                            root.rate = root.can-generate ? 2 : 0;
-                            root.profile = root.saved-profile;
-                            root.picking = item.index;
-                        }
+                        enhance => { root.pick-enhancement(item.index); }
                         stop => { root.stop-enhance(item.index); }
                         delete-file => {
                             root.delete-error = false;
@@ -235,197 +220,218 @@ export component DownloadsPage inherits Rectangle {
             }
         }
 
-        if root.deleting >= 0: ConfirmSheet {
-            title: Tr.dl-delete-title;
-            text: root.delete-path + "\n\n" + Tr.dl-delete-confirm;
-            action: Tr.delete;
-            dismiss => { root.deleting = -1; }
-            confirm => {
-                root.delete-error = !root.delete-file(root.deleting, root.delete-path);
-                root.deleting = -1;
-            }
+        Rectangle { horizontal-stretch: 1; }
+    }
+
+    if root.deleting >= 0: ConfirmSheet {
+        title: Tr.dl-delete-title;
+        text: root.delete-path + "\n\n" + Tr.dl-delete-confirm;
+        action: Tr.delete;
+        dismiss => { root.deleting = -1; }
+        confirm => {
+            root.delete-error = !root.delete-file(root.deleting, root.delete-path);
+            root.deleting = -1;
         }
+    }
+}
 
-        if root.picking >= 0: Rectangle {
-            background: #000000A6;
+export component EnhanceDialog inherits Rectangle {
+    in property <bool> can-upscale;
+    in property <bool> can-generate;
+    in property <int> saved-profile: 1;
+    callback start(int, int, int);
+    callback dismiss();
 
-            TouchArea {
-                clicked => {
-                    if (self.mouse-x < panel.x || self.mouse-x > panel.x + panel.width
-                        || self.mouse-y < panel.y || self.mouse-y > panel.y + panel.height) {
-                        root.picking = -1;
-                    }
+    property <int> resolution: root.can-upscale ? 1 : 0;
+    property <int> rate: root.can-generate ? 2 : 0;
+    property <int> profile: root.saved-profile;
+
+    width: 100%;
+    height: 100%;
+    background: #000000A6;
+    accessible-role: groupbox;
+    accessible-label: Tr.enhance-title;
+
+    TouchArea {
+        clicked => { root.dismiss(); }
+    }
+
+    Rectangle {
+        width: min(500px, parent.width - 2 * Spacing.base);
+        height: form.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: Shape.extra-large;
+        background: MaterialPalette.surface-container-high;
+        drop-shadow-blur: 32px;
+        drop-shadow-color: #00000080;
+
+        init => { resolution-choice.focus(); }
+
+        TouchArea {}
+
+        FocusScope {
+            key-pressed(event) => {
+                if (event.text == Key.Escape) {
+                    root.dismiss();
+                    return accept;
                 }
+                reject
             }
 
-            panel := Rectangle {
-                width: min(440px, parent.width - 2 * Spacing.base);
-                height: form.preferred-height;
-                x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
-                border-radius: Shape.extra-large;
-                background: MaterialPalette.surface-container-high;
-                drop-shadow-blur: 32px;
-                drop-shadow-color: #00000080;
+            form := VerticalLayout {
+                padding: Spacing.base;
+                spacing: Spacing.small;
 
-                init => { resolution-choice.focus(); }
+                Text {
+                    text: Tr.enhance-title;
+                    color: MaterialPalette.on-surface;
+                    font-size: Typography.title-large-size;
+                    font-weight: Typography.title-large-weight-em;
+                }
 
-                form := VerticalLayout {
-                    padding: Spacing.base;
-                    spacing: Spacing.small;
-
-                    Text {
-                        text: Tr.enhance-title;
-                        color: MaterialPalette.on-surface;
-                        font-size: Typography.title-large-size;
-                        font-weight: Typography.title-large-weight-em;
-                    }
-
-                    HorizontalLayout {
-                        spacing: Spacing.medium;
-
-                        VerticalLayout {
-                            spacing: Spacing.tight;
-                            min-width: 0px;
-                            preferred-width: 0px;
-                            horizontal-stretch: 1;
-
-                            Text {
-                                text: Tr.enhance-resolution;
-                                color: MaterialPalette.on-surface;
-                                font-size: Typography.label-large-size;
-                            }
-
-                            resolution-choice := Dropdown {
-                                label: Tr.enhance-resolution;
-                                model: [{ label: Tr.enhance-as-is }, { label: Tr.enhance-double-size },
-                                    { label: "2K · 1440p" }, { label: "4K · 2160p" }];
-                                current: root.resolution;
-                                selected(i) => { root.resolution = i; }
-                            }
-                        }
-
-                        VerticalLayout {
-                            spacing: Spacing.tight;
-                            min-width: 0px;
-                            preferred-width: 0px;
-                            horizontal-stretch: 1;
-
-                            Text {
-                                text: Tr.enhance-fps;
-                                color: MaterialPalette.on-surface;
-                                font-size: Typography.label-large-size;
-                            }
-
-                            Dropdown {
-                                label: Tr.enhance-fps;
-                                enabled: root.can-generate;
-                                model: [{ label: Tr.enhance-as-is }, { label: "×2" }, { label: "60 FPS" },
-                                    { label: "120 FPS" }, { label: Tr.frame-rate-display }];
-                                current: root.rate;
-                                selected(i) => { root.rate = i; }
-                            }
-                        }
-                    }
-
-                    Text {
-                        text: Tr.enhance-resize-hint;
-                        color: MaterialPalette.on-surface-variant;
-                        font-size: Typography.body-small-size;
-                        wrap: word-wrap;
-                    }
+                HorizontalLayout {
+                    spacing: Spacing.medium;
 
                     VerticalLayout {
                         spacing: Spacing.tight;
+                        min-width: 0px;
+                        preferred-width: 0px;
+                        horizontal-stretch: 1;
 
                         Text {
-                            text: Tr.processing-profile;
+                            text: Tr.enhance-resolution;
                             color: MaterialPalette.on-surface;
                             font-size: Typography.label-large-size;
                         }
 
-                        for row in [0, 2]: HorizontalLayout {
-                            spacing: Spacing.small;
-
-                            for index in [row, row + 1]: Rectangle {
-                                property <bool> selected: root.profile == index;
-                                property <string> name: index == 0 ? Tr.economy
-                                    : index == 1 ? Tr.balanced
-                                    : index == 2 ? Tr.quality-high : Tr.quality-max;
-                                height: Spacing.control-height;
-                                min-width: 0px;
-                                preferred-width: 0px;
-                                horizontal-stretch: 1;
-                                border-radius: Shape.medium;
-                                border-width: profile-keys.has-focus ? 2px : self.selected ? 1px : 0px;
-                                border-color: MaterialPalette.primary;
-                                background: self.selected ? MaterialPalette.secondary-container
-                                    : (profile-touch.has-hover ? MaterialPalette.surface-container-highest
-                                        : MaterialPalette.surface-container);
-                                accessible-role: radio-button;
-                                accessible-label: self.name;
-                                accessible-checkable: true;
-                                accessible-checked: self.selected;
-                                accessible-action-default => { root.profile = index; }
-
-                                Text {
-                                    text: parent.name;
-                                    color: MaterialPalette.on-surface;
-                                    font-size: Typography.body-medium-size;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                                profile-keys := FocusScope {
-                                    width: 100%;
-                                    height: 100%;
-                                    key-pressed(event) => {
-                                        if (event.text == Key.Return || event.text == " ") {
-                                            root.profile = index;
-                                            return accept;
-                                        }
-                                        reject
-                                    }
-                                    profile-touch := TouchArea {
-                                        mouse-cursor: pointer;
-                                        clicked => {
-                                            profile-keys.focus();
-                                            root.profile = index;
-                                        }
-                                    }
-                                }
-                            }
+                        resolution-choice := Dropdown {
+                            label: Tr.enhance-resolution;
+                            model: [{ label: Tr.enhance-as-is }, { label: Tr.enhance-double-size },
+                                { label: "2K · 1440p" }, { label: "4K · 2160p" }];
+                            current: root.resolution;
+                            selected(i) => { root.resolution = i; }
                         }
+                    }
+
+                    VerticalLayout {
+                        spacing: Spacing.tight;
+                        min-width: 0px;
+                        preferred-width: 0px;
+                        horizontal-stretch: 1;
 
                         Text {
-                            text: root.profile == 0 ? Tr.profile-economy : root.profile == 1 ? Tr.profile-balanced
-                                : root.profile == 2 ? Tr.profile-high : Tr.profile-maximum;
-                            color: MaterialPalette.on-surface-variant;
-                            font-size: Typography.body-small-size;
+                            text: Tr.enhance-fps;
+                            color: MaterialPalette.on-surface;
+                            font-size: Typography.label-large-size;
                         }
+
+                        Dropdown {
+                            label: Tr.enhance-fps;
+                            enabled: root.can-generate;
+                            model: [{ label: Tr.enhance-as-is }, { label: "×2" }, { label: "60 FPS" },
+                                { label: "120 FPS" }, { label: Tr.frame-rate-display }];
+                            current: root.rate;
+                            selected(i) => { root.rate = i; }
+                        }
+                    }
+                }
+
+                if root.resolution >= 2: Text {
+                    text: Tr.enhance-resize-hint;
+                    color: MaterialPalette.on-surface-variant;
+                    font-size: Typography.body-small-size;
+                    wrap: word-wrap;
+                }
+
+                VerticalLayout {
+                    spacing: Spacing.tight;
+
+                    Text {
+                        text: Tr.enhance-quality;
+                        color: MaterialPalette.on-surface;
+                        font-size: Typography.label-large-size;
                     }
 
                     HorizontalLayout {
                         spacing: Spacing.small;
-                        alignment: end;
 
-                        TextButton {
-                            text: Tr.cancel;
-                            clicked => { root.picking = -1; }
-                        }
+                        for index in 3: Rectangle {
+                            property <bool> selected: root.profile == index;
+                            property <string> name: index == 0 ? Tr.enhance-quality-standard
+                                : index == 1 ? Tr.enhance-quality-high
+                                : Tr.enhance-quality-maximum;
+                            height: Spacing.control-height;
+                            min-width: 0px;
+                            preferred-width: 0px;
+                            horizontal-stretch: 1;
+                            border-radius: Shape.medium;
+                            border-width: profile-keys.has-focus ? 2px : self.selected ? 1px : 0px;
+                            border-color: MaterialPalette.primary;
+                            background: self.selected ? MaterialPalette.secondary-container
+                                : (profile-touch.has-hover ? MaterialPalette.surface-container-highest
+                                    : MaterialPalette.surface-container);
+                            accessible-role: radio-button;
+                            accessible-label: self.name;
+                            accessible-checkable: true;
+                            accessible-checked: self.selected;
+                            accessible-action-default => { root.profile = index; }
 
-                        FilledButton {
-                            text: Tr.enhance-start;
-                            enabled: root.resolution > 0 || root.rate > 0;
-                            clicked => {
-                                root.enhance(root.picking, root.resolution, root.rate, root.profile);
-                                root.picking = -1;
+                            Text {
+                                text: parent.name;
+                                width: max(0px, parent.width - 2 * Spacing.tight);
+                                color: MaterialPalette.on-surface;
+                                font-size: Typography.body-medium-size;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            profile-keys := FocusScope {
+                                width: 100%;
+                                height: 100%;
+                                key-pressed(event) => {
+                                    if (event.text == Key.Return || event.text == " ") {
+                                        root.profile = index;
+                                        return accept;
+                                    }
+                                    reject
+                                }
+                                profile-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        profile-keys.focus();
+                                        root.profile = index;
+                                    }
+                                }
                             }
                         }
+                    }
+
+                    Text {
+                        text: root.profile == 0 ? Tr.profile-standard
+                            : root.profile == 1 ? Tr.profile-high : Tr.profile-maximum;
+                        color: MaterialPalette.on-surface-variant;
+                        font-size: Typography.body-small-size;
+                        wrap: word-wrap;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Spacing.small;
+                    alignment: end;
+
+                    TextButton {
+                        text: Tr.cancel;
+                        clicked => { root.dismiss(); }
+                    }
+
+                    FilledButton {
+                        text: Tr.enhance-start;
+                        enabled: root.resolution > 0 || root.rate > 0;
+                        clicked => { root.start(root.resolution, root.rate, root.profile); }
                     }
                 }
             }
         }
-
-        Rectangle { horizontal-stretch: 1; }
     }
 }
