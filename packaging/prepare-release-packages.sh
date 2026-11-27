@@ -40,12 +40,20 @@ trap 'rm -rf "$scratch"' EXIT
 export SRCDEST="$scratch/sources" BUILDDIR="$scratch/build"
 mkdir -p "$SRCDEST" "$BUILDDIR"
 
+recipe="$root/packaging/arch/PKGBUILD"
+# An AUR-only revision belongs to the release recorded in the recipe.
+pkgrel=1
+if grep -Fxq "pkgver=$version" "$recipe"; then
+  pkgrel=$(sed -n 's/^pkgrel=//p' "$recipe")
+fi
+
 # makepkg downloads all architecture-specific sources and computes their hashes.
-awk -v version="$version" '
+awk -v version="$version" -v revision="$pkgrel" '
   /^pkgver=/ { print "pkgver=" version; next }
+  /^pkgrel=/ { print "pkgrel=" revision; next }
   /^sha256sums(_[a-zA-Z0-9_]+)?=/ { next }
   { print }
-' "$root/packaging/arch/PKGBUILD" > "$source_package/PKGBUILD"
+' "$recipe" > "$source_package/PKGBUILD"
 (
   cd "$source_package"
   makepkg --geninteg >> "$scratch/aur-checksums"
@@ -59,7 +67,7 @@ desktop_sha=$(fetch "$raw/packaging/linux/$app_id.desktop" | sha256sum)
 metainfo_sha=$(fetch "$raw/packaging/linux/$app_id.metainfo.xml" | sha256sum)
 archive_x64_sha=$(asset_sha "anirust-$version-linux-x86_64.tar.gz")
 archive_arm_sha=$(asset_sha "anirust-$version-linux-aarch64.tar.gz")
-sed -e "s/@VERSION@/$version/g" \
+sed -e "s/@VERSION@/$version/g" -e "s/@PKGREL@/$pkgrel/g" \
     -e "s/@DESKTOP_SHA@/${desktop_sha%% *}/g" -e "s/@METAINFO_SHA@/${metainfo_sha%% *}/g" \
     -e "s/@ARCHIVE_X64_SHA@/$archive_x64_sha/g" -e "s/@ARCHIVE_ARM_SHA@/$archive_arm_sha/g" \
     "$root/packaging/arch/PKGBUILD-bin.in" > "$binary_package/PKGBUILD"
