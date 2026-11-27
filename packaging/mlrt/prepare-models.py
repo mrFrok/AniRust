@@ -49,6 +49,32 @@ def fetch(url: str, path: pathlib.Path) -> None:
         shutil.copyfileobj(response, out)
 
 
+def patch_vsmlrt(path: pathlib.Path) -> None:
+    """Lets an fp16 network be built as it is, without converting it.
+
+    vsmlrt expects every TensorRT-RTX network to be fp32 and converts one
+    itself when asked for fp16. The AnimeJaNai network the player fetches is
+    fp16 already, with fp16 inputs and outputs, and its author publishes no
+    fp32 copy. The conversion would need the `onnx` package on the viewer's
+    machine; the plugin builds the network as it stands if the guard is
+    lifted, which is what TensorRT-RTX does best anyway.
+    """
+    old = (
+        "    elif fp16_io:\n"
+        "        raise ValueError('tensorrt_rtx: \"fp16\" must be True.')"
+    )
+    new = (
+        "    elif fp16_io:\n"
+        "        # AniRust: the network is fp16 already; only its I/O\n"
+        "        # formats need saying. No conversion, no onnx at run time.\n"
+        "        pass"
+    )
+    text = path.read_text(encoding="utf-8")
+    if old not in text:
+        raise SystemExit(f"{path} has no fp16 guard to patch")
+    path.write_text(text.replace(old, new), encoding="utf-8")
+
+
 def to_fp16(source: pathlib.Path, target: pathlib.Path) -> None:
     import onnx
     from onnxconverter_common.float16 import convert_float_to_float16
@@ -71,6 +97,7 @@ def main() -> None:
         f"https://raw.githubusercontent.com/AmusementClub/vs-mlrt/{VS_MLRT_COMMIT}/scripts/vsmlrt.py",
         out / "vsmlrt.py",
     )
+    patch_vsmlrt(out / "vsmlrt.py")
     for name, url in LICENSES.items():
         fetch(url, out / name)
 

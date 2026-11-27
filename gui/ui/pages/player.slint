@@ -179,7 +179,7 @@ export component PlayerPage inherits Rectangle {
     in property <string> runtime-fetch;
     in property <bool> neural-upscale: false;
     callback set-neural-engine(int);
-    callback fetch-runtime();
+    callback fetch-runtime(bool);
     callback toggle-neural-upscale();
     /// Lowering the load by itself when frames drop.
     in property <bool> adaptive: true;
@@ -795,6 +795,14 @@ export component PlayerPage inherits Rectangle {
                             wrap: word-wrap;
                         }
 
+                        if root.engine-choices.length > 1: SettingOption {
+                            label: Tr.neural-upscale;
+                            description: root.engine-ready ? Tr.neural-upscale-hint
+                                : Tr.neural-runtime-required;
+                            selected: root.neural-upscale && root.engine-ready;
+                            clicked => { root.toggle-neural-upscale(); }
+                        }
+
                         if root.frames-available: VerticalLayout {
                             spacing: Spacing.medium;
 
@@ -984,13 +992,14 @@ export component PlayerPage inherits Rectangle {
                                     wrap: word-wrap;
                                 }
 
-                                if root.engine-fetchable: HorizontalLayout {
+                                HorizontalLayout {
                                     spacing: Spacing.small;
                                     alignment: start;
 
                                     if root.runtime-fetch == "": SettingChip {
-                                        label: root.neural-engine == 1 ? Tr.tensorrt-fetch : Tr.openvino-fetch;
-                                        clicked => { root.fetch-runtime(); }
+                                        label: !root.engine-fetchable ? Tr.neural-check-runtime
+                                            : root.neural-engine == 1 ? Tr.tensorrt-fetch : Tr.openvino-fetch;
+                                        clicked => { root.fetch-runtime(false); }
                                     }
 
                                     if root.runtime-fetch != "": Text {
@@ -1000,13 +1009,6 @@ export component PlayerPage inherits Rectangle {
                                         vertical-alignment: center;
                                     }
                                 }
-                            }
-
-                            if root.neural-engine != 0 && root.engine-ready: SettingOption {
-                                label: Tr.neural-upscale;
-                                description: Tr.neural-upscale-hint;
-                                selected: root.neural-upscale;
-                                clicked => { root.toggle-neural-upscale(); }
                             }
 
                             if root.frames-available && root.frame-rate != 0: Text {

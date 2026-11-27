@@ -11,11 +11,15 @@ export component ConfirmSheet inherits Rectangle {
     in property <string> title;
     in property <string> text;
     in property <string> action;
+    in property <string> status;
+    in property <string> dismiss-label: Tr.cancel;
 
     callback confirm();
     callback dismiss();
 
     background: #000000A6;
+    accessible-role: groupbox;
+    accessible-label: root.title;
 
     TouchArea {
         clicked => { root.dismiss(); }
@@ -53,16 +57,23 @@ export component ConfirmSheet inherits Rectangle {
                 wrap: word-wrap;
             }
 
+            if root.status != "": Text {
+                text: root.status;
+                color: MaterialPalette.on-surface;
+                font-size: Typography.body-medium-size;
+                wrap: word-wrap;
+            }
+
             HorizontalLayout {
                 spacing: Spacing.small;
                 alignment: end;
 
                 TextButton {
-                    text: Tr.cancel;
+                    text: root.dismiss-label;
                     clicked => { root.dismiss(); }
                 }
 
-                FilledButton {
+                if root.action != "": FilledButton {
                     text: root.action;
                     clicked => { root.confirm(); }
                 }

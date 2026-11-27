@@ -118,7 +118,7 @@ pub async fn fetch(
 /// player looks for it. Answers with its path.
 ///
 /// The archive holds every size of the network; only the one playback runs
-/// is kept. The download is about 30 MB, once.
+/// is kept. The download is about 60 MB, once.
 pub async fn fetch_light_upscale(http: reqwest::Client) -> Result<PathBuf, String> {
     use anirust_player::frames::light_upscale;
     use sha2::Digest;
@@ -135,39 +135,74 @@ pub async fn fetch_light_upscale(http: reqwest::Client) -> Result<PathBuf, Strin
         .await
         .map_err(|e| e.to_string())?;
 
-    let network = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
-        let mut zip =
-            zip::ZipArchive::new(std::io::Cursor::new(archive)).map_err(|e| e.to_string())?;
-        let mut member = zip
-            .by_name(light_upscale::MEMBER)
-            .map_err(|e| e.to_string())?;
-        let mut network = Vec::new();
-        member
-            .read_to_end(&mut network)
-            .map_err(|e| e.to_string())?;
-        Ok(network)
-    })
-    .await
-    .map_err(|e| e.to_string())??;
+    let (network, balanced) =
+        tokio::task::spawn_blocking(move || -> Result<(Vec<u8>, Vec<u8>), String> {
+            let mut network = None;
+            let mut balanced = None;
+            sevenz_rust2::decompress_with_extract_fn(
+                std::io::Cursor::new(archive),
+                std::env::temp_dir(),
+                |entry, reader, _path| {
+                    let playback = entry.name() == light_upscale::MEMBER;
+                    let offline = entry.name() == light_upscale::BALANCED_MEMBER;
+                    if playback || offline {
+                        let mut bytes = Vec::new();
+                        reader
+                            .read_to_end(&mut bytes)
+                            .map_err(sevenz_rust2::Error::from)?;
+                        if playback {
+                            network = Some(bytes);
+                        } else {
+                            balanced = Some(bytes);
+                        }
+                        // Nothing after the second one is needed.
+                        return Ok(network.is_none() || balanced.is_none());
+                    }
+                    // The archive is solid: the streams before the ones
+                    // wanted have to be read through to reach them.
+                    std::io::copy(reader, &mut std::io::sink())
+                        .map_err(sevenz_rust2::Error::from)?;
+                    Ok(true)
+                },
+            )
+            .map_err(|error| error.to_string())?;
+            match (network, balanced) {
+                (Some(network), Some(balanced)) => Ok((network, balanced)),
+                _ => Err("the networks are not in the archive".to_owned()),
+            }
+        })
+        .await
+        .map_err(|e| e.to_string())??;
 
-    let digest = sha2::Sha256::digest(&network);
-    let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
-    if hex != light_upscale::SHA256 {
-        return Err("the network is not the one expected".to_owned());
-    }
-
+    let balanced_target =
+        light_upscale::balanced_path().ok_or("there is no data folder to put it in")?;
     let parent = target.parent().ok_or("the data folder has no parent")?;
     tokio::fs::create_dir_all(parent)
         .await
         .map_err(|e| e.to_string())?;
-    let partial = target.with_extension(format!("{}.onnx.partial", std::process::id()));
-    tokio::fs::write(&partial, &network)
-        .await
-        .map_err(|e| e.to_string())?;
-    tokio::fs::rename(&partial, &target)
-        .await
-        .map_err(|e| e.to_string())?;
-    tracing::info!(path = %target.display(), "light upscaling network installed");
+    for (target, bytes, expected, what) in [
+        (&target, &network, light_upscale::SHA256, "playback"),
+        (
+            &balanced_target,
+            &balanced,
+            light_upscale::BALANCED_SHA256,
+            "offline",
+        ),
+    ] {
+        let digest = sha2::Sha256::digest(bytes);
+        let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+        if hex != expected {
+            return Err(format!("the {what} network is not the one expected"));
+        }
+        let partial = target.with_extension(format!("{}.onnx.partial", std::process::id()));
+        tokio::fs::write(&partial, bytes)
+            .await
+            .map_err(|e| e.to_string())?;
+        tokio::fs::rename(&partial, target)
+            .await
+            .map_err(|e| e.to_string())?;
+        tracing::info!(path = %target.display(), "upscaling network installed");
+    }
     Ok(target)
 }
 

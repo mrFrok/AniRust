@@ -3,13 +3,15 @@
 //! Keeping playback smooth on the machine it runs on.
 //!
 //! The heaviest upscaling and frame generation are offered to everyone, and
-//! not every GPU can carry them. Rather than guessing from the card's name,
-//! the player watches what it actually manages: mpv counts the frames it had
-//! to drop because they were late. More than one a second, over ten seconds of
-//! plain playback, and the load comes down one step — the RIFE network first,
-//! then Anime4K's quality, then the generated frame rate, then each of them off
-//! — with a line saying what changed. A step is kept, so the next episode
-//! starts where this one settled.
+//! not every GPU can carry them. Rather than guessing from the card's name
+//! alone, the player watches what it actually manages: mpv counts the frames
+//! it had to drop because they were late. More than one a second, over ten
+//! seconds of plain playback, and the load comes down one step — 1080p frame
+//! generation to 720p, then the fast RIFE network, then fewer generated
+//! frames, then neural upscaling off, then Anime4K — with a line saying what
+//! changed. The doubling network goes late because it is what the picture
+//! gains detail from. A step is kept, so the next episode starts where this
+//! one settled.
 
 use std::time::{Duration, Instant};
 
@@ -32,6 +34,8 @@ pub struct Load {
     pub frame_rate: usize,
     /// 0 fast, 1 quality.
     pub rife_model: usize,
+    /// The tallest source frame generation runs at, 1080 or 720.
+    pub rife_height: u32,
     /// Real-ESRGAN doubling the picture before anything else.
     pub neural_upscale: bool,
     /// The screen's refresh rate, 0 when not known.
@@ -47,8 +51,9 @@ pub const RATE_HALF_DISPLAY: usize = 4;
 /// One step down.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Step {
-    /// Neural upscaling off: the heaviest thing a frame goes through.
-    NeuralUpscaleOff,
+    /// Frame generation at 720p instead of 1080p: the cheapest way to keep
+    /// it, and what a 1080p source needs on a card that cannot carry it.
+    LowerRifeHeight,
     /// The quality RIFE network for the fast one.
     FastRife,
     /// Anime4K one quality lower.
@@ -57,23 +62,32 @@ pub enum Step {
     /// still 60 or more, otherwise to 60; half the screen's to 60; 60 to ×2.
     LowerFrameRate,
     FramesOff,
+    /// Neural upscaling off: the heaviest thing a frame goes through.
+    NeuralUpscaleOff,
     UpscaleOff,
 }
 
 impl Load {
     /// The next step down from here, or `None` with nothing left to lower.
+    ///
+    /// Frame generation goes before the doubling network: the network is
+    /// what the picture gains detail from, and on the cards that need this
+    /// ladder it is the effect worth keeping. Anime4K's quality is left out
+    /// while the network is on — it is not running to be lowered.
     #[must_use]
     pub fn next_step(self) -> Option<Step> {
-        if self.neural_upscale {
-            Some(Step::NeuralUpscaleOff)
+        if self.frame_rate > 0 && self.rife_height > 720 {
+            Some(Step::LowerRifeHeight)
         } else if self.frame_rate > 0 && self.rife_model > 0 {
             Some(Step::FastRife)
-        } else if self.upscale_mode > 0 && self.upscale_quality > 0 {
+        } else if !self.neural_upscale && self.upscale_mode > 0 && self.upscale_quality > 0 {
             Some(Step::LowerUpscale)
         } else if self.frame_rate > 1 {
             Some(Step::LowerFrameRate)
         } else if self.frame_rate == 1 {
             Some(Step::FramesOff)
+        } else if self.neural_upscale {
+            Some(Step::NeuralUpscaleOff)
         } else if self.upscale_mode > 0 {
             Some(Step::UpscaleOff)
         } else {
@@ -85,6 +99,10 @@ impl Load {
     #[must_use]
     pub fn after(self, step: Step) -> Self {
         match step {
+            Step::LowerRifeHeight => Self {
+                rife_height: 720,
+                ..self
+            },
             Step::FastRife => Self {
                 rife_model: 0,
                 ..self
@@ -128,6 +146,12 @@ impl Step {
     #[must_use]
     pub fn notice(self, ru: bool) -> &'static str {
         match (self, ru) {
+            (Self::LowerRifeHeight, true) => {
+                "Видеокарта не успевает: генерация кадров снижена до 720p"
+            }
+            (Self::LowerRifeHeight, false) => {
+                "The GPU is falling behind: frame generation lowered to 720p"
+            }
             (Self::NeuralUpscaleOff, true) => {
                 "Видеокарта не успевает: нейросетевой апскейл выключен"
             }
@@ -203,6 +227,7 @@ mod tests {
             upscale_quality: 3,
             frame_rate: RATE_DISPLAY,
             rife_model: 1,
+            rife_height: 1080,
             neural_upscale: true,
             display_hz: 180,
         }
@@ -219,20 +244,41 @@ mod tests {
         assert_eq!(
             steps,
             [
-                Step::NeuralUpscaleOff,
+                // 1080p frame generation first; the doubling network is
+                // what the picture gains detail from.
+                Step::LowerRifeHeight,
                 Step::FastRife,
-                Step::LowerUpscale,
-                Step::LowerUpscale,
-                Step::LowerUpscale,
                 // 180 → 90 → 60 → ×2
                 Step::LowerFrameRate,
                 Step::LowerFrameRate,
                 Step::LowerFrameRate,
                 Step::FramesOff,
+                Step::NeuralUpscaleOff,
+                // Anime4K is back once the network is off, and still too
+                // heavy; it comes down to its cheapest.
+                Step::LowerUpscale,
+                Step::LowerUpscale,
+                Step::LowerUpscale,
                 Step::UpscaleOff,
             ]
         );
         assert!(!load.is_enhanced());
+    }
+
+    #[test]
+    fn the_doubling_network_goes_after_frame_generation() {
+        let mut load = Load {
+            upscale_mode: 0,
+            rife_height: 1080,
+            ..heaviest()
+        };
+        let mut steps = Vec::new();
+        while let Some(step) = load.next_step() {
+            steps.push(step);
+            load = load.after(step);
+        }
+        assert!(!steps.contains(&Step::LowerUpscale));
+        assert_eq!(steps.last().copied(), Some(Step::NeuralUpscaleOff));
     }
 
     #[test]

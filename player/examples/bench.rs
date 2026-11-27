@@ -25,6 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ..FrameGeneration::default()
         }),
         upscale: has("--upscale"),
+        ..Enhancement::default()
     };
     let rife;
     let mlrt;

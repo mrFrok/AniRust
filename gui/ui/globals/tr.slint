@@ -78,22 +78,35 @@ export global Tr {
     out property <string> engine-vulkan: lang == "ru" ? "Vulkan · любая видеокарта" : "Vulkan · any GPU";
     out property <string> engine-tensorrt: lang == "ru" ? "TensorRT · NVIDIA RTX" : "TensorRT · NVIDIA RTX";
     out property <string> tensorrt-needed: lang == "ru"
-        ? "На тензорных ядрах RTX нейросети работают в 2–3 раза быстрее. Нужна библиотека NVIDIA TensorRT for RTX, около 90 МБ: она скачивается с сайта NVIDIA и используется на условиях NVIDIA. Пока её нет, работает Vulkan."
-        : "On RTX tensor cores the networks run two to three times faster. It takes NVIDIA's TensorRT for RTX, about 90 MB, fetched from NVIDIA and used on NVIDIA's terms. Until then, Vulkan runs them.";
+        ? "Для нейросетевого апскейла на NVIDIA RTX скачайте TensorRT for RTX (около 90 МБ). AniRust скачает библиотеку с сайта NVIDIA; действуют условия NVIDIA."
+        : "Neural upscaling on NVIDIA RTX requires TensorRT for RTX (about 90 MB). AniRust downloads it from NVIDIA under NVIDIA's terms.";
     out property <string> tensorrt-fetch: lang == "ru" ? "Скачать у NVIDIA" : "Fetch from NVIDIA";
+    out property <string> neural-title-tensorrt: lang == "ru"
+        ? "Для апскейла нужен TensorRT"
+        : "Upscaling requires TensorRT";
+    out property <string> neural-title-openvino: lang == "ru"
+        ? "Для апскейла нужен OpenVINO"
+        : "Upscaling requires OpenVINO";
+    out property <string> neural-title-migraphx: lang == "ru"
+        ? "Для апскейла нужен MIGraphX"
+        : "Upscaling requires MIGraphX";
+    out property <string> neural-runtime-required: lang == "ru"
+        ? "Настроить движок для вашей видеокарты"
+        : "Set up the engine for your GPU";
+    out property <string> neural-check-runtime: lang == "ru" ? "Проверить снова" : "Check again";
     out property <string> engine-openvino: lang == "ru" ? "OpenVINO · Intel" : "OpenVINO · Intel";
     out property <string> engine-migraphx: lang == "ru" ? "MIGraphX · AMD" : "MIGraphX · AMD";
     out property <string> openvino-needed: lang == "ru"
-        ? "На блоках XMX видеокарт Intel Arc нейросети работают через OpenVINO. Нужна его среда выполнения, 55–110 МБ: она скачивается с сайта Intel (лицензия Apache 2.0). Пока её нет, работает Vulkan."
-        : "On Intel Arc's XMX engines the networks run through OpenVINO. It takes OpenVINO's runtime, 55 to 110 MB, fetched from Intel (Apache 2.0 licence). Until then, Vulkan runs them.";
+        ? "Для нейросетевого апскейла на Intel скачайте OpenVINO (55–110 МБ). AniRust скачает библиотеку с сайта Intel (лицензия Apache 2.0)."
+        : "Neural upscaling on Intel requires OpenVINO (55–110 MB). AniRust downloads it from Intel (Apache 2.0 license).";
     out property <string> openvino-fetch: lang == "ru" ? "Скачать у Intel" : "Fetch from Intel";
     out property <string> migraphx-needed: lang == "ru"
-        ? "На видеокартах AMD нейросети работают через MIGraphX из ROCm. Его ставят из дистрибутива — в Arch это пакет migraphx — и программа найдёт его в /opt/rocm сама. Пока его нет, работает Vulkan."
-        : "On AMD GPUs the networks run through ROCm's MIGraphX. It is installed from the distribution — the migraphx package on Arch — and found in /opt/rocm. Until then, Vulkan runs them.";
+        ? "Установите MIGraphX из ROCm через пакетный менеджер (в Arch — пакет migraphx). Затем нажмите «Проверить снова»: AniRust поищет библиотеку в /opt/rocm."
+        : "Install ROCm's MIGraphX through your package manager (the migraphx package on Arch). Then select Check again: AniRust will look for it in /opt/rocm.";
     out property <string> neural-upscale: lang == "ru" ? "Нейросетевой апскейл ×2" : "Neural upscaling ×2";
     out property <string> neural-upscale-hint: lang == "ru"
-        ? "Real-ESRGAN удваивает видео до 720p, перед шейдерами; что выше, увеличивают шейдеры. Вместе с генерацией кадров его не потянет почти никакая видеокарта."
-        : "Real-ESRGAN doubles video up to 720p, before the shaders; anything taller is left to them. Together with frame generation it is too much for almost any GPU.";
+        ? "Удваивает разрешение видео. Максимальное разрешение исходника зависит от видеокарты."
+        : "Doubles the video resolution. The maximum source resolution depends on the GPU.";
     out property <string> frame-generation: lang == "ru" ? "Генерация кадров" : "Frame generation";
     out property <string> sharpness: lang == "ru" ? "Чёткость" : "Sharpness";
     out property <string> sharper: lang == "ru" ? "Чётче" : "Sharper";

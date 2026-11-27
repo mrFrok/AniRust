@@ -118,9 +118,11 @@ fn main() -> Result<()> {
     window.set_app_version(env!("CARGO_PKG_VERSION").into());
     window.on_open_link(|url| release::open_in_browser(&url));
     let prefs = Rc::new(Cell::new(preferences::Preferences::load()));
+    let settings = Rc::new(Settings::from_preferences(prefs.get().player.in_force()));
+    let engine = recommended_engine(gpus::vendors(), &settings.offered);
     let presence = Rc::new(discord::Presence::start(prefs.get().discord_presence));
     wire_preferences(&window, &prefs, &presence);
-    bench::wire(&window, &prefs, recommended_engine(gpus::vendors()));
+    bench::wire(&window, &prefs, engine);
 
     let config = player_config();
     tracing::info!(hwdec = %config.hwdec, "player config");
@@ -159,13 +161,12 @@ fn main() -> Result<()> {
         notifications: Rc::new(RefCell::new(notifications::NotificationsState::default())),
         people: Rc::new(RefCell::new(people::PeopleState::default())),
         queue: Rc::new(RefCell::new({
-            let engine = recommended_engine(gpus::vendors());
             let (can_upscale, can_generate) = enhance::available(engine);
             downloads::Queue::new(engine, can_upscale, can_generate)
         })),
         account,
         playing: Rc::new(RefCell::new(None)),
-        settings: Rc::new(Settings::from_preferences(prefs.get().player.in_force())),
+        settings,
         prefs: Rc::clone(&prefs),
         presence,
         now_playing: RefCell::new(None),
@@ -2499,6 +2500,11 @@ struct Settings {
     /// Frame generation as the menu has it: 0 off, then the target rates.
     frame_rate: Cell<usize>,
     rife_model: Cell<usize>,
+    /// The tallest source RIFE runs at. The adaptive watch lowers it before
+    /// it turns generation off, so a 1080p source can settle at 720p.
+    rife_height: Cell<u32>,
+    /// What the card can carry, from its name ([`gpus::tier`]).
+    tier: gpus::Tier,
     /// Where the Vulkan RIFE is, looked for once.
     rife: Option<RifeInstall>,
     /// Which engine runs the networks: 0 Vulkan, then vs-mlrt on each of
@@ -2511,8 +2517,8 @@ struct Settings {
     offered: [bool; 3],
     /// vs-mlrt on each backend whose vendor runtime is there too.
     mlrt: RefCell<[Option<Mlrt>; 3]>,
-    /// What fetching a vendor runtime is doing, for the line on screen.
-    runtime_fetch: RefCell<String>,
+    /// Only one vendor runtime can be downloaded at a time.
+    runtime_fetching: Cell<bool>,
     /// When the neural filters were last switched on, until they have been
     /// seen working or failing.
     filters_since: Cell<Option<std::time::Instant>>,
@@ -2549,11 +2555,20 @@ impl Settings {
     /// The player as the preferences open it.
     fn from_preferences(kept: preferences::PlayerPreferences) -> Self {
         let offered = offered_engines(Backend::ALL.map(Mlrt::ships), gpus::vendors());
+        let tier = gpus::tier();
+        let rife_height = if kept.rife_height > 0 {
+            kept.rife_height
+                .min(if tier == gpus::Tier::Small { 720 } else { 1080 })
+        } else if tier == gpus::Tier::Small {
+            720
+        } else {
+            1080
+        };
         Self {
             speed: Cell::new(kept.speed),
             upscale_mode: Cell::new(kept.upscale_mode.min(UpscaleMode::ALL.len() - 1)),
             upscale_quality: Cell::new(kept.upscale_quality.min(UpscaleQuality::ALL.len() - 1)),
-            interpolation: Cell::new(kept.interpolation),
+            interpolation: Cell::new(kept.interpolation && kept.frame_rate == 0),
             force_4k: Cell::new(kept.force_4k),
             repeat: Cell::new(false),
             audio_delay: Cell::new(0.0),
@@ -2564,12 +2579,14 @@ impl Settings {
             picture: Cell::new(kept.picture.min(PictureAdjust::PRESETS.len() - 1)),
             frame_rate: Cell::new(kept.frame_rate.min(adapt::RATE_HALF_DISPLAY)),
             rife_model: Cell::new(kept.rife_model.min(RifeModel::ALL.len() - 1)),
+            rife_height: Cell::new(rife_height),
+            tier,
             rife: RifeInstall::find(),
             engine: Cell::new(engine_kept(kept.engine, &offered)),
             neural_upscale: Cell::new(kept.neural_upscale),
             offered,
             mlrt: RefCell::new(Backend::ALL.map(Mlrt::find)),
-            runtime_fetch: RefCell::new(String::new()),
+            runtime_fetching: Cell::new(false),
             filters_since: Cell::new(None),
             engine_build_said: Cell::new(false),
             display_fps: Cell::new(None),
@@ -2594,6 +2611,10 @@ impl Settings {
             upscale_quality: self.upscale_quality.get(),
             frame_rate: self.frame_rate.get(),
             rife_model: self.rife_model.get(),
+            rife_height: self
+                .enhancement()
+                .frames
+                .map_or(720, |generation| generation.max_height),
             neural_upscale: self.on_mlrt() && self.neural_upscale.get(),
             display_hz: self.display_fps.get().map_or(0, |fps| fps.round() as u32),
         }
@@ -2604,6 +2625,7 @@ impl Settings {
         self.upscale_quality.set(load.upscale_quality);
         self.frame_rate.set(load.frame_rate);
         self.rife_model.set(load.rife_model);
+        self.rife_height.set(load.rife_height);
         if !load.neural_upscale {
             self.neural_upscale.set(false);
         }
@@ -2643,6 +2665,17 @@ impl Settings {
         *self.mlrt.borrow_mut() = Backend::ALL.map(Mlrt::find);
     }
 
+    fn show_engine(&self, window: &MainWindow) {
+        window.set_neural_engine(self.engine.get() as i32);
+        let ready = self.on_mlrt();
+        window.set_engine_ready(ready);
+        window.set_neural_upscale(ready && self.neural_upscale.get());
+        window.set_engine_fetchable(
+            self.backend()
+                .is_some_and(|backend| backend.download_url().is_some()),
+        );
+    }
+
     /// What the menus ask the neural filters for.
     ///
     /// TensorRT keeps 1080p sources at their size up to about 72 frames a
@@ -2661,17 +2694,45 @@ impl Settings {
             FrameGeneration {
                 rate,
                 model: RifeModel::ALL[self.rife_model.get()],
-                max_height: if tensorrt && target <= 72.0 {
-                    1080
-                } else {
-                    720
+                max_height: {
+                    let ceiling = if tensorrt && self.tier >= gpus::Tier::Medium && target <= 72.0 {
+                        1080
+                    } else {
+                        720
+                    };
+                    self.rife_height.get().min(ceiling)
                 },
             }
         });
         Enhancement {
             frames,
             upscale: self.on_mlrt() && self.neural_upscale.get(),
+            upscale_max_height: self.upscale_limit(),
         }
+    }
+
+    /// The tallest source the hierarchy of card and network allows.
+    ///
+    /// 1080p doubled is 4K, which only the large cards carry in time; the
+    /// rest stop at 720p, where doubling reaches 1440p. Until the light
+    /// network is fetched, Real-ESRGAN sets a 720p ceiling of its own.
+    fn upscale_max_height(&self) -> u32 {
+        if self.tier == gpus::Tier::Large {
+            1080
+        } else {
+            720
+        }
+    }
+
+    /// [`Self::upscale_max_height`] with the network's own ceiling.
+    fn upscale_limit(&self) -> u32 {
+        use anirust_player::frames::light_upscale;
+        let network = if self.on_tensorrt() && light_upscale::installed().is_some() {
+            light_upscale::MAX_HEIGHT
+        } else {
+            anirust_player::frames::NEURAL_UPSCALE_MAX_HEIGHT
+        };
+        self.upscale_max_height().min(network)
     }
 
     /// Applies the menus' neural filters to the player.
@@ -2721,8 +2782,11 @@ impl Settings {
     /// into dropping frames.
     fn upscale(&self) -> UpscalePreset {
         // Ultra asks for both, on purpose: the network, then Anime4K's
-        // strongest quality over what it made.
-        let ultra = self.upscale_quality.get() == UpscaleQuality::ALL.len() - 1;
+        // strongest quality over what it made. On a small card that is the
+        // one thing certain to drop frames, so there the network works alone
+        // and the Ultra chain is left out.
+        let ultra = self.upscale_quality.get() == UpscaleQuality::ALL.len() - 1
+            && !(self.tier == gpus::Tier::Small && self.neural_upscale.get());
         if self.on_mlrt() && self.neural_upscale.get() && !ultra {
             return UpscalePreset::OFF;
         }
@@ -2730,6 +2794,17 @@ impl Settings {
             UpscaleMode::ALL[self.upscale_mode.get()],
             UpscaleQuality::ALL[self.upscale_quality.get()],
         )
+    }
+
+    /// Applies both halves of the neural work together.
+    ///
+    /// They decide each other: turning the network on must clear Anime4K's
+    /// shaders, and a backend that becomes usable must do the same. Applying
+    /// one without the other is what leaves both running at once.
+    fn apply_effects(&self, player: &Player) {
+        self.apply_generation(player);
+        let preset = self.upscale();
+        player.later("upscaling", move |player| player.set_upscale(preset));
     }
 }
 
@@ -2793,15 +2868,15 @@ fn backend_name(backend: Backend) -> &'static str {
     }
 }
 
-/// The engine that suits the GPU in this machine, by its maker: TensorRT
-/// for NVIDIA, MIGraphX for AMD, OpenVINO for Intel, Vulkan when none of
-/// them is there or the GPUs cannot be told.
-fn recommended_engine(vendors: Option<&[u32]>) -> usize {
+const PREFERRED_BACKENDS: [Backend; 3] = [Backend::TensorRt, Backend::MigraphX, Backend::OpenVino];
+
+/// The highest-priority engine this build offers for a detected GPU.
+fn recommended_engine(vendors: Option<&[u32]>, offered: &[bool; 3]) -> usize {
     let vendors = vendors.unwrap_or_default();
-    // A discrete card over an integrated one: NVIDIA, then AMD, then Intel.
-    [Backend::TensorRt, Backend::MigraphX, Backend::OpenVino]
+    // Prefer TensorRT on a mixed-GPU machine, then AMD over integrated Intel.
+    PREFERRED_BACKENDS
         .into_iter()
-        .find(|backend| vendors.contains(&backend.gpu_vendor()))
+        .find(|&backend| offered[backend_index(backend)] && vendors.contains(&backend.gpu_vendor()))
         .map_or(0, |backend| backend_index(backend) + 1)
 }
 
@@ -2891,9 +2966,22 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     let playing = &app.playing;
     let bridge = &app.bridge;
 
+    let preferred = recommended_engine(gpus::vendors(), &settings.offered);
+    let choices = PREFERRED_BACKENDS
+        .into_iter()
+        .map(backend_index)
+        .filter(|&index| settings.offered[index])
+        .map(|index| index as i32 + 1)
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    window.set_engine_choices(slint::ModelRc::new(slint::VecModel::from(choices)));
+    window.set_recommended_engine(preferred as i32);
+    settings.show_engine(window);
+
     // The player opens as it was left, when that is kept.
     let kept = app.prefs.get().player.in_force();
     let upscale = settings.upscale();
+    let interpolation = settings.interpolation.get();
     let decoder = DECODERS[settings.decoder.get()];
     let normalize = settings.normalize.get();
     let subtitle_scale = SUBTITLE_SCALES[settings.subtitle_scale.get()];
@@ -2903,7 +2991,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         player.set_speed(kept.speed)?;
         player.set_volume(kept.volume)?;
         player.set_upscale(upscale)?;
-        player.set_interpolation(kept.interpolation)?;
+        player.set_interpolation(interpolation)?;
         player.set_hwdec(decoder)?;
         player.set_loudness_normalization(normalize)?;
         player.set_subtitle_scale(subtitle_scale)?;
@@ -3059,8 +3147,18 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 
     let chosen = Rc::clone(settings);
     let keep_now = Rc::clone(&keep);
+    let weak = window.as_weak();
     window.on_toggle_interpolation(move || {
         let next = !chosen.interpolation.get();
+        // As above: one temporal effect at a time. Turning mpv's on turns
+        // RIFE off, and the menu follows.
+        if next && chosen.frame_rate.get() > 0 {
+            chosen.frame_rate.set(0);
+            chosen.apply_generation(player);
+            if let Some(window) = weak.upgrade() {
+                window.set_frame_rate(0);
+            }
+        }
         chosen.interpolation.set(next);
         keep_now();
         player.later("interpolation", move |player| {
@@ -3343,8 +3441,18 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 
     let chosen = Rc::clone(settings);
     let keep_now = Rc::clone(&keep);
+    let weak = window.as_weak();
     window.on_set_frame_rate(move |index| {
         let index = (index.max(0) as usize).min(TargetRate::ALL.len());
+        // The two temporal effects do not stack: RIFE draws frames, mpv's
+        // interpolation blends them. RIFE wins when it is asked for.
+        if index > 0 && chosen.interpolation.get() {
+            chosen.interpolation.set(false);
+            player.later("interpolation", |player| player.set_interpolation(false));
+            if let Some(window) = weak.upgrade() {
+                window.set_interpolation(false);
+            }
+        }
         chosen.frame_rate.set(index);
         keep_now();
         chosen.apply_generation(player);
@@ -3360,22 +3468,54 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
 
     let chosen = Rc::clone(settings);
     let keep_now = Rc::clone(&keep);
+    let weak = window.as_weak();
     window.on_set_neural_engine(move |index| {
         chosen
             .engine
-            .set((index.max(0) as usize).min(Backend::ALL.len()));
+            .set(engine_kept(index.max(0) as usize, &chosen.offered));
+        if let Some(window) = weak.upgrade() {
+            chosen.show_engine(&window);
+        }
         keep_now();
-        chosen.apply_generation(player);
+        chosen.apply_effects(player);
     });
 
     let chosen = Rc::clone(settings);
     let keep_now = Rc::clone(&keep);
+    let weak = window.as_weak();
     window.on_toggle_neural_upscale(move || {
-        chosen.neural_upscale.set(!chosen.neural_upscale.get());
+        let Some(window) = weak.upgrade() else { return };
+        if !chosen.on_mlrt() {
+            if chosen.engine.get() == 0 && preferred != 0 {
+                chosen.engine.set(preferred);
+                chosen.show_engine(&window);
+                keep_now();
+                chosen.apply_effects(player);
+            }
+            if !chosen.on_mlrt() {
+                if chosen.backend().is_none() {
+                    show_hint(
+                        &window,
+                        if window.get_lang() == "ru" {
+                            "Выберите движок для видеокарты в меню «Нейросети»."
+                        } else {
+                            "Choose an engine for your GPU in the Neural networks menu."
+                        }
+                        .to_owned(),
+                    );
+                } else {
+                    window.set_runtime_error("".into());
+                    window.set_neural_prompt(true);
+                }
+                return;
+            }
+            chosen.neural_upscale.set(true);
+        } else {
+            chosen.neural_upscale.set(!chosen.neural_upscale.get());
+        }
+        window.set_neural_upscale(chosen.neural_upscale.get());
         keep_now();
-        chosen.apply_generation(player);
-        let preset = chosen.upscale();
-        player.later("upscaling", move |player| player.set_upscale(preset));
+        chosen.apply_effects(player);
     });
 
     let chosen = Rc::clone(settings);
@@ -3383,9 +3523,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     window.on_set_neural_upscale(move |on| {
         if chosen.neural_upscale.replace(on) != on {
             keep_now();
-            chosen.apply_generation(player);
-            let preset = chosen.upscale();
-            player.later("upscaling", move |player| player.set_upscale(preset));
+            chosen.apply_effects(player);
         }
     });
 
@@ -3397,7 +3535,7 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
         let http = app.http.clone();
         let fetching = Rc::new(Cell::new(false));
         Rc::new(move || {
-            let engine_there = chosen.mlrt.borrow().iter().any(Option::is_some);
+            let engine_there = chosen.mlrt.borrow()[backend_index(Backend::TensorRt)].is_some();
             if !engine_there
                 || fetching.get()
                 || anirust_player::frames::light_upscale::installed().is_some()
@@ -3430,66 +3568,100 @@ fn wire_player(window: &MainWindow, app: &Rc<App>) -> Rc<dyn Fn()> {
     let http = app.http.clone();
     let weak = window.as_weak();
     let fetch_light_after = Rc::clone(&fetch_light);
-    window.on_fetch_runtime(move || {
+    let keep_now = Rc::clone(&keep);
+    window.on_fetch_runtime(move |enable_upscale| {
         let Some(backend) = chosen.backend() else {
             return;
         };
-        if !chosen.runtime_fetch.borrow().is_empty() {
+        let Some(window) = weak.upgrade() else { return };
+        if chosen.runtime_fetching.replace(true) {
             return;
         }
-        let Some(window) = weak.upgrade() else { return };
         let ru = window.get_lang() == "ru";
-        *chosen.runtime_fetch.borrow_mut() = if ru {
-            "Скачиваю…"
-        } else {
-            "Fetching…"
-        }
-        .to_owned();
-
+        window.set_runtime_error("".into());
+        let downloadable = backend.download_url().is_some();
         let (send, mut receive) = tokio::sync::mpsc::unbounded_channel::<runtimes::Progress>();
-        let reporter = Rc::clone(&chosen);
-        let _ = slint::spawn_local(async move {
+        let report_window = weak.clone();
+        let reporter = slint::spawn_local(async move {
             while let Some(progress) = receive.recv().await {
-                *reporter.runtime_fetch.borrow_mut() = describe_fetch(progress, ru);
+                let Some(window) = report_window.upgrade() else {
+                    return;
+                };
+                window.set_runtime_fetch(describe_fetch(progress, ru).into());
             }
         });
+        if downloadable {
+            window.set_runtime_fetch(
+                if ru {
+                    "Скачиваю…"
+                } else {
+                    "Downloading…"
+                }
+                .into(),
+            );
+        }
 
         let chosen = Rc::clone(&chosen);
         let weak = weak.clone();
         let name = backend_name(backend);
         let fetch_light = Rc::clone(&fetch_light_after);
+        let keep_now = Rc::clone(&keep_now);
+        let http = http.clone();
         tasks::spawn(
-            runtimes::fetch(http.clone(), backend, move |progress| {
-                let _ = send.send(progress);
-            }),
+            async move {
+                if downloadable {
+                    runtimes::fetch(http, backend, move |progress| {
+                        let _ = send.send(progress);
+                    })
+                    .await?;
+                }
+                Ok::<(), String>(())
+            },
             move |result| {
-                chosen.runtime_fetch.borrow_mut().clear();
+                if let Ok(reporter) = reporter {
+                    reporter.abort();
+                }
+                chosen.runtime_fetching.set(false);
                 let Some(window) = weak.upgrade() else { return };
-                match result {
-                    Ok(_) => {
-                        chosen.refresh_mlrt();
-                        chosen.apply_generation(player);
-                        fetch_light();
-                        show_hint(
-                            &window,
-                            if ru {
-                                format!("{name} готов")
-                            } else {
-                                format!("{name} is ready")
-                            },
-                        );
+                window.set_runtime_fetch("".into());
+                chosen.refresh_mlrt();
+                chosen.show_engine(&window);
+                let selected = chosen.backend() == Some(backend);
+                let ready = chosen.mlrt.borrow()[backend_index(backend)].is_some();
+                if ready {
+                    if selected {
+                        window.set_neural_prompt(false);
+                        if enable_upscale {
+                            chosen.neural_upscale.set(true);
+                            window.set_neural_upscale(true);
+                            keep_now();
+                        }
+                        chosen.apply_effects(player);
                     }
-                    Err(error) => {
-                        tracing::warn!(%error, ?backend, "the runtime was not fetched");
-                        show_hint(
-                            &window,
-                            if ru {
-                                format!("{name} не скачался: {error}")
-                            } else {
-                                format!("{name} was not fetched: {error}")
-                            },
-                        );
-                    }
+                    fetch_light();
+                    show_hint(
+                        &window,
+                        if ru {
+                            format!("{name} готов")
+                        } else {
+                            format!("{name} is ready")
+                        },
+                    );
+                    return;
+                }
+                if let Err(error) = &result {
+                    tracing::warn!(%error, ?backend, "the runtime was not fetched");
+                }
+                let message = match (result.is_err(), ru) {
+                    (true, true) => format!("Не удалось скачать {name}. Попробуйте ещё раз."),
+                    (true, false) => format!("Could not download {name}. Try again."),
+                    (false, true) => format!("{name} пока не найден."),
+                    (false, false) => format!("{name} was not found."),
+                };
+                if selected && window.get_neural_prompt() {
+                    window.set_runtime_error(message.into());
+                } else {
+                    show_hint(&window, message);
                 }
             },
         );
@@ -3791,9 +3963,7 @@ fn keep_up(
         "frames are dropping; lowering the load"
     );
     settings.set_load(lowered);
-    let preset = settings.upscale();
-    player.later("lower upscaling", move |player| player.set_upscale(preset));
-    settings.apply_generation(player);
+    settings.apply_effects(player);
     watch.settle(now);
 
     let mut all = prefs.get();
@@ -3802,6 +3972,7 @@ fn keep_up(
         all.player.upscale_quality = lowered.upscale_quality;
         all.player.frame_rate = lowered.frame_rate;
         all.player.rife_model = lowered.rife_model;
+        all.player.rife_height = lowered.rife_height;
         all.player.neural_upscale = settings.neural_upscale.get();
         prefs.set(all);
         all.save();
@@ -4024,26 +4195,7 @@ fn drive_status(window: &MainWindow, app: &Rc<App>, advance: Rc<dyn Fn()>) {
             window.set_frame_rate(settings.frame_rate.get() as i32);
             window.set_rife_model(settings.rife_model.get() as i32);
             window.set_frames_available(settings.rife.is_some() || settings.on_mlrt());
-            window.set_neural_engine(settings.engine.get() as i32);
-            let choices: Vec<i32> = std::iter::once(0)
-                .chain(
-                    (0..Backend::ALL.len())
-                        .filter(|&at| settings.offered[at])
-                        .map(|at| at as i32 + 1),
-                )
-                .collect();
-            if slint::Model::row_count(&window.get_engine_choices()) != choices.len() {
-                window.set_engine_choices(slint::ModelRc::new(slint::VecModel::from(choices)));
-            }
-            window.set_engine_ready(settings.on_mlrt());
-            window.set_engine_fetchable(
-                settings
-                    .backend()
-                    .is_some_and(|backend| backend.download_url().is_some()),
-            );
-            window.set_runtime_fetch(settings.runtime_fetch.borrow().as_str().into());
-            window.set_recommended_engine(recommended_engine(gpus::vendors()) as i32);
-            window.set_neural_upscale(settings.neural_upscale.get());
+            window.set_neural_upscale(settings.on_mlrt() && settings.neural_upscale.get());
             window.set_adaptive(settings.adaptive.get());
             window.set_upscale_quality(settings.upscale_quality.get() as i32);
             window.set_interpolation(settings.interpolation.get());
@@ -4286,7 +4438,7 @@ fn check_filters(
     };
     let ru = window.get_lang() == "ru";
     let enhancement = settings.enhancement();
-    let upscale_fits = source_h <= anirust_player::frames::live_upscale_max_height();
+    let upscale_fits = source_h <= settings.upscale_limit();
     let frames_work = enhancement.frames.is_none() || generated.is_some();
     let upscale_works = !enhancement.upscale
         || !upscale_fits
@@ -4298,7 +4450,10 @@ fn check_filters(
         tracing::info!(?generated, "the neural filters are working");
         settings.filters_since.set(None);
         if enhancement.upscale && !upscale_fits {
-            show_hint(window, upscale_too_tall(source_h, ru));
+            show_hint(
+                window,
+                upscale_too_tall(source_h, settings.upscale_limit(), ru),
+            );
         }
         return;
     }
@@ -4324,8 +4479,7 @@ fn check_filters(
 }
 
 /// Why neural upscaling leaves this source alone.
-fn upscale_too_tall(source_h: u32, ru: bool) -> String {
-    let limit = anirust_player::frames::live_upscale_max_height();
+fn upscale_too_tall(source_h: u32, limit: u32, ru: bool) -> String {
     if ru {
         format!("Нейросеть увеличивает видео до {limit}p; {source_h}p и так крупное")
     } else {
@@ -4553,11 +4707,22 @@ mod tests {
         let tensorrt = backend_index(Backend::TensorRt) + 1;
         let openvino = backend_index(Backend::OpenVino) + 1;
         let migraphx = backend_index(Backend::MigraphX) + 1;
-        assert_eq!(recommended_engine(Some(&[0x8086, 0x10de])), tensorrt);
-        assert_eq!(recommended_engine(Some(&[0x8086, 0x1002])), migraphx);
-        assert_eq!(recommended_engine(Some(&[0x8086])), openvino);
-        assert_eq!(recommended_engine(Some(&[0x106b])), 0);
-        assert_eq!(recommended_engine(None), 0);
+        let offered = [true; 3];
+        assert_eq!(
+            recommended_engine(Some(&[0x8086, 0x1002, 0x10de]), &offered),
+            tensorrt
+        );
+        assert_eq!(
+            recommended_engine(Some(&[0x8086, 0x1002]), &offered),
+            migraphx
+        );
+        assert_eq!(recommended_engine(Some(&[0x8086]), &offered), openvino);
+        assert_eq!(recommended_engine(Some(&[0x106b]), &offered), 0);
+        assert_eq!(recommended_engine(None, &offered), 0);
+        assert_eq!(
+            recommended_engine(Some(&[0x8086, 0x10de]), &[false, true, false]),
+            openvino
+        );
     }
 
     #[test]

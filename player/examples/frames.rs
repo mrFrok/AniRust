@@ -62,6 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             max_height: 720,
         }),
         upscale,
+        ..Enhancement::default()
     };
 
     let vulkan;

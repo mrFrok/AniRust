@@ -115,9 +115,11 @@ to VapourSynth's current API by `packaging/mlrt/port-api4.py` and built by the
 release: TensorRT for NVIDIA RTX, OpenVINO for Intel, MIGraphX for AMD. Measured
 on an RTX 4070 Ti SUPER with TensorRT, RIFE 4.26 makes 150 frames a second at
 720p and 66 at 1080p — enough for 1080p at 60 and for 720p at 120 and more.
-On any of the three, the menu offers **neural upscaling** too: Real-ESRGAN
-AnimeVideo v3 doubles the picture before the shaders (720p to 1440p at 43
-frames a second on that card). Each engine runs only on its maker's cards, so
+On any of the three, the menu offers **neural upscaling** too. For TensorRT
+playback, the player fetches AnimeJaNai V3.1 Performance (SPAN). In standalone
+CUDA inference on the same card at 720p, it was about 1.6 times faster than
+the previous compact V3 model. OpenVINO and MIGraphX use Real-ESRGAN.
+Each engine runs only on its maker's cards, so
 the menu offers the ones for the GPUs the machine has — read from the kernel
 on Linux and from DXGI on Windows — and marks the one that suits it best. The
 vendors' runtimes
@@ -131,12 +133,22 @@ figures above are TensorRT's, the only ones measured so far: OpenVINO and
 MIGraphX are built and load, but are yet to be timed on Intel and AMD cards.
 macOS has no engine of this kind yet.
 
+How far the networks go is set by the card's name, not by the engine alone:
+RTX 2060, 3050 and 4060-class cards double up to 720p — 1440p out — and
+generate frames at 720p; 3070 and 4070-class cards generate at 1080p as well;
+3080, 4070 Ti and up double 1080p too. A card the player cannot place gets the
+smallest ceiling, and the adaptive step below can lower it further. On a small
+card the network works alone even at Ultra, where the shaders would only cost
+frames.
+
 **Keeping up.** If frames start dropping — more than one a second over ten
-seconds of playback — the load comes down a step by itself: neural upscaling
-first, then the RIFE network, Anime4K's quality, the generated rate (the
-screen's to half of it when that is still 60 or more, then 60, then ×2), and
-then each of them off, with a line saying what changed. The step is kept. It
-can be switched off.
+seconds of playback — the load comes down a step by itself: frame generation
+from 1080p to 720p, then the fast RIFE network, then fewer generated frames
+(the screen's rate to half of it when that is still 60 or more, then 60, then
+×2), then neural upscaling off, then Anime4K's quality and then Anime4K
+itself, with a line saying what changed. The doubling network goes last
+because it is what the picture gains detail from. The step is kept. It can be
+switched off.
 
 **The rest**, much of it after the official Android player:
 
@@ -171,8 +183,8 @@ can be switched off.
 
 In **Downloads → Improve**, choose the output resolution and frame rate
 separately from the quality. **Standard** prefers lighter models;
-**High** prefers Real-ESRGAN and the full RIFE model; **Maximum** uses the
-same models with less compression loss and a larger output. All three use
+**High** prefers AnimeJaNai Balanced on TensorRT and the full RIFE model; **Maximum**
+uses the same models with less compression loss and a larger output. All three use
 the same parallelism and available hardware acceleration. If a neural pass
 fails, AniRust can retry with fewer streams or fall back to a different
 upscaler. The original file is kept.
@@ -473,7 +485,9 @@ RIFE plugin (VapourSynth-RIFE-ncnn-Vulkan) and the RIFE models are MIT,
 fetched from upstream at build time and shipped with their licences. vs-mlrt is
 GPL-3.0; its plugins are built from its sources with our port to VapourSynth's
 API 4, and ship with its licence, as do the networks: RIFE (MIT) and
-Real-ESRGAN (BSD-3-Clause). The vendors' runtimes are not shipped: TensorRT-RTX
+Real-ESRGAN (BSD-3-Clause). The AnimeJaNai networks are CC BY-NC-SA 4.0 and are
+not shipped: the player fetches them from their author's release when asked.
+The vendors' runtimes are not shipped: TensorRT-RTX
 is NVIDIA's, under NVIDIA's licence, and is fetched from NVIDIA by the person
 using the program when they ask; OpenVINO (Apache 2.0) likewise from Intel;
 ROCm comes from the distribution. The Material 3 component set in

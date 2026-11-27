@@ -242,6 +242,10 @@ pub struct PlayerPreferences {
     pub frame_rate: usize,
     /// Which RIFE network: 0 fast, 1 quality.
     pub rife_model: usize,
+    /// The tallest source frame generation runs at, 0 to take the card's
+    /// own. The adaptive watch lowers it to 720 before turning generation
+    /// off.
+    pub rife_height: u32,
     /// Lower the load by itself when frames start dropping.
     pub adaptive: bool,
     /// The engine for the networks: 0 Vulkan, 1 TensorRT.
@@ -267,6 +271,7 @@ impl Default for PlayerPreferences {
             picture: 0,
             frame_rate: 0,
             rife_model: 0,
+            rife_height: 0,
             adaptive: true,
             engine: 0,
             neural_upscale: false,

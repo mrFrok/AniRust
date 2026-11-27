@@ -95,24 +95,35 @@ impl RifeModel {
 /// pace. Taller sources pass it by; the light network below takes them.
 pub const NEURAL_UPSCALE_MAX_HEIGHT: u32 = 720;
 
-/// The light network for playback: AnimeJaNai HD V3, SuperUltraCompact —
-/// the same kind of network as Real-ESRGAN's, with 24 features and 8 layers
-/// against 64 and 16. On an RTX 4070 Ti SUPER it doubles 720p at 4.4 times
-/// the episode's pace and 1080p at 2.0, where Real-ESRGAN makes 1.8 and 0.8.
+/// The light network for playback: AnimeJaNai HD V3.1 Performance, a SPAN
+/// network. On an RTX 4070 Ti SUPER it doubles 720p at 94 frames a second
+/// network-only, against 59 for the compact V3 network it replaces, and its
+/// lines are cleaner: the old one was barely past bicubic. Balanced, the
+/// next size up, makes 52 and is kept for files improved offline.
 ///
 /// Its licence (CC BY-NC-SA 4.0) does not go with the program's, so it is
 /// not shipped: it is fetched from its author's release on first use, for
 /// the viewer's own watching, and checked against the digest below.
 pub mod light_upscale {
-    /// The archive the author publishes the networks in.
-    pub const ARCHIVE: &str = "https://github.com/the-database/mpv-upscale-2x_animejanai/releases/download/3.0.0/2x_AnimeJaNai_HD_V3_ModelsOnly.zip";
+    /// The archive the author publishes the networks in: the overlay for
+    /// Linux, whose networks are the same on every platform.
+    pub const ARCHIVE: &str = "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.12.6/mpv-upscale-2x_animejanai-overlay-3.12.6-linux-x64.7z";
     /// The network's path inside it.
     pub const MEMBER: &str =
-        "2x_AnimeJaNai_HD_V3_ModelsOnly/2x_AnimeJaNai_HD_V3_SuperUltraCompact.onnx";
+        "animejanai/onnx/2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx";
     /// Its file name once fetched.
-    pub const FILE: &str = "2x_AnimeJaNai_HD_V3_SuperUltraCompact.onnx";
+    pub const FILE: &str = "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx";
     /// SHA-256 of the network.
-    pub const SHA256: &str = "f6bbfbed502b8d300ee9d678d2c277d4b56235c36d053c3a1a41be060c54c0e6";
+    pub const SHA256: &str = "7b804d87320f37b7269d6e27796046fbd975e95e2aa1f65d5557f52a36282716";
+
+    /// The cleaner, slower network for improving files offline.
+    pub const BALANCED_MEMBER: &str =
+        "animejanai/onnx/2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx";
+    pub const BALANCED_FILE: &str =
+        "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx";
+    pub const BALANCED_SHA256: &str =
+        "b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c";
+
     /// The tallest source it doubles while an episode plays.
     pub const MAX_HEIGHT: u32 = 1080;
 
@@ -127,6 +138,18 @@ pub mod light_upscale {
     pub fn installed() -> Option<std::path::PathBuf> {
         path().filter(|path| path.is_file())
     }
+
+    /// Where the offline network is kept.
+    #[must_use]
+    pub fn balanced_path() -> Option<std::path::PathBuf> {
+        dirs::data_dir().map(|data| data.join("anirust").join("models").join(BALANCED_FILE))
+    }
+
+    /// The offline network, when it has been fetched.
+    #[must_use]
+    pub fn balanced_installed() -> Option<std::path::PathBuf> {
+        balanced_path().filter(|path| path.is_file())
+    }
 }
 
 /// Which network doubles the picture.
@@ -136,6 +159,8 @@ pub enum Upscaler<'a> {
     RealEsrgan,
     /// The light network at this path, for playback.
     Light(&'a Path),
+    /// The cleaner network at this path, for files improved offline.
+    Balanced(&'a Path),
 }
 
 impl Upscaler<'_> {
@@ -144,19 +169,8 @@ impl Upscaler<'_> {
     pub fn live_max_height(self) -> u32 {
         match self {
             Self::RealEsrgan => NEURAL_UPSCALE_MAX_HEIGHT,
-            Self::Light(_) => light_upscale::MAX_HEIGHT,
+            Self::Light(_) | Self::Balanced(_) => light_upscale::MAX_HEIGHT,
         }
-    }
-}
-
-/// The tallest source playback doubles: up to 1080p once the light network
-/// is fetched, 720p until then.
-#[must_use]
-pub fn live_upscale_max_height() -> u32 {
-    if light_upscale::installed().is_some() {
-        light_upscale::MAX_HEIGHT
-    } else {
-        NEURAL_UPSCALE_MAX_HEIGHT
     }
 }
 
@@ -187,6 +201,9 @@ pub struct Enhancement {
     /// Real-ESRGAN AnimeVideo v3 doubles the picture before anything else.
     /// TensorRT only; ignored on Vulkan.
     pub upscale: bool,
+    /// The tallest source the network doubles; 0 takes the model's own.
+    /// A card too small for 1080p doubling passes 720 here.
+    pub upscale_max_height: u32,
 }
 
 impl Enhancement {
@@ -528,7 +545,7 @@ impl Mlrt {
     builder_env = dict(os.environ)
     builder_env[path_var] = os.pathsep.join(libs + [builder_env.get(path_var, "")])
     backend = vsmlrt.Backend.TRT_RTX(
-        fp16=False,  # the networks are fp16 already; see prepare-models.py
+        fp16=False,  # the weight conversion is done ahead of time; see prepare-models.py
         num_streams={streams},
         engine_folder={engines},
         custom_env=builder_env,
@@ -643,17 +660,27 @@ pub fn script(
     display_fps: Option<f64>,
     error_file: &Path,
 ) -> String {
-    let light = light_upscale::installed();
+    let light = match networks {
+        Networks::Mlrt(mlrt) if mlrt.backend == Backend::TensorRt => light_upscale::installed(),
+        _ => None,
+    };
     let upscaler = light
         .as_deref()
         .map_or(Upscaler::RealEsrgan, Upscaler::Light);
+    let limit = if enhancement.upscale_max_height == 0 {
+        upscaler.live_max_height()
+    } else {
+        enhancement
+            .upscale_max_height
+            .min(upscaler.live_max_height())
+    };
     script_with(
         networks,
         enhancement,
         display_fps,
         error_file,
         upscaler,
-        upscaler.live_max_height(),
+        limit,
     )
 }
 
@@ -739,21 +766,30 @@ pub(crate) fn script_with_options(
         );
     } else {
         body.push_str(&format!(
-        r#"    clip = video_in
+            r#"    clip = video_in
     clip = core.std.AssumeFPS(clip, fpsnum=source.numerator, fpsden=source.denominator)
     original = clip.format.id
     matrix = "709" if clip.height >= 600 else "170m"
     upscale = {upscale} and clip.height <= {limit}
     max_height = {max_height}
-    if max_height and not upscale and clip.height > max_height:
+"#,
+            upscale = if upscale { "True" } else { "False" },
+            limit = upscale_limit,
+        ));
+
+        // Everything that converts the picture for the networks, and back.
+        // Kept apart so that a source neither network will touch can skip
+        // it: on a card that doubles only up to 720p, a 1080p episode would
+        // otherwise make the round trip for nothing.
+        let mut work = String::new();
+        work.push_str(
+            r#"    if max_height and not upscale and clip.height > max_height:
         width = round(clip.width * max_height / clip.height / 2) * 2
         clip = core.resize.Bilinear(clip, width=width, height=max_height, format=vs.RGBS, matrix_in_s=matrix)
     else:
         clip = core.resize.Bilinear(clip, format=vs.RGBS, matrix_in_s=matrix)
 "#,
-        upscale = if upscale { "True" } else { "False" },
-        limit = upscale_limit,
-    ));
+        );
 
         if let (Some(generation), Some(networks)) = (enhancement.frames, networks) {
             let target = match (generation.rate, display_fps) {
@@ -775,17 +811,17 @@ pub(crate) fn script_with_options(
                     .to_owned()
             }
         };
-            body.push_str(&format!(
+            work.push_str(&format!(
                 "    target = {target}\n    if target > source * Fraction(11, 10):\n"
             ));
             match networks {
-            Networks::Vulkan(install) => body.push_str(&format!(
+            Networks::Vulkan(install) => work.push_str(&format!(
                 r#"        clip = core.rife.RIFE(clip, model_path={model}, fps_num=target.numerator, fps_den=target.denominator, sc=True)
         rate = target
 "#,
                 model = python_string(&install.models.join(generation.model.folder())),
             )),
-            Networks::Mlrt(_) => body.push_str(&format!(
+            Networks::Mlrt(_) => work.push_str(&format!(
                 r#"        multi = target / source
         # A whole multiple runs faster in vsmlrt; one within a percent is
         # taken, and mpv's display sync absorbs the difference.
@@ -811,21 +847,39 @@ pub(crate) fn script_with_options(
         // 4070 Ti SUPER, 720p doubled and at ×2 goes from 0.65 of the episode's
         // pace to 1.46.
         if upscale {
-            body.push_str(&match upscaler {
+            work.push_str(&match upscaler {
             Upscaler::RealEsrgan => "    if upscale:\n        clip = vsmlrt.RealESRGAN(clip, model=vsmlrt.RealESRGANv2Model.animevideo_xsx2, backend=backend)\n".to_owned(),
-            Upscaler::Light(network) => format!(
-                "    if upscale:\n        clip = vsmlrt.inference(clip, network_path={}, backend=backend)\n",
+            // The SPAN networks take and give half floats; the plugin
+            // checks the clip's format against the engine's, so the
+            // conversion is the script's to make. The resize at the end
+            // brings either precision back to the source's.
+            Upscaler::Light(network) | Upscaler::Balanced(network) => format!(
+                "    if upscale:\n        clip = core.resize.Bilinear(clip, format=vs.RGBH)\n        clip = vsmlrt.inference(clip, network_path={}, backend=backend)\n",
                 python_string(network)
             ),
         });
         }
 
         if target_height.is_some() {
-            body.push_str("    clip = core.resize.Spline36(clip, width=target_width, height=target_height, format=original, matrix_s=matrix)\n");
+            work.push_str("    clip = core.resize.Spline36(clip, width=target_width, height=target_height, format=original, matrix_s=matrix)\n");
         } else {
-            body.push_str(
+            work.push_str(
                 "    clip = core.resize.Bilinear(clip, format=original, matrix_s=matrix)\n",
             );
+        }
+
+        // Playback with only the doubling network, and a source taller than
+        // it takes: skip the conversion and hand the frame on as it came.
+        if enhancement.frames.is_none() && offline.is_none() {
+            body.push_str("    if upscale:\n");
+            for line in work.lines() {
+                body.push_str("    ");
+                body.push_str(line);
+                body.push('\n');
+            }
+            body.push_str("    else:\n        clip = video_in\n");
+        } else {
+            body.push_str(&work);
         }
     }
     if let Some(job) = offline {
@@ -1099,6 +1153,7 @@ mod tests {
                 max_height: 720,
             }),
             upscale: false,
+            ..Enhancement::default()
         }
     }
 
@@ -1204,14 +1259,37 @@ mod tests {
             Enhancement {
                 frames: None,
                 upscale: true,
+                ..Enhancement::default()
             },
             None,
             Path::new("/tmp/err.txt"),
             Upscaler::Light(Path::new("/data/models/light.onnx")),
             light_upscale::MAX_HEIGHT,
         );
+        assert!(script.contains("format=vs.RGBH"));
         assert!(script.contains("vsmlrt.inference(clip, network_path=\"/data/models/light.onnx\""));
         assert!(script.contains("upscale = True and clip.height <= 1080"));
+        assert!(script.contains("else:\n        clip = video_in"));
+        assert!(!script.contains("RealESRGAN("));
+    }
+
+    #[test]
+    fn the_offline_network_is_run_the_same_way() {
+        let trt = tensorrt();
+        let script = script_with(
+            Networks::Mlrt(&trt),
+            Enhancement {
+                frames: None,
+                upscale: true,
+                ..Enhancement::default()
+            },
+            None,
+            Path::new("/tmp/err.txt"),
+            Upscaler::Balanced(Path::new("/data/models/balanced.onnx")),
+            light_upscale::MAX_HEIGHT,
+        );
+        assert!(script.contains("format=vs.RGBH"));
+        assert!(script.contains("network_path=\"/data/models/balanced.onnx\""));
         assert!(!script.contains("RealESRGAN("));
     }
 
@@ -1223,6 +1301,7 @@ mod tests {
             Enhancement {
                 frames: None,
                 upscale: true,
+                ..Enhancement::default()
             },
             None,
             Path::new("/tmp/err.txt"),

@@ -24,6 +24,9 @@ reqwest.workspace = true
 flate2 = "1"
 tar = "0.4"
 zip = { version = "8", default-features = false, features = ["deflate"] }
+# The light upscaling network comes out of AnimeJaNai's 7z overlay, which
+# uses BCJ2; the crate's `util` feature unpacks it.
+sevenz-rust2 = { version = "0.27", features = ["util"] }
 # Checking an update against the release key's signature before it is
 # installed (update.rs). No dependencies of its own.
 minisign-verify = "0.3"

@@ -272,6 +272,7 @@ fn run(engine: usize, step: &dyn Fn(i32)) -> Found {
                 Enhancement {
                     frames: Some(frames(TargetRate::Sixty)),
                     upscale: false,
+                    ..Enhancement::default()
                 },
             ) {
                 2
@@ -280,6 +281,7 @@ fn run(engine: usize, step: &dyn Fn(i32)) -> Found {
                 Enhancement {
                     frames: Some(frames(TargetRate::Double)),
                     upscale: false,
+                    ..Enhancement::default()
                 },
             ) {
                 1
@@ -308,6 +310,7 @@ fn run(engine: usize, step: &dyn Fn(i32)) -> Found {
             let enhancement = Enhancement {
                 frames: generation,
                 upscale: true,
+                ..Enhancement::default()
             };
             if keeps_up(Networks::Mlrt(mlrt), enhancement) {
                 neural = true;

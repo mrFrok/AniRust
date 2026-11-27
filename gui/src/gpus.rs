@@ -22,6 +22,126 @@ pub fn vendors() -> Option<&'static [u32]> {
     VENDORS.get_or_init(read).as_deref()
 }
 
+/// How much neural work a card can carry, as far as its name tells.
+///
+/// The figures the player's defaults were measured on — 1080p RIFE and
+/// 1080p doubling — are a 4070 Ti SUPER's. A 2060 does not carry them, and
+/// guessing from the vendor alone would offer them to it. So the name is
+/// read where the system gives one, and a card it cannot place is treated
+/// as the smallest kind: the adaptive watch can still lower the load from
+/// there, and nothing is promised that the card cannot do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum Tier {
+    /// 2060, 3050, 4060 and the like: 720p neural work at most.
+    #[default]
+    Small,
+    /// 3070, 4070 and the like: 1080p frame generation, 720p doubling.
+    Medium,
+    /// 3080, 4070 Ti and up: 1080p for both.
+    Large,
+}
+
+/// The machine's best card, as far as its name can be read.
+pub fn tier() -> Tier {
+    static TIER: OnceLock<Tier> = OnceLock::new();
+    *TIER.get_or_init(|| {
+        names()
+            .iter()
+            .map(|name| tier_of(name))
+            .max()
+            .unwrap_or_default()
+    })
+}
+
+/// What a card's marketing name says about it.
+///
+/// The number after RTX or GTX carries the class: 60 and below are the
+/// small cards, 70 the middle, 80 and 90 the large. A Ti or Super 70 is
+/// close enough to an 80 to count as large, and a laptop's card is a step
+/// below its desktop name.
+fn tier_of(name: &str) -> Tier {
+    let name = name.to_ascii_uppercase();
+    let laptop = name.contains("LAPTOP") || name.contains("MAX-Q");
+    let Some(number) = model_number(&name) else {
+        return Tier::Small;
+    };
+    let mut tier = match number % 100 {
+        80..=99 => Tier::Large,
+        70 => Tier::Medium,
+        _ => Tier::Small,
+    };
+    if tier == Tier::Medium && (name.contains(" TI") || name.contains("SUPER")) {
+        tier = Tier::Large;
+    }
+    if laptop && tier > Tier::Small {
+        tier = if tier == Tier::Large {
+            Tier::Medium
+        } else {
+            Tier::Small
+        };
+    }
+    tier
+}
+
+/// The four digits after RTX or GTX, as in `NVIDIA GeForce RTX 4070 Ti SUPER`.
+fn model_number(name: &str) -> Option<u32> {
+    ["RTX ", "GTX "].iter().find_map(|mark| {
+        let rest = name.split_once(mark)?.1;
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        (digits.len() == 4).then(|| digits.parse().ok()).flatten()
+    })
+}
+
+/// The cards' names, where the system tells them.
+#[cfg(target_os = "linux")]
+fn names() -> Vec<String> {
+    // NVIDIA's driver writes the marketing name here; the kernel's sysfs
+    // has vendor and device ids only.
+    let mut names = Vec::new();
+    if let Ok(entries) = std::fs::read_dir("/proc/driver/nvidia/gpus") {
+        for entry in entries.flatten() {
+            let Ok(text) = std::fs::read_to_string(entry.path().join("information")) else {
+                continue;
+            };
+            for line in text.lines() {
+                if let Some(model) = line.strip_prefix("Model:") {
+                    names.push(model.trim().to_owned());
+                }
+            }
+        }
+    }
+    names
+}
+
+/// The adapters DXGI lists, by name.
+#[cfg(windows)]
+fn names() -> Vec<String> {
+    use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIFactory1};
+
+    // SAFETY: as in `read` above: COM objects the `windows` crate counts
+    // references for, each call's result checked.
+    unsafe {
+        let Ok(factory) = CreateDXGIFactory1::<IDXGIFactory1>() else {
+            return Vec::new();
+        };
+        (0..)
+            .map_while(|index| factory.EnumAdapters1(index).ok())
+            .filter_map(|adapter| adapter.GetDesc1().ok())
+            .map(|description| {
+                String::from_utf16_lossy(&description.Description)
+                    .trim_end_matches('\0')
+                    .to_owned()
+            })
+            .collect()
+    }
+}
+
+/// macOS has none of the engines, and elsewhere there is no list to read.
+#[cfg(not(any(target_os = "linux", windows)))]
+fn names() -> Vec<String> {
+    Vec::new()
+}
+
 /// The kernel's view of the display devices.
 #[cfg(target_os = "linux")]
 fn read() -> Option<Vec<u32>> {
@@ -198,5 +318,23 @@ mod tests {
             vaapi_driver_missing(&[AMD], |file| file == "radeonsi_drv_video.so"),
             None
         );
+    }
+
+    #[test]
+    fn a_2060_is_small_where_a_3080_is_large() {
+        assert_eq!(tier_of("NVIDIA GeForce RTX 2060"), Tier::Small);
+        assert_eq!(tier_of("NVIDIA GeForce RTX 3050"), Tier::Small);
+        assert_eq!(tier_of("NVIDIA GeForce RTX 4060"), Tier::Small);
+        assert_eq!(tier_of("NVIDIA GeForce RTX 3060 Ti"), Tier::Small);
+        assert_eq!(tier_of("NVIDIA GeForce RTX 3070"), Tier::Medium);
+        assert_eq!(tier_of("NVIDIA GeForce RTX 4070"), Tier::Medium);
+        assert_eq!(tier_of("NVIDIA GeForce RTX 3080"), Tier::Large);
+        assert_eq!(tier_of("NVIDIA GeForce RTX 4070 Ti SUPER"), Tier::Large);
+        assert_eq!(tier_of("NVIDIA GeForce RTX 4090"), Tier::Large);
+        assert_eq!(tier_of("NVIDIA GeForce GTX 1660 SUPER"), Tier::Small);
+        assert_eq!(tier_of("NVIDIA GeForce RTX 4070 Laptop GPU"), Tier::Small);
+        // AMD and Intel have no measured ceiling yet; the smallest is safe.
+        assert_eq!(tier_of("AMD Radeon RX 7900 XTX"), Tier::Small);
+        assert_eq!(tier_of("AMD Radeon RX 6700 XT"), Tier::Small);
     }
 }

@@ -39,6 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             max_height: 0,
         }),
         upscale: has("--upscale"),
+        ..Enhancement::default()
     };
     let started = std::time::Instant::now();
     let mut last = -1;

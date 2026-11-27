@@ -930,6 +930,7 @@ fn play(stream: &ResolvedStream, options: &PlayOptions<'_>, lang: Lang) -> Resul
     let enhancement = Enhancement {
         frames: generate,
         upscale: neural_upscale,
+        ..Enhancement::default()
     };
     let enhanced = !enhancement.is_empty();
     if enhanced {

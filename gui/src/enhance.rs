@@ -141,10 +141,17 @@ fn run_to(
         return Outcome::Failed("no path to the program".into());
     };
     let mlrt = backend(engine).and_then(Mlrt::for_offline);
-    let models: &[&str] = match (choice.resolution, choice.profile, mlrt.is_some()) {
-        (Resolution::Original, _, _) | (_, _, false) => &["off"],
-        (_, Profile::Standard, true) => &["light", "esrgan", "off"],
-        (_, Profile::High | Profile::Maximum, true) => &["esrgan", "light", "off"],
+    let models: &[&str] = match (
+        choice.resolution,
+        choice.profile,
+        mlrt.as_ref().map(|mlrt| mlrt.backend),
+    ) {
+        (Resolution::Original, _, _) | (_, _, None) => &["off"],
+        (_, Profile::Standard, Some(Backend::TensorRt)) => &["light", "balanced", "esrgan", "off"],
+        (_, Profile::High | Profile::Maximum, Some(Backend::TensorRt)) => {
+            &["balanced", "esrgan", "light", "off"]
+        }
+        (_, _, Some(_)) => &["esrgan", "off"],
     };
     let cpus = std::thread::available_parallelism().map_or(1, |count| count.get());
     let streams = mlrt.map_or(1, |mlrt| enhance::offline_streams(mlrt.backend));
@@ -431,12 +438,14 @@ fn child_job(
             }),
         },
         upscale: try_upscaler,
+        ..Enhancement::default()
     };
     let nvidia = gpus::vendors().is_some_and(|vendors| vendors.contains(&0x10de));
     let picture = picture_path(destination);
     let scratch = anirust_player::frames::script_dir();
     let never = Arc::new(AtomicBool::new(false));
     let light;
+    let balanced;
     let run = |encoder, upscaler| {
         let mut last = -1;
         enhance::picture(
@@ -481,19 +490,16 @@ fn child_job(
         }
         run(Encoder::X265, upscaler)
     };
-    let upscaler = if model == "light" && enhancement.upscale {
-        light = match light_upscale::installed() {
-            Some(path) => path,
-            None => tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|error| error.to_string())?
-                .block_on(crate::runtimes::fetch_light_upscale(crate::reqwest_client()))
-                .unwrap_or_else(|error| model_failed(&error)),
-        };
-        Upscaler::Light(&light)
-    } else {
-        Upscaler::RealEsrgan
+    let upscaler = match model {
+        "light" if enhancement.upscale => {
+            light = ensure_network(light_upscale::installed)?;
+            Upscaler::Light(&light)
+        }
+        "balanced" if enhancement.upscale => {
+            balanced = ensure_network(light_upscale::balanced_installed)?;
+            Upscaler::Balanced(&balanced)
+        }
+        _ => Upscaler::RealEsrgan,
     };
     match encode(upscaler) {
         Ok(Some(fps)) => println!("fps {fps}"),
@@ -508,6 +514,23 @@ fn child_job(
 
 fn model_failed(error: &str) -> ! {
     job_failed(error, MODEL_FAILED);
+}
+
+/// A fetched network, downloaded now if it is not there yet.
+fn ensure_network(
+    installed: fn() -> Option<std::path::PathBuf>,
+) -> Result<std::path::PathBuf, String> {
+    if let Some(path) = installed() {
+        return Ok(path);
+    }
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| error.to_string())?;
+    runtime
+        .block_on(crate::runtimes::fetch_light_upscale(crate::reqwest_client()))
+        .unwrap_or_else(|error| model_failed(&error));
+    installed().ok_or_else(|| "the network was not where it should be".to_owned())
 }
 
 fn job_failed(error: &str, code: i32) -> ! {

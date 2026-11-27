@@ -34,7 +34,8 @@
 //! `admin-new`, `sign-out`, `app-settings`, `release-announced`,
 //! `release-note`, `franchise`, `profile-teal`,
 //! `profile-teal-glass`, `deletion`, `deletion-pending`, `comments`, `comments-replying`,
-//! `comments-signed-out`, `player-hint`, `player-gpu-hint`, `player-volume`, `update-available`,
+//! `comments-signed-out`, `player-hint`, `player-gpu-hint`, `player-neural`,
+//! `player-neural-setup`, `player-volume`, `update-available`,
 //! `update-downloading`, `light`, `dark` or `amoled`. `release-light` and
 //! `release-dark` put the release screen in that appearance. Narrow is a width, not a state: pass
 //! one below 900.
@@ -819,6 +820,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || state == "player-settings"
         || state == "player-hint"
         || state == "player-gpu-hint"
+        || state.starts_with("player-neural")
         || state == "player-volume"
     {
         start_playing(&ui, state == "theatre");
@@ -868,6 +870,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if state == "player-gpu-hint" {
         ui.set_hint("Видеокарта не успевает: нейросетевой апскейл выключен".into());
+    }
+    // A neural feature asked for before its engine's runtime is there: the
+    // prompt that offers to fetch TensorRT.
+    if state.starts_with("player-neural") {
+        ui.set_has_video(true);
+        ui.set_engine_choices(slint::ModelRc::new(slint::VecModel::from(vec![1, 0])));
+        ui.set_recommended_engine(1);
+        ui.set_player_sheet("anime4k".into());
+        if !state.starts_with("player-neural-setup") {
+            ui.set_neural_engine(1);
+            ui.set_engine_fetchable(true);
+            ui.set_neural_prompt(true);
+        }
     }
     // The settings sheet, with some sound and subtitle choices made.
     if state == "player-settings" {
