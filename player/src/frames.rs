@@ -810,9 +810,9 @@ pub(crate) fn script_with_options(
                 "Fraction(display_fps / 2).limit_denominator(1001) if display_fps > 0 else Fraction(60)"
                     .to_owned()
             }
-        };
+            };
             work.push_str(&format!(
-                "    target = {target}\n    if target > source * Fraction(11, 10):\n"
+                "    target = {target}\n    if target > source * Fraction(11, 10):\n        clip = mark_scene_changes(clip)\n"
             ));
             match networks {
             Networks::Vulkan(install) => work.push_str(&format!(
@@ -830,7 +830,6 @@ pub(crate) fn script_with_options(
         align = {align}
         pad_w, pad_h = -clip.width % align, -clip.height % align
         padded = core.std.AddBorders(clip, right=pad_w, bottom=pad_h) if pad_w or pad_h else clip
-        padded = mark_scene_changes(padded)
         out = vsmlrt.RIFE(padded, multi=multi, model=vsmlrt.RIFEModel.{model}, backend=backend, video_player=True)
         clip = core.std.Crop(out, right=pad_w, bottom=pad_h) if pad_w or pad_h else out
         rate = source * multi
@@ -919,16 +918,26 @@ def on_windows_path(dirs):
     os.environ["PATH"] = os.pathsep.join(dirs + [os.environ.get("PATH", "")])
 
 
-def mark_scene_changes(clip, threshold=0.12):
-    """Marks the frame before a cut, where vsmlrt then holds the frame
-    instead of blending two scenes. Judged on a small grey copy: cheap, and a
-    cut changes everything."""
-    small = core.resize.Bilinear(clip, width=max(clip.width // 8, 16), height=max(clip.height // 8, 16), format=vs.GRAYS, matrix_s="709")
-    stats = core.std.PlaneStats(small, small[1:] + small[-1])
+def mark_scene_changes(clip):
+    """Keep the original across cuts and held drawings, on both RIFE backends."""
+    small = core.resize.Bilinear(clip, width=max(clip.width // 4, 16), height=max(clip.height // 4, 9))
+    diff = core.std.Expr([small, small[1:] + small[-1]], "x y - abs")
+    # Measure regional changes too: a title can cut while its background
+    # stays the same. Take the difference in RGB before reducing to gray
+    # so changes in colour alone also count.
+    regions = core.resize.Bilinear(diff, width=16, height=9, format=vs.GRAYS, matrix_s="709")
+    stats = core.std.PlaneStats(regions)
 
     def mark(n, f):
         out = f[0].copy()
-        out.props["_SceneChangeNext"] = int(f[1].props["PlaneStatsDiff"] > threshold)
+        average = f[1].props["PlaneStatsAverage"]
+        peak = f[1].props["PlaneStatsMax"]
+        out.props["_SceneChangeNext"] = int(
+            out.props.get("_SceneChangeNext", False)
+            or (average < 0.001 and peak < 0.01)
+            or average > 0.12
+            or peak > 0.18
+        )
         return out
 
     return core.std.ModifyFrame(clip, [clip, stats], mark)
@@ -1199,6 +1208,7 @@ mod tests {
         assert!(script.contains("display_fps"));
         assert!(script.contains("max_height = 720"));
         assert!(script.contains("core.std.LoadPlugin(\"/opt/rife/librife.so\")"));
+        assert!(script.contains("clip = mark_scene_changes(clip)\n        clip = core.rife.RIFE"));
         let told = super::script(
             Networks::Vulkan(&install),
             enhancement,
@@ -1226,7 +1236,9 @@ mod tests {
         assert!(script.contains("RIFEModel.v4_25_lite"));
         assert!(script.contains("align = 128"));
         assert!(script.contains("video_player=True"));
-        assert!(script.contains("mark_scene_changes(padded)"));
+        assert!(
+            script.contains("clip = mark_scene_changes(clip)\n        multi = target / source")
+        );
         assert!(!script.contains("RealESRGAN("));
     }
 

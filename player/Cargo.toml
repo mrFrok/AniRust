@@ -13,6 +13,7 @@ libmpv2 = "6"
 thiserror.workspace = true
 dirs.workspace = true
 tracing.workspace = true
+tempfile = "3"
 
 # Loading the Python of the VapourSynth the Windows package carries, by its
 # path, before VapourSynth asks for it by name (frames.rs).

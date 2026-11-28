@@ -27,7 +27,8 @@ rife=${RIFE_DIR:-$root/target/rife-linux}
 [ -f "$rife/librife.so" ] || packaging/fetch-rife.sh linux "$rife"
 
 mlrt=${MLRT_DIR:-$root/target/mlrt}
-[ -f "$mlrt/vsmlrt.py" ] || python3 packaging/mlrt/prepare-models.py "$mlrt"
+[ -f "$mlrt/vsmlrt.py" ] && [ -f "$mlrt/models/rife/.split-warp" ] ||
+    python3 packaging/mlrt/prepare-models.py "$mlrt"
 [ -f "$mlrt/libvstrt_rtx.so" ] || OUT_DIR="$mlrt" packaging/mlrt/build-vstrt.sh
 [ -f "$mlrt/libvsov.so" ] || OUT_DIR="$mlrt" packaging/mlrt/build-vsov.sh
 [ -f "$mlrt/libvsmigx.so" ] || OUT_DIR="$mlrt" packaging/mlrt/build-vsmigx.sh

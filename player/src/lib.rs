@@ -24,6 +24,7 @@
 //! copy.
 
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::time::Duration;
 
 use libmpv2::Mpv;
@@ -355,16 +356,20 @@ impl MediaSource {
 pub struct Player {
     mpv: Mpv,
     shader_dir: Option<std::path::PathBuf>,
-    /// The decoders asked for, kept so that frame generation can swap in
-    /// their copy-back forms and put them back afterwards.
-    hwdec: std::sync::Mutex<String>,
-    generating: std::sync::atomic::AtomicBool,
+    video_filters: std::sync::Mutex<VideoFilters>,
     /// The display's refresh rate as last told, for scripts that aim at it.
     display_fps: std::sync::Mutex<Option<f64>>,
     /// The threads that keep mpv's pauses off the caller's, once started.
     background: std::sync::OnceLock<background::Background>,
     /// What the status thread read last.
     status: std::sync::Mutex<Status>,
+}
+
+struct VideoFilters {
+    /// The requested decoders, restored when the VapourSynth filter is removed.
+    hwdec: String,
+    /// Kept as long as mpv can reload the script (for example on a seek).
+    script: Option<tempfile::TempPath>,
 }
 
 impl Player {
@@ -421,8 +426,10 @@ impl Player {
         let player = Self {
             mpv,
             shader_dir: Some(shader_dir),
-            hwdec: std::sync::Mutex::new(config.hwdec.to_string()),
-            generating: std::sync::atomic::AtomicBool::new(false),
+            video_filters: std::sync::Mutex::new(VideoFilters {
+                hwdec: config.hwdec.to_string(),
+                script: None,
+            }),
             display_fps: std::sync::Mutex::new(None),
             background: std::sync::OnceLock::new(),
             status: std::sync::Mutex::new(Status::default()),
@@ -912,25 +919,17 @@ impl Player {
     /// viewer troubleshooting a bad picture does not have to restart the
     /// episode. Takes any mpv `hwdec` value, including `"no"`.
     pub fn set_hwdec(&self, value: &str) -> Result<()> {
-        if let Ok(mut kept) = self.hwdec.lock() {
-            value.clone_into(&mut kept);
-        }
-        self.apply_hwdec()
-    }
-
-    /// The decoders asked for, in copy-back form while frames are generated.
-    fn apply_hwdec(&self) -> Result<()> {
-        let asked = self
-            .hwdec
+        let mut filters = self
+            .video_filters
             .lock()
-            .map(|kept| kept.clone())
-            .unwrap_or_else(|_| DEFAULT_HWDEC.to_owned());
-        let value = if self.generating.load(std::sync::atomic::Ordering::Relaxed) {
-            frames::copy_back(&asked)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if filters.script.is_some() {
+            self.mpv
+                .set_property("hwdec", frames::copy_back(value).as_str())?;
         } else {
-            asked
-        };
-        self.mpv.set_property("hwdec", value.as_str())?;
+            self.mpv.set_property("hwdec", value)?;
+        }
+        value.clone_into(&mut filters.hwdec);
         Ok(())
     }
 
@@ -945,23 +944,24 @@ impl Player {
         &self,
         enhancement: Option<(frames::Networks<'_>, frames::Enhancement)>,
     ) -> Result<()> {
-        use std::sync::atomic::Ordering;
-
         // Upscaling alone on Vulkan has nothing to run: no filter at all.
         let enhancement = enhancement.filter(|(networks, enhancement)| {
             enhancement.frames.is_some()
                 || (enhancement.upscale && matches!(networks, frames::Networks::Mlrt(_)))
         });
+        let mut filters = self
+            .video_filters
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let Some((networks, enhancement)) = enhancement else {
-            self.mpv.set_property("vf", "")?;
-            self.generating.store(false, Ordering::Relaxed);
-            return self.apply_hwdec();
+            self.mpv.command("vf", &["set", ""])?;
+            filters.script = None;
+            self.mpv.set_property("hwdec", filters.hwdec.as_str())?;
+            return Ok(());
         };
 
         let dir = frames::script_dir();
-        let script = dir.join("rife.vpy");
         let error_file = dir.join("rife-error.txt");
-        let _ = std::fs::remove_file(&error_file);
         let display_fps = self.display_fps.lock().ok().and_then(|kept| *kept);
         if let frames::Networks::Mlrt(mlrt) = networks {
             frames::copy_models(&mlrt.dir).map_err(|source| Error::Io {
@@ -971,24 +971,42 @@ impl Player {
         }
         std::fs::create_dir_all(&dir)
             .and_then(|()| std::fs::create_dir_all(frames::engines_dir()))
-            .and_then(|()| {
-                std::fs::write(
-                    &script,
-                    frames::script(networks, enhancement, display_fps, &error_file),
-                )
-            })
             .map_err(|source| Error::Io {
-                path: script.clone(),
+                path: dir.clone(),
                 source,
             })?;
+        // mpv reuses filters with identical options. Give each configuration
+        // its own script path so switching models replaces the live graph.
+        let mut script = tempfile::Builder::new()
+            .prefix("rife-")
+            .suffix(".vpy")
+            .tempfile_in(&dir)
+            .map_err(|source| Error::Io { path: dir, source })?;
+        let code = frames::script(networks, enhancement, display_fps, &error_file);
+        script
+            .write_all(code.as_bytes())
+            .map_err(|source| Error::Io {
+                path: script.path().to_owned(),
+                source,
+            })?;
+        let script = script.into_temp_path();
 
-        self.generating.store(true, Ordering::Relaxed);
-        self.apply_hwdec()?;
+        let enabling = filters.script.is_none();
+        if enabling {
+            self.mpv
+                .set_property("hwdec", frames::copy_back(&filters.hwdec).as_str())?;
+        }
         let filter = format!(
             "vapoursynth=file={}:buffered-frames=8:concurrent-frames=4",
             frames::mpv_quoted(&script.to_string_lossy())
         );
-        self.mpv.set_property("vf", filter.as_str())?;
+        let _ = std::fs::remove_file(&error_file);
+        if let Err(error) = self.mpv.command("vf", &["set", &filter]) {
+            if enabling && let Err(error) = self.mpv.set_property("hwdec", filters.hwdec.as_str()) {
+                tracing::warn!(%error, "could not restore video decoder");
+            }
+            return Err(error.into());
+        }
         let engine = match networks {
             frames::Networks::Vulkan(_) => "vulkan",
             frames::Networks::Mlrt(mlrt) => match mlrt.backend {
@@ -998,6 +1016,7 @@ impl Player {
             },
         };
         tracing::info!(engine, ?enhancement, script = %script.display(), "neural filters on");
+        filters.script = Some(script);
         Ok(())
     }
 

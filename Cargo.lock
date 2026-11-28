@@ -222,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "anirust-api"
-version = "1.1.5"
+version = "1.1.6"
 dependencies = [
  "reqwest",
  "serde",
@@ -236,7 +236,7 @@ dependencies = [
 
 [[package]]
 name = "anirust-cli"
-version = "1.1.5"
+version = "1.1.6"
 dependencies = [
  "anirust-api",
  "anirust-download",
@@ -255,7 +255,7 @@ dependencies = [
 
 [[package]]
 name = "anirust-download"
-version = "1.1.5"
+version = "1.1.6"
 dependencies = [
  "anirust-extract",
  "futures",
@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "anirust-extract"
-version = "1.1.5"
+version = "1.1.6"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -284,7 +284,7 @@ dependencies = [
 
 [[package]]
 name = "anirust-gui"
-version = "1.1.5"
+version = "1.1.6"
 dependencies = [
  "anirust-api",
  "anirust-download",
@@ -321,11 +321,12 @@ dependencies = [
 
 [[package]]
 name = "anirust-player"
-version = "1.1.5"
+version = "1.1.6"
 dependencies = [
  "dirs",
  "libloading 0.9.0",
  "libmpv2",
+ "tempfile",
  "thiserror 2.0.20",
  "tracing",
 ]

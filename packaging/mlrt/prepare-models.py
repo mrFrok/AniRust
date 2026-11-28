@@ -29,6 +29,7 @@ import warnings
 
 VS_MLRT_COMMIT = "44033da39922b7abebd9b680cd0cd42a9b6ca6de"
 RELEASES = "https://github.com/AmusementClub/vs-mlrt/releases/download"
+RIFE_WARP_STAMP = "models/rife/.split-warp"
 
 # (release tag, archive, the file inside it, under models/)
 MODELS = [
@@ -75,16 +76,49 @@ def patch_vsmlrt(path: pathlib.Path) -> None:
     path.write_text(text.replace(old, new), encoding="utf-8")
 
 
-def to_fp16(source: pathlib.Path, target: pathlib.Path) -> None:
+def split_rife_warp(model) -> None:
+    """Warp the two frames separately in RIFE's first GridSample.
+
+    TensorRT-RTX 1.3 miscompiles the batched first warp at 720p, producing
+    distorted edges even between two identical frames. A pair of batch-one
+    warps gives the same result as the ONNX graph without this artefact.
+    """
+    from onnx import TensorProto, helper
+
+    graph = model.graph
+    index = next(i for i, node in enumerate(graph.node) if node.op_type == "GridSample")
+    warp = graph.node[index]
+    fields = {attr.name: helper.get_attribute_value(attr) for attr in warp.attribute}
+    graph.initializer.append(helper.make_tensor("warp_split", TensorProto.INT64, [2], [1, 1]))
+    nodes = [
+        helper.make_node(
+            "Split", [warp.input[0], "warp_split"], ["warp_frame_a", "warp_frame_b"], axis=0
+        ),
+        helper.make_node(
+            "Split", [warp.input[1], "warp_split"], ["warp_grid_a", "warp_grid_b"], axis=0
+        ),
+        helper.make_node("GridSample", ["warp_frame_a", "warp_grid_a"], ["warped_a"], **fields),
+        helper.make_node("GridSample", ["warp_frame_b", "warp_grid_b"], ["warped_b"], **fields),
+        helper.make_node("Concat", ["warped_a", "warped_b"], list(warp.output), axis=0),
+    ]
+    del graph.node[index]
+    for offset, node in enumerate(nodes):
+        graph.node.insert(index + offset, node)
+
+
+def to_fp16(source: pathlib.Path, target: pathlib.Path, *, rife: bool) -> None:
     import onnx
     from onnxconverter_common.float16 import convert_float_to_float16
 
     model = onnx.load(source)
+    if rife:
+        split_rife_warp(model)
     with warnings.catch_warnings():
         # Every weight too small for fp16 is reported; there are thousands,
         # and rounding them to the nearest fp16 value is the point.
         warnings.simplefilter("ignore")
         model = convert_float_to_float16(model, keep_io_types=True)
+    onnx.checker.check_model(model)
     target.parent.mkdir(parents=True, exist_ok=True)
     onnx.save(model, target)
 
@@ -103,9 +137,11 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp = pathlib.Path(tmp)
+        stamp = out / RIFE_WARP_STAMP
         for tag, archive, member in MODELS:
             target = out / "models" / member
-            if target.is_file():
+            rife = member.startswith("rife/")
+            if target.is_file() and (not rife or stamp.is_file()):
                 continue
             fetch(f"{RELEASES}/{tag}/{archive}", tmp / archive)
             subprocess.run(
@@ -113,8 +149,9 @@ def main() -> None:
                 check=True,
                 stdout=subprocess.DEVNULL,
             )
-            to_fp16(tmp / "x" / member, target)
+            to_fp16(tmp / "x" / member, target, rife=rife)
             print(target)
+        stamp.touch()
 
 
 if __name__ == "__main__":
